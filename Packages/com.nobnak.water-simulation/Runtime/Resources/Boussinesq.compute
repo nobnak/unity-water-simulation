@@ -1,12 +1,13 @@
 #pragma kernel CSInit
-#pragma kernel CSComputeForce
+#pragma kernel CSPredict
+#pragma kernel CSCorrect
 #pragma kernel CSJacobiStep
-#pragma kernel CSStep
-#pragma kernel CSAddWavemaker
+#pragma kernel CSApplyDispersion
 #pragma kernel CSComputeNormal
 
 RWTexture2D<float4> _StateIn;     // R: eta (surface elevation), G: u (vel X), B: w (vel Z), A: aux
-RWTexture2D<float4> _StateOut;
+RWTexture2D<float4> _StatePred;   // Predicted state (MacCormack)
+RWTexture2D<float4> _StateOut;    // Corrected / output state
 Texture2D<float4> _BathymetryTex; // R: water depth h [m], G: bed level z_b [m], B: sponge mask
 RWTexture2D<float4> _ForceTex;    // RG: rhs force (fx, fz)
 RWTexture2D<float4> _AccelPing;   // RG: acceleration a_x, a_z
@@ -33,6 +34,38 @@ cbuffer WavemakerParams {
     int _WavemakerY;         // Grid line Y index where waves are generated
 };
 
+void GetWavemakerSources(int2 pos, float h, float phase, out float sourceEta, out float sourceW) {
+    sourceEta = 0.0;
+    sourceW = 0.0;
+    if (_WavemakerAmp <= 0.001) return;
+
+    float dy = (float)(pos.y - _WavemakerY);
+    if (abs(dy) > 10.0) return;
+
+    // Smooth lateral taper to avoid pumping wave energy directly into the side sponge absorption layers
+    float lateralDist = min((float)pos.x, (float)(_Width - 1 - pos.x));
+    float lateralTaper = smoothstep(0.0, _SpongeWidth * 1.5, lateralDist);
+
+    // Directional progressive wavemaker (pure +Z propagation via characteristic synthesis)
+    float sigmaCells = 2.5;
+    float invSqrt2PiSigma = 1.0 / (2.506628 * sigmaCells * _GridSpacing);
+    float gaussian = exp(-0.5 * (dy * dy) / (sigmaCells * sigmaCells));
+    float c = sqrt(_Gravity * max(0.5, h));
+
+    float waveSig = _WavemakerAmp * sin(phase) * gaussian * invSqrt2PiSigma * lateralTaper;
+    sourceEta = waveSig * c;
+    sourceW   = waveSig * _Gravity;
+}
+
+float ComputeSpongeDamping(int2 pos) {
+    float distToBorder = min(min((float)pos.x, (float)(_Width - 1 - pos.x)), min((float)pos.y, (float)(_Height - 1 - pos.y)));
+    if (distToBorder < _SpongeWidth) {
+        float t = 1.0 - (distToBorder / _SpongeWidth);
+        return 1.0 / (1.0 + t * t * _SpongeStrength * _DeltaTime * 15.0);
+    }
+    return 1.0;
+}
+
 [numthreads(8, 8, 1)]
 void CSInit(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
@@ -44,64 +77,156 @@ void CSInit(uint3 id : SV_DispatchThreadID) {
     _AccelPong[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
 }
 
-// 1. Compute explicit RHS force f = -g * grad(eta) - (u . grad)u - friction
+// 1. MacCormack Predictor: Forward spatial differences
 [numthreads(8, 8, 1)]
-void CSComputeForce(uint3 id : SV_DispatchThreadID) {
+void CSPredict(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
     int2 pos = int2(id.xy);
 
-    if (pos.x <= 1 || pos.x >= _Width - 2 || pos.y <= 1 || pos.y >= _Height - 2) {
-        _ForceTex[pos] = float4(0.0, 0.0, 0.0, 0.0);
-        _AccelPing[pos] = float4(0.0, 0.0, 0.0, 0.0);
-        return;
-    }
+    int2 posR = int2(min(_Width - 1, pos.x + 1), pos.y);
+    int2 posU = int2(pos.x, min(_Height - 1, pos.y + 1));
 
     float4 stateC = _StateIn[pos];
+    float4 stateR = _StateIn[posR];
+    float4 stateU = _StateIn[posU];
+
     float eta = stateC.r;
     float u   = stateC.g;
     float w   = stateC.b;
 
-    float4 stateL = _StateIn[pos + int2(-1, 0)];
-    float4 stateR = _StateIn[pos + int2( 1, 0)];
-    float4 stateD = _StateIn[pos + int2( 0,-1)];
-    float4 stateU = _StateIn[pos + int2( 0, 1)];
+    float hC = max(0.2, _BathymetryTex[pos].r);
+    float hR = max(0.2, _BathymetryTex[posR].r);
+    float hU = max(0.2, _BathymetryTex[posU].r);
 
-    float dx = _GridSpacing;
-    float inv2dx = 1.0 / (2.0 * dx);
+    float totalHC = max(0.05, hC + eta);
+    float totalHR = max(0.05, hR + stateR.r);
+    float totalHU = max(0.05, hU + stateU.r);
 
-    // Pressure gradient: -g * grad(eta)
-    float detadx = (stateR.r - stateL.r) * inv2dx;
-    float detadz = (stateU.r - stateD.r) * inv2dx;
+    float invDx = 1.0 / _GridSpacing;
 
-    // Advection: -(u * du/dx + w * du/dz)
-    float dudx = (stateR.g - stateL.g) * inv2dx;
-    float dudz = (stateU.g - stateD.g) * inv2dx;
-    float dwdx = (stateR.b - stateL.b) * inv2dx;
-    float dwdz = (stateU.b - stateD.b) * inv2dx;
+    // Forward flux divergence: d(Hu)/dx + d(Hw)/dz
+    float dHudx = (totalHR * stateR.g - totalHC * u) * invDx;
+    float dHwdz = (totalHU * stateU.b - totalHC * w) * invDx;
+
+    // Directional mass and momentum source
+    float srcEta, srcW;
+    GetWavemakerSources(pos, hC, _WavemakerPhase, srcEta, srcW);
+
+    float etaPred = eta - _DeltaTime * (dHudx + dHwdz) + _DeltaTime * srcEta;
+
+    // Forward spatial derivatives for momentum:
+    float detadx = (stateR.r - eta) * invDx;
+    float detadz = (stateU.r - eta) * invDx;
+
+    float dudx = (stateR.g - u) * invDx;
+    float dudz = (stateU.g - u) * invDx;
+    float dwdx = (stateR.b - w) * invDx;
+    float dwdz = (stateU.b - w) * invDx;
 
     float advectX = u * dudx + w * dudz;
     float advectZ = u * dwdx + w * dwdz;
 
-    // Bathymetry and friction
-    float h = max(0.5, _BathymetryTex[pos].r);
-    float totalH = max(0.2, h + eta);
-
-    float sponge = 0.0;
-    float distToBorder = min(min(pos.x, _Width - 1 - pos.x), min(pos.y, _Height - 1 - pos.y));
-    if (distToBorder < _SpongeWidth) {
-        float t = 1.0 - (distToBorder / _SpongeWidth);
-        sponge = t * t * _SpongeStrength;
-    }
-    float friction = _BedFriction / totalH + sponge;
+    float friction = _BedFriction / totalHC;
 
     float fx = -_Gravity * detadx - advectX - friction * u;
-    float fz = -_Gravity * detadz - advectZ - friction * w;
+    float fz = -_Gravity * detadz - advectZ - friction * w + srcW;
 
     _ForceTex[pos] = float4(fx, fz, 0.0, 0.0);
-    _AccelPing[pos] = float4(fx, fz, 0.0, 0.0); // Initial guess
+
+    float uPred = u + _DeltaTime * fx;
+    float wPred = w + _DeltaTime * fz;
+
+    float damp = ComputeSpongeDamping(pos);
+    etaPred *= damp;
+    uPred   *= damp;
+    wPred   *= damp;
+
+    etaPred = clamp(etaPred, -15.0, 15.0);
+    uPred   = clamp(uPred,   -30.0, 30.0);
+    wPred   = clamp(wPred,   -30.0, 30.0);
+
+    _StatePred[pos] = float4(etaPred, uPred, wPred, 0.0);
 }
 
-// 2. Jacobi iteration for Helmholtz dispersion inversion: (I - beta * Laplacian) a = f
+// 2. MacCormack Corrector: Backward spatial differences + average with current state
+[numthreads(8, 8, 1)]
+void CSCorrect(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    int2 posL = int2(max(0, pos.x - 1), pos.y);
+    int2 posD = int2(pos.x, max(0, pos.y - 1));
+
+    float4 stateN = _StateIn[pos];
+    float4 statePredC = _StatePred[pos];
+    float4 statePredL = _StatePred[posL];
+    float4 statePredD = _StatePred[posD];
+
+    float etaStar = statePredC.r;
+    float uStar   = statePredC.g;
+    float wStar   = statePredC.b;
+
+    float hC = max(0.2, _BathymetryTex[pos].r);
+    float hL = max(0.2, _BathymetryTex[posL].r);
+    float hD = max(0.2, _BathymetryTex[posD].r);
+
+    float totalHC = max(0.05, hC + etaStar);
+    float totalHL = max(0.05, hL + statePredL.r);
+    float totalHD = max(0.05, hD + statePredD.r);
+
+    float invDx = 1.0 / _GridSpacing;
+
+    // Backward flux divergence on predicted state:
+    float dHudxStar = (totalHC * uStar - totalHL * statePredL.g) * invDx;
+    float dHwdzStar = (totalHC * wStar - totalHD * statePredD.b) * invDx;
+
+    float nextPhase = _WavemakerPhase + 2.0 * 3.14159265 * _WavemakerFreq * _DeltaTime;
+    float srcEtaStar, srcWStar;
+    GetWavemakerSources(pos, hC, nextPhase, srcEtaStar, srcWStar);
+
+    // MacCormack 2nd-order elevation update
+    float etaNext = 0.5 * (stateN.r + etaStar - _DeltaTime * (dHudxStar + dHwdzStar) + _DeltaTime * srcEtaStar);
+
+    // Backward spatial derivatives for momentum on predicted state:
+    float detadxStar = (etaStar - statePredL.r) * invDx;
+    float detadzStar = (etaStar - statePredD.r) * invDx;
+
+    float dudxStar = (uStar - statePredL.g) * invDx;
+    float dudzStar = (uStar - statePredD.g) * invDx;
+    float dwdxStar = (wStar - statePredL.b) * invDx;
+    float dwdzStar = (wStar - statePredD.b) * invDx;
+
+    float advectXStar = uStar * dudxStar + wStar * dudzStar;
+    float advectZStar = uStar * dwdxStar + wStar * dwdzStar;
+
+    float frictionStar = _BedFriction / totalHC;
+
+    float fxStar = -_Gravity * detadxStar - advectXStar - frictionStar * uStar;
+    float fzStar = -_Gravity * detadzStar - advectZStar - frictionStar * wStar + srcWStar;
+
+    float2 fPred = _ForceTex[pos].xy;
+    float2 fAvg = 0.5 * (fPred + float2(fxStar, fzStar));
+
+    _ForceTex[pos] = float4(fAvg, 0.0, 0.0);
+    _AccelPing[pos] = float4(fAvg, 0.0, 0.0);
+
+    float damp = ComputeSpongeDamping(pos);
+    etaNext *= damp;
+    etaNext = clamp(etaNext, -15.0, 15.0);
+
+    if (_DispersionAlpha <= 0.001) {
+        float uNext = 0.5 * (stateN.g + uStar + _DeltaTime * fxStar) * damp;
+        float wNext = 0.5 * (stateN.b + wStar + _DeltaTime * fzStar) * damp;
+        uNext = clamp(uNext, -30.0, 30.0);
+        wNext = clamp(wNext, -30.0, 30.0);
+        _StateOut[pos] = float4(etaNext, uNext, wNext, 0.0);
+    } else {
+        // Store etaNext and current velocities stateN.gb; CSApplyDispersion will finalize velocity update
+        _StateOut[pos] = float4(etaNext, stateN.g, stateN.b, 0.0);
+    }
+}
+
+// 3. Jacobi relaxation for Helmholtz dispersion inversion: (I - beta * Laplacian) a = f
 [numthreads(8, 8, 1)]
 void CSJacobiStep(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
@@ -112,11 +237,10 @@ void CSJacobiStep(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    float h = max(0.5, _BathymetryTex[pos].r);
+    float h = max(0.2, _BathymetryTex[pos].r);
     float dx = _GridSpacing;
-    // Peregrine dispersion coefficient beta = alpha * h^2 / (6 * dx^2)
     float beta = _DispersionAlpha * (h * h) / (6.0 * dx * dx);
-    beta = clamp(beta, 0.0, 8.0); // Limit maximum dispersion stiffness
+    beta = clamp(beta, 0.0, 4.0);
 
     float4 f = _ForceTex[pos];
     float4 aL = _AccelPing[pos + int2(-1, 0)];
@@ -130,71 +254,32 @@ void CSJacobiStep(uint3 id : SV_DispatchThreadID) {
     _AccelPong[pos] = float4(aNext, 0.0, 0.0);
 }
 
-// 3. Step velocities and water surface elevation eta
+// 4. Apply Helmholtz-dispersed acceleration to velocity and apply sponge layer
 [numthreads(8, 8, 1)]
-void CSStep(uint3 id : SV_DispatchThreadID) {
+void CSApplyDispersion(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
     int2 pos = int2(id.xy);
 
-    if (pos.x <= 1 || pos.x >= _Width - 2 || pos.y <= 1 || pos.y >= _Height - 2) {
-        _StateOut[pos] = float4(0.0, 0.0, 0.0, 0.0);
-        return;
-    }
+    float4 state = _StateOut[pos];
+    float eta = state.r;
+    float uN  = state.g;
+    float wN  = state.b;
 
-    float4 stateC = _StateIn[pos];
-    float4 stateL = _StateIn[pos + int2(-1, 0)];
-    float4 stateR = _StateIn[pos + int2( 1, 0)];
-    float4 stateD = _StateIn[pos + int2( 0,-1)];
-    float4 stateU = _StateIn[pos + int2( 0, 1)];
+    float2 aEff = _AccelPing[pos].xy;
+    float uNext = uN + _DeltaTime * aEff.x;
+    float wNext = wN + _DeltaTime * aEff.y;
 
-    float dx = _GridSpacing;
-    float inv2dx = 1.0 / (2.0 * dx);
+    float damp = ComputeSpongeDamping(pos);
+    uNext *= damp;
+    wNext *= damp;
 
-    // 3.1 Continuity equation: d(eta)/dt = - div(H * u)
-    float totalHL = max(0.1, _BathymetryTex[pos + int2(-1, 0)].r + stateL.r);
-    float totalHR = max(0.1, _BathymetryTex[pos + int2( 1, 0)].r + stateR.r);
-    float totalHD = max(0.1, _BathymetryTex[pos + int2( 0,-1)].r + stateD.r);
-    float totalHU = max(0.1, _BathymetryTex[pos + int2( 0, 1)].r + stateU.r);
+    uNext = clamp(uNext, -30.0, 30.0);
+    wNext = clamp(wNext, -30.0, 30.0);
 
-    float dHudx = (totalHR * stateR.g - totalHL * stateL.g) * inv2dx;
-    float dHwdz = (totalHU * stateU.b - totalHD * stateD.b) * inv2dx;
-
-    float etaNext = stateC.r - _DeltaTime * (dHudx + dHwdz);
-
-    // 3.2 Velocity update using inverted acceleration
-    float2 accel = _AccelPing[pos].xy;
-    float uNext = stateC.g + _DeltaTime * accel.x;
-    float wNext = stateC.b + _DeltaTime * accel.y;
-
-    // Small smoothing to prevent 2dx grid decoupling
-    etaNext = lerp(etaNext, (stateL.r + stateR.r + stateD.r + stateU.r) * 0.25, 0.005);
-    uNext   = lerp(uNext,   (stateL.g + stateR.g + stateD.g + stateU.g) * 0.25, 0.005);
-    wNext   = lerp(wNext,   (stateL.b + stateR.b + stateD.b + stateU.b) * 0.25, 0.005);
-
-    // Clamps for stability
-    uNext = clamp(uNext, -20.0, 20.0);
-    wNext = clamp(wNext, -20.0, 20.0);
-    etaNext = clamp(etaNext, -10.0, 10.0);
-
-    _StateOut[pos] = float4(etaNext, uNext, wNext, 0.0);
+    _StateOut[pos] = float4(eta, uNext, wNext, 0.0);
 }
 
-[numthreads(8, 8, 1)]
-void CSAddWavemaker(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
-    int2 pos = int2(id.xy);
-
-    if (abs(pos.y - _WavemakerY) <= 2) {
-        float falloff = 1.0 - abs(pos.y - _WavemakerY) / 3.0;
-        float wave = _WavemakerAmp * sin(_WavemakerPhase) * falloff;
-        float4 state = _StateOut[pos];
-        state.r = wave;
-        float h = max(1.0, _BathymetryTex[pos].r);
-        state.b = wave * sqrt(_Gravity / h);
-        _StateOut[pos] = state;
-    }
-}
-
+// 5. Surface normal and foam computation
 [numthreads(8, 8, 1)]
 void CSComputeNormal(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;

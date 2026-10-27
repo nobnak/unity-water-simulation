@@ -32,6 +32,13 @@ namespace Nobnak.WaterSimulation.Editor {
             Debug.Log("[WaterSimulation] Completed all representative visual captures!");
         }
 
+        [MenuItem("Tools/Water Simulation/Capture Scene 02 Boussinesq", false, 61)]
+        public static void CaptureScene02() {
+            if (!Directory.Exists(CaptureDir)) Directory.CreateDirectory(CaptureDir);
+            CaptureScene("Assets/Scenes/02_Boussinesq.unity", "02_Boussinesq_Initial.png", "02_Boussinesq_Active.png", 240);
+            Debug.Log("[WaterSimulation] Completed Scene 02 Boussinesq capture (240 steps)!");
+        }
+
         private static void CaptureScene(string scenePath, string fileNameInit, string fileNameActive, int activeSteps) {
             var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
             var cam = Camera.main;
