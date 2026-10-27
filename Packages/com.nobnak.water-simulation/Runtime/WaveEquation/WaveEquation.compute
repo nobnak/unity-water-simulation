@@ -1,0 +1,181 @@
+#pragma kernel CSInit
+#pragma kernel CSStep
+#pragma kernel CSAddImpulse
+#pragma kernel CSAddOscillator
+#pragma kernel CSComputeNormal
+
+RWTexture2D<float4> _CurrentState;   // R: eta(t), G: eta(t - dt), B: velocity, A: aux
+Texture2D<float4> _PreviousState;
+RWTexture2D<float4> _NextState;
+Texture2D<float4> _ObstacleTex;      // R: obstacle mask (1 = obstacle/wall, 0 = open water)
+RWTexture2D<float4> _NormalTex;      // RGB: normalWS, A: foam
+RWTexture2D<float4> _WaterDataTex;   // RGB: displacement (0, eta, 0), A: foam
+
+SamplerState sampler_LinearClamp;
+
+cbuffer SimParams {
+    int _Width;
+    int _Height;
+    float _DeltaTime;
+    float _GridSpacing;      // dx [m]
+    float _WaveSpeed;        // c [m/s]
+    float _Damping;          // gamma [1/s]
+    float _SpongeWidth;      // Boundary damping layer width in cells
+    float _SpongeStrength;   // Boundary damping strength
+    int _IsSpongeEnabled;    // 1: absorbing boundary, 0: reflective boundary
+};
+
+cbuffer InputParams {
+    float2 _InputCenter;     // UV coordinates [0..1]
+    float _InputRadius;      // in UV space
+    float _InputStrength;    // Amplitude [m]
+    float _OscillatorPhase;  // Current phase in radians
+};
+
+// 9-point isotropic Laplacian to avoid grid-aligned anisotropy
+float ComputeLaplacian(RWTexture2D<float4> tex, int2 pos) {
+    float c  = tex[pos].r;
+    float l  = tex[pos + int2(-1, 0)].r;
+    float r  = tex[pos + int2( 1, 0)].r;
+    float d  = tex[pos + int2( 0,-1)].r;
+    float u  = tex[pos + int2( 0, 1)].r;
+    float ld = tex[pos + int2(-1,-1)].r;
+    float rd = tex[pos + int2( 1,-1)].r;
+    float lu = tex[pos + int2(-1, 1)].r;
+    float ru = tex[pos + int2( 1, 1)].r;
+
+    // 9-point stencil: (4 * ortho + 1 * diag - 20 * center) / 6
+    float lap = (4.0 * (l + r + d + u) + (ld + rd + lu + ru) - 20.0 * c) / 6.0;
+    return lap / (_GridSpacing * _GridSpacing);
+}
+
+[numthreads(8, 8, 1)]
+void CSInit(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    _NextState[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+    _NormalTex[id.xy] = float4(0.0, 1.0, 0.0, 0.0);
+    _WaterDataTex[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void CSStep(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    // Boundary check
+    if (pos.x == 0 || pos.x == _Width - 1 || pos.y == 0 || pos.y == _Height - 1) {
+        _NextState[pos] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    // Obstacle mask check
+    float obstacle = _ObstacleTex[pos].r;
+    if (obstacle > 0.5) {
+        _NextState[pos] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    float etaCurrent = _CurrentState[pos].r;
+    float etaPrev    = _CurrentState[pos].g;
+
+    // Sponge absorbing boundary layer
+    float sponge = 0.0;
+    if (_IsSpongeEnabled > 0) {
+        float distToBorder = min(min(pos.x, _Width - 1 - pos.x), min(pos.y, _Height - 1 - pos.y));
+        if (distToBorder < _SpongeWidth) {
+            float t = 1.0 - (distToBorder / _SpongeWidth);
+            sponge = t * t * _SpongeStrength;
+        }
+    }
+
+    float effectiveDamping = _Damping + sponge;
+
+    // 9-point Laplacian
+    float lap = ComputeLaplacian(_CurrentState, pos);
+
+    // 2D Wave equation time-stepping (Verlet / Leapfrog FDM)
+    // d^2 eta / dt^2 = c^2 * Laplacian - gamma * d eta / dt
+    float dt = _DeltaTime;
+    float c2 = _WaveSpeed * _WaveSpeed;
+
+    // Discretized update:
+    // (etaNext - 2 * etaCurrent + etaPrev) / dt^2 = c2 * lap - gamma * (etaCurrent - etaPrev) / dt
+    // etaNext * (1 + gamma * dt * 0.5) = 2 * etaCurrent - etaPrev * (1 - gamma * dt * 0.5) + dt^2 * c2 * lap
+    float gammaHalfDt = effectiveDamping * dt * 0.5;
+    float denom = 1.0 + gammaHalfDt;
+    float etaNext = (2.0 * etaCurrent - etaPrev * (1.0 - gammaHalfDt) + dt * dt * c2 * lap) / denom;
+
+    // Numerical stability clamp
+    etaNext = clamp(etaNext, -20.0, 20.0);
+
+    float vel = (etaNext - etaCurrent) / max(1e-5, dt);
+    _NextState[pos] = float4(etaNext, etaCurrent, vel, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void CSAddImpulse(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    float2 uv = (float2(pos) + 0.5) / float2(_Width, _Height);
+    float d = distance(uv, _InputCenter);
+
+    if (d < _InputRadius) {
+        float rNorm = d / max(1e-5, _InputRadius);
+        // Smooth gaussian / cosine bell
+        float impulse = _InputStrength * exp(-3.0 * rNorm * rNorm);
+        float4 state = _NextState[pos];
+        state.r += impulse;
+        state.g += impulse; // Update previous state to give pure initial elevation displacement
+        _NextState[pos] = state;
+    }
+}
+
+[numthreads(8, 8, 1)]
+void CSAddOscillator(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    float2 uv = (float2(pos) + 0.5) / float2(_Width, _Height);
+    float d = distance(uv, _InputCenter);
+
+    if (d < _InputRadius) {
+        float rNorm = d / max(1e-5, _InputRadius);
+        float spatial = exp(-3.0 * rNorm * rNorm);
+        float oscillation = _InputStrength * sin(_OscillatorPhase) * spatial;
+
+        float4 state = _NextState[pos];
+        state.r += oscillation * _DeltaTime * 10.0;
+        _NextState[pos] = state;
+    }
+}
+
+[numthreads(8, 8, 1)]
+void CSComputeNormal(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    int l = max(0, pos.x - 1);
+    int r = min(_Width - 1, pos.x + 1);
+    int d = max(0, pos.y - 1);
+    int u = min(_Height - 1, pos.y + 1);
+
+    float hL = _NextState[int2(l, pos.y)].r;
+    float hR = _NextState[int2(r, pos.y)].r;
+    float hD = _NextState[int2(pos.x, d)].r;
+    float hU = _NextState[int2(pos.x, u)].r;
+
+    float dx = 2.0 * _GridSpacing;
+    float dhdx = (hR - hL) / dx;
+    float dhdz = (hU - hD) / dx;
+
+    float normalStrength = 2.5;
+    float3 normal = normalize(float3(-dhdx * normalStrength, 1.0, -dhdz * normalStrength));
+
+    float hC = _NextState[pos].r;
+    float lap = (hL + hR + hD + hU - 4.0 * hC);
+    float foam = saturate(-lap * 2.0);
+
+    _NormalTex[pos] = float4(normal, foam);
+    _WaterDataTex[pos] = float4(0.0, hC, 0.0, foam);
+}

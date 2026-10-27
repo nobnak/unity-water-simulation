@@ -1,0 +1,274 @@
+#pragma kernel CSGenerateSpectrum
+#pragma kernel CSTimeEvolution
+#pragma kernel CSFFTHorizontal
+#pragma kernel CSFFTVertical
+#pragma kernel CSPackOceanData
+
+Texture2D<float4> _InitialSpectrum; // RG: h0(k), BA: h0*(-k)
+RWTexture2D<float4> _InitialSpectrumRW;
+
+RWTexture2D<float4> _SpectrumDy;    // Complex height spectrum
+RWTexture2D<float4> _SpectrumDxDz;  // Complex horizontal displacement spectrum
+
+Texture2D<float4> _InputPing;
+RWTexture2D<float4> _OutputPong;
+
+RWTexture2D<float4> _WaterDataTex;  // RGB: displacement (x, y, z), A: foam
+RWTexture2D<float4> _NormalTex;     // RGB: normal, A: foam
+
+cbuffer OceanParams {
+    int _N;                  // Resolution (e.g. 256 or 512)
+    float _LengthScale1;     // Domain size scale 1 [m] (e.g. 200m)
+    float _LengthScale2;     // Domain size scale 2 [m] (e.g. 25m)
+    float _Time;             // Current simulation time [s]
+    float _WindSpeed;        // [m/s]
+    float2 _WindDir;         // Normalized
+    float _SwellStrength;    // Amplitude of swell [m]
+    float2 _SwellDir;        // Normalized
+    float _Choppiness;       // Horizontal displacement scale lambda
+    float _FoamThreshold;    // Jacobian foam threshold
+    int _EnableFoam;         // 1 = foam enabled, 0 = disabled
+};
+
+cbuffer FFTStepParams {
+    int _StepSize;
+    int _PassIndex;
+    int _NumStages;
+};
+
+#define PI 3.14159265359
+#define G 9.81
+
+// Simple hash / PRNG for Gaussian random numbers
+float Hash(uint s) {
+    s = s ^ 2747636419u;
+    s = s * 2654435769u;
+    s = s ^ (s >> 16);
+    s = s * 2654435769u;
+    s = s ^ (s >> 16);
+    s = s * 2654435769u;
+    return float(s) / 4294967295.0;
+}
+
+float2 BoxMuller(uint seed) {
+    float u1 = max(1e-6, Hash(seed));
+    float u2 = Hash(seed + 198273u);
+    float r = sqrt(-2.0 * log(u1));
+    float theta = 2.0 * PI * u2;
+    return float2(r * cos(theta), r * sin(theta));
+}
+
+// Phillips spectrum with directional spreading and swell
+float Phillips(float2 k, float lengthScale) {
+    float kLen = length(k);
+    if (kLen < 1e-4) return 0.0;
+
+    float L = (_WindSpeed * _WindSpeed) / G; // Largest possible wave
+    float kL = kLen * L;
+    float k2 = kLen * kLen;
+
+    float2 kDir = k / kLen;
+    float kDotW = dot(kDir, _WindDir);
+    float directional = (kDotW > 0.0) ? pow(kDotW, 2.0) : 0.05;
+
+    // Phillips formula with amplitude constant A = 0.8 for meter-scale ocean waves
+    float A = 0.8;
+    float phillips = A * exp(-1.0 / max(1e-4, kL * kL)) / (k2 * k2);
+
+    // Small wave damping
+    float l = 0.05;
+    float damping = exp(-k2 * l * l);
+
+    // Swell component: Gaussian peak at swell frequency and direction
+    float swell = 0.0;
+    if (_SwellStrength > 0.01) {
+        float swellWavelength = max(8.0, _LengthScale1 * 0.28); // ~3-4 wavelengths across domain
+        float kSwell = 2.0 * PI / swellWavelength;
+        float dK = kLen - kSwell;
+        float kDotS = dot(kDir, _SwellDir);
+        float swellDir = (kDotS > 0.0) ? pow(kDotS, 4.0) : 0.0;
+        swell = _SwellStrength * 0.45 * exp(-dK * dK * (swellWavelength * swellWavelength * 0.06)) * swellDir;
+    }
+
+    return (phillips * directional * damping + swell);
+}
+
+[numthreads(8, 8, 1)]
+void CSGenerateSpectrum(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_N || id.y >= (uint)_N) return;
+
+    int halfN = _N / 2;
+    int kx = int(id.x) - halfN;
+    int ky = int(id.y) - halfN;
+
+    float deltaK = 2.0 * PI / _LengthScale1;
+    float2 k = float2(kx, ky) * deltaK;
+    uint seed = id.y * _N + id.x;
+    float2 gauss = BoxMuller(seed);
+
+    float p = Phillips(k, _LengthScale1);
+    float h0 = sqrt(max(0.0, p) * 0.5) * gauss.x;
+    float h0i = sqrt(max(0.0, p) * 0.5) * gauss.y;
+
+    float2 kNeg = -k;
+    float pNeg = Phillips(kNeg, _LengthScale1);
+    float h0Neg = sqrt(max(0.0, pNeg) * 0.5) * gauss.x;
+    float h0NegI = -sqrt(max(0.0, pNeg) * 0.5) * gauss.y;
+
+    _InitialSpectrumRW[id.xy] = float4(h0, h0i, h0Neg, h0NegI);
+}
+
+[numthreads(8, 8, 1)]
+void CSTimeEvolution(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_N || id.y >= (uint)_N) return;
+
+    int halfN = _N / 2;
+    int kx = int(id.x) - halfN;
+    int ky = int(id.y) - halfN;
+
+    float2 k = 2.0 * PI * float2(kx, ky) / _LengthScale1;
+    float kLen = length(k);
+    float omega = sqrt(G * max(1e-4, kLen));
+
+    float4 h0 = _InitialSpectrum[id.xy];
+    float2 h0k = h0.xy;
+    float2 h0ConjNegK = h0.zw;
+
+    float cosOmegaT = cos(omega * _Time);
+    float sinOmegaT = sin(omega * _Time);
+
+    // h(k, t) = h0(k) * e^(i*wt) + h0*(-k) * e^(-i*wt)
+    float2 term1 = float2(
+        h0k.x * cosOmegaT - h0k.y * sinOmegaT,
+        h0k.x * sinOmegaT + h0k.y * cosOmegaT
+    );
+    float2 term2 = float2(
+        h0ConjNegK.x * cosOmegaT + h0ConjNegK.y * sinOmegaT,
+        -h0ConjNegK.x * sinOmegaT + h0ConjNegK.y * cosOmegaT
+    );
+
+    float2 h = term1 + term2;
+
+    // Height spectrum Dy
+    _SpectrumDy[id.xy] = float4(h.x, h.y, 0.0, 0.0);
+
+    // Choppy displacement spectrum: Dx = -i * (kx / k) * h, Dz = -i * (ky / k) * h
+    float2 kUnit = (kLen > 1e-5) ? (k / kLen) : float2(0.0, 0.0);
+    float2 dx = float2(kUnit.x * h.y, -kUnit.x * h.x);
+    float2 dz = float2(kUnit.y * h.y, -kUnit.y * h.x);
+
+    _SpectrumDxDz[id.xy] = float4(dx.x, dx.y, dz.x, dz.y);
+}
+
+// Stockham autosort 1D IFFT along X
+[numthreads(8, 8, 1)]
+void CSFFTHorizontal(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_N || id.y >= (uint)_N) return;
+    int x = int(id.x);
+    int R = _StepSize;
+    int P = R * 2;
+
+    int j = x % R;
+    int k = x / R;
+    int t = k % 2;
+    int g = k / 2;
+
+    int i0 = g * R + j;
+    int i1 = i0 + _N / 2;
+
+    float angle = 2.0 * PI * float(j) / float(P);
+    float2 w = float2(cos(angle), sin(angle));
+
+    float4 val0 = _InputPing[int2(i0, id.y)];
+    float4 val1 = _InputPing[int2(i1, id.y)];
+
+    float2 rot1_xy = float2(val1.x * w.x - val1.y * w.y, val1.x * w.y + val1.y * w.x);
+    float2 rot1_zw = float2(val1.z * w.x - val1.w * w.y, val1.z * w.y + val1.w * w.x);
+
+    if (t == 0) {
+        _OutputPong[int2(x, id.y)] = float4(val0.xy + rot1_xy, val0.zw + rot1_zw);
+    } else {
+        _OutputPong[int2(x, id.y)] = float4(val0.xy - rot1_xy, val0.zw - rot1_zw);
+    }
+}
+
+// Stockham autosort 1D IFFT along Y
+[numthreads(8, 8, 1)]
+void CSFFTVertical(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_N || id.y >= (uint)_N) return;
+    int y = int(id.y);
+    int R = _StepSize;
+    int P = R * 2;
+
+    int j = y % R;
+    int k = y / R;
+    int t = k % 2;
+    int g = k / 2;
+
+    int i0 = g * R + j;
+    int i1 = i0 + _N / 2;
+
+    float angle = 2.0 * PI * float(j) / float(P);
+    float2 w = float2(cos(angle), sin(angle));
+
+    float4 val0 = _InputPing[int2(id.x, i0)];
+    float4 val1 = _InputPing[int2(id.x, i1)];
+
+    float2 rot1_xy = float2(val1.x * w.x - val1.y * w.y, val1.x * w.y + val1.y * w.x);
+    float2 rot1_zw = float2(val1.z * w.x - val1.w * w.y, val1.z * w.y + val1.w * w.x);
+
+    if (t == 0) {
+        _OutputPong[int2(id.x, y)] = float4(val0.xy + rot1_xy, val0.zw + rot1_zw);
+    } else {
+        _OutputPong[int2(id.x, y)] = float4(val0.xy - rot1_xy, val0.zw - rot1_zw);
+    }
+}
+
+[numthreads(8, 8, 1)]
+void CSPackOceanData(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_N || id.y >= (uint)_N) return;
+    int2 pos = int2(id.xy);
+
+    // Centering sign (-1)^(x+y) and 1/N normalization
+    float sign = ((pos.x + pos.y) & 1) ? -1.0 : 1.0;
+    float norm = 1.0 / float(_N);
+
+    float dy = _SpectrumDy[pos].x * sign * norm;
+    float dx = _SpectrumDxDz[pos].x * sign * _Choppiness * norm;
+    float dz = _SpectrumDxDz[pos].z * sign * _Choppiness * norm;
+
+    // Finite differences for Jacobian and normal
+    int l = (pos.x - 1 + _N) % _N;
+    int r = (pos.x + 1) % _N;
+    int d = (pos.y - 1 + _N) % _N;
+    int u = (pos.y + 1) % _N;
+
+    float signL = ((l + pos.y) & 1) ? -1.0 : 1.0;
+    float signR = ((r + pos.y) & 1) ? -1.0 : 1.0;
+    float signD = ((pos.x + d) & 1) ? -1.0 : 1.0;
+    float signU = ((pos.x + u) & 1) ? -1.0 : 1.0;
+
+    float gridDist = 2.0 * (_LengthScale1 / float(_N));
+
+    float dy_dx = (_SpectrumDy[int2(r, pos.y)].x * signR - _SpectrumDy[int2(l, pos.y)].x * signL) * norm / gridDist;
+    float dy_dz = (_SpectrumDy[int2(pos.x, u)].x * signU - _SpectrumDy[int2(pos.x, d)].x * signD) * norm / gridDist;
+
+    float dx_dx = (_SpectrumDxDz[int2(r, pos.y)].x * signR - _SpectrumDxDz[int2(l, pos.y)].x * signL) * _Choppiness * norm / gridDist;
+    float dz_dz = (_SpectrumDxDz[int2(pos.x, u)].z * signU - _SpectrumDxDz[int2(pos.x, d)].z * signD) * _Choppiness * norm / gridDist;
+    float dx_dz = (_SpectrumDxDz[int2(pos.x, u)].x * signU - _SpectrumDxDz[int2(pos.x, d)].x * signD) * _Choppiness * norm / gridDist;
+    float dz_dx = (_SpectrumDxDz[int2(r, pos.y)].z * signR - _SpectrumDxDz[int2(l, pos.y)].z * signL) * _Choppiness * norm / gridDist;
+
+    // Jacobian J = (1 + lambda * dx/dx)(1 + lambda * dz/dz) - lambda^2 * (dx/dz * dz/dx)
+    float J = (1.0 + dx_dx) * (1.0 + dz_dz) - (dx_dz * dz_dx);
+
+    float foam = 0.0;
+    if (_EnableFoam > 0) {
+        foam = saturate((_FoamThreshold - J) * 2.0);
+    }
+
+    float3 normal = normalize(float3(-dy_dx, 1.0, -dy_dz));
+
+    // Pack into WaterDataTex: RGB = displacement, A = foam
+    _WaterDataTex[pos] = float4(dx, dy, dz, foam);
+    _NormalTex[pos] = float4(normal, foam);
+}

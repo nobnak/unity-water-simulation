@@ -1,0 +1,226 @@
+#pragma kernel CSInit
+#pragma kernel CSComputeForce
+#pragma kernel CSJacobiStep
+#pragma kernel CSStep
+#pragma kernel CSAddWavemaker
+#pragma kernel CSComputeNormal
+
+RWTexture2D<float4> _StateIn;     // R: eta (surface elevation), G: u (vel X), B: w (vel Z), A: aux
+RWTexture2D<float4> _StateOut;
+Texture2D<float4> _BathymetryTex; // R: water depth h [m], G: bed level z_b [m], B: sponge mask
+RWTexture2D<float4> _ForceTex;    // RG: rhs force (fx, fz)
+RWTexture2D<float4> _AccelPing;   // RG: acceleration a_x, a_z
+RWTexture2D<float4> _AccelPong;
+RWTexture2D<float4> _NormalTex;   // RGB: normal, A: foam
+RWTexture2D<float4> _WaterDataTex; // RGB: displacement (0, eta, 0), A: foam
+
+cbuffer SimParams {
+    int _Width;
+    int _Height;
+    float _DeltaTime;
+    float _GridSpacing;      // dx [m]
+    float _Gravity;          // g = 9.81 [m/s^2]
+    float _DispersionAlpha;  // 1.0 = Boussinesq, 0.0 = Nonlinear Shallow Water
+    float _BedFriction;      // Bottom friction
+    float _SpongeWidth;      // Cells
+    float _SpongeStrength;
+};
+
+cbuffer WavemakerParams {
+    float _WavemakerAmp;     // Amplitude [m]
+    float _WavemakerFreq;    // Frequency [Hz]
+    float _WavemakerPhase;   // Phase [rad]
+    int _WavemakerY;         // Grid line Y index where waves are generated
+};
+
+[numthreads(8, 8, 1)]
+void CSInit(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    _StateOut[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+    _NormalTex[id.xy] = float4(0.0, 1.0, 0.0, 0.0);
+    _WaterDataTex[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+    _ForceTex[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+    _AccelPing[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+    _AccelPong[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+}
+
+// 1. Compute explicit RHS force f = -g * grad(eta) - (u . grad)u - friction
+[numthreads(8, 8, 1)]
+void CSComputeForce(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    if (pos.x <= 1 || pos.x >= _Width - 2 || pos.y <= 1 || pos.y >= _Height - 2) {
+        _ForceTex[pos] = float4(0.0, 0.0, 0.0, 0.0);
+        _AccelPing[pos] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    float4 stateC = _StateIn[pos];
+    float eta = stateC.r;
+    float u   = stateC.g;
+    float w   = stateC.b;
+
+    float4 stateL = _StateIn[pos + int2(-1, 0)];
+    float4 stateR = _StateIn[pos + int2( 1, 0)];
+    float4 stateD = _StateIn[pos + int2( 0,-1)];
+    float4 stateU = _StateIn[pos + int2( 0, 1)];
+
+    float dx = _GridSpacing;
+    float inv2dx = 1.0 / (2.0 * dx);
+
+    // Pressure gradient: -g * grad(eta)
+    float detadx = (stateR.r - stateL.r) * inv2dx;
+    float detadz = (stateU.r - stateD.r) * inv2dx;
+
+    // Advection: -(u * du/dx + w * du/dz)
+    float dudx = (stateR.g - stateL.g) * inv2dx;
+    float dudz = (stateU.g - stateD.g) * inv2dx;
+    float dwdx = (stateR.b - stateL.b) * inv2dx;
+    float dwdz = (stateU.b - stateD.b) * inv2dx;
+
+    float advectX = u * dudx + w * dudz;
+    float advectZ = u * dwdx + w * dwdz;
+
+    // Bathymetry and friction
+    float h = max(0.5, _BathymetryTex[pos].r);
+    float totalH = max(0.2, h + eta);
+
+    float sponge = 0.0;
+    float distToBorder = min(min(pos.x, _Width - 1 - pos.x), min(pos.y, _Height - 1 - pos.y));
+    if (distToBorder < _SpongeWidth) {
+        float t = 1.0 - (distToBorder / _SpongeWidth);
+        sponge = t * t * _SpongeStrength;
+    }
+    float friction = _BedFriction / totalH + sponge;
+
+    float fx = -_Gravity * detadx - advectX - friction * u;
+    float fz = -_Gravity * detadz - advectZ - friction * w;
+
+    _ForceTex[pos] = float4(fx, fz, 0.0, 0.0);
+    _AccelPing[pos] = float4(fx, fz, 0.0, 0.0); // Initial guess
+}
+
+// 2. Jacobi iteration for Helmholtz dispersion inversion: (I - beta * Laplacian) a = f
+[numthreads(8, 8, 1)]
+void CSJacobiStep(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    if (pos.x <= 1 || pos.x >= _Width - 2 || pos.y <= 1 || pos.y >= _Height - 2) {
+        _AccelPong[pos] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    float h = max(0.5, _BathymetryTex[pos].r);
+    float dx = _GridSpacing;
+    // Peregrine dispersion coefficient beta = alpha * h^2 / (6 * dx^2)
+    float beta = _DispersionAlpha * (h * h) / (6.0 * dx * dx);
+    beta = clamp(beta, 0.0, 8.0); // Limit maximum dispersion stiffness
+
+    float4 f = _ForceTex[pos];
+    float4 aL = _AccelPing[pos + int2(-1, 0)];
+    float4 aR = _AccelPing[pos + int2( 1, 0)];
+    float4 aD = _AccelPing[pos + int2( 0,-1)];
+    float4 aU = _AccelPing[pos + int2( 0, 1)];
+
+    float2 sumNeighbors = aL.xy + aR.xy + aD.xy + aU.xy;
+    float2 aNext = (f.xy + beta * sumNeighbors) / (1.0 + 4.0 * beta);
+
+    _AccelPong[pos] = float4(aNext, 0.0, 0.0);
+}
+
+// 3. Step velocities and water surface elevation eta
+[numthreads(8, 8, 1)]
+void CSStep(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    if (pos.x <= 1 || pos.x >= _Width - 2 || pos.y <= 1 || pos.y >= _Height - 2) {
+        _StateOut[pos] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    float4 stateC = _StateIn[pos];
+    float4 stateL = _StateIn[pos + int2(-1, 0)];
+    float4 stateR = _StateIn[pos + int2( 1, 0)];
+    float4 stateD = _StateIn[pos + int2( 0,-1)];
+    float4 stateU = _StateIn[pos + int2( 0, 1)];
+
+    float dx = _GridSpacing;
+    float inv2dx = 1.0 / (2.0 * dx);
+
+    // 3.1 Continuity equation: d(eta)/dt = - div(H * u)
+    float totalHL = max(0.1, _BathymetryTex[pos + int2(-1, 0)].r + stateL.r);
+    float totalHR = max(0.1, _BathymetryTex[pos + int2( 1, 0)].r + stateR.r);
+    float totalHD = max(0.1, _BathymetryTex[pos + int2( 0,-1)].r + stateD.r);
+    float totalHU = max(0.1, _BathymetryTex[pos + int2( 0, 1)].r + stateU.r);
+
+    float dHudx = (totalHR * stateR.g - totalHL * stateL.g) * inv2dx;
+    float dHwdz = (totalHU * stateU.b - totalHD * stateD.b) * inv2dx;
+
+    float etaNext = stateC.r - _DeltaTime * (dHudx + dHwdz);
+
+    // 3.2 Velocity update using inverted acceleration
+    float2 accel = _AccelPing[pos].xy;
+    float uNext = stateC.g + _DeltaTime * accel.x;
+    float wNext = stateC.b + _DeltaTime * accel.y;
+
+    // Small smoothing to prevent 2dx grid decoupling
+    etaNext = lerp(etaNext, (stateL.r + stateR.r + stateD.r + stateU.r) * 0.25, 0.005);
+    uNext   = lerp(uNext,   (stateL.g + stateR.g + stateD.g + stateU.g) * 0.25, 0.005);
+    wNext   = lerp(wNext,   (stateL.b + stateR.b + stateD.b + stateU.b) * 0.25, 0.005);
+
+    // Clamps for stability
+    uNext = clamp(uNext, -20.0, 20.0);
+    wNext = clamp(wNext, -20.0, 20.0);
+    etaNext = clamp(etaNext, -10.0, 10.0);
+
+    _StateOut[pos] = float4(etaNext, uNext, wNext, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void CSAddWavemaker(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    if (abs(pos.y - _WavemakerY) <= 2) {
+        float falloff = 1.0 - abs(pos.y - _WavemakerY) / 3.0;
+        float wave = _WavemakerAmp * sin(_WavemakerPhase) * falloff;
+        float4 state = _StateOut[pos];
+        state.r = wave;
+        float h = max(1.0, _BathymetryTex[pos].r);
+        state.b = wave * sqrt(_Gravity / h);
+        _StateOut[pos] = state;
+    }
+}
+
+[numthreads(8, 8, 1)]
+void CSComputeNormal(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    int l = max(0, pos.x - 1);
+    int r = min(_Width - 1, pos.x + 1);
+    int d = max(0, pos.y - 1);
+    int u = min(_Height - 1, pos.y + 1);
+
+    float hL = _StateOut[int2(l, pos.y)].r;
+    float hR = _StateOut[int2(r, pos.y)].r;
+    float hD = _StateOut[int2(pos.x, d)].r;
+    float hU = _StateOut[int2(pos.x, u)].r;
+    float hC = _StateOut[pos].r;
+
+    float dx = 2.0 * _GridSpacing;
+    float dhdx = (hR - hL) / dx;
+    float dhdz = (hU - hD) / dx;
+
+    float normalStrength = 2.0;
+    float3 normal = normalize(float3(-dhdx * normalStrength, 1.0, -dhdz * normalStrength));
+
+    float slope = length(float2(dhdx, dhdz));
+    float foam = saturate((slope - 0.15) * 3.0);
+
+    _NormalTex[pos] = float4(normal, foam);
+    _WaterDataTex[pos] = float4(0.0, hC, 0.0, foam);
+}
