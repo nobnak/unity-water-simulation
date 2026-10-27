@@ -19,7 +19,6 @@ RWTexture2D<float4> _NormalTex;     // RGB: normal, A: foam
 cbuffer OceanParams {
     int _N;                  // Resolution (e.g. 256 or 512)
     float _LengthScale1;     // Domain size scale 1 [m] (e.g. 200m)
-    float _LengthScale2;     // Domain size scale 2 [m] (e.g. 25m)
     float _Time;             // Current simulation time [s]
     float _WindSpeed;        // [m/s]
     float2 _WindDir;         // Normalized
@@ -32,8 +31,6 @@ cbuffer OceanParams {
 
 cbuffer FFTStepParams {
     int _StepSize;
-    int _PassIndex;
-    int _NumStages;
 };
 
 #define PI 3.14159265359
@@ -97,7 +94,7 @@ float Phillips(float2 k, float lengthScale) {
 void CSGenerateSpectrum(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_N || id.y >= (uint)_N) return;
 
-    int halfN = _N / 2;
+    int halfN = int(uint(_N) >> 1);
     int kx = int(id.x) - halfN;
     int ky = int(id.y) - halfN;
 
@@ -122,7 +119,7 @@ void CSGenerateSpectrum(uint3 id : SV_DispatchThreadID) {
 void CSTimeEvolution(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_N || id.y >= (uint)_N) return;
 
-    int halfN = _N / 2;
+    int halfN = int(uint(_N) >> 1);
     int kx = int(id.x) - halfN;
     int ky = int(id.y) - halfN;
 
@@ -164,17 +161,17 @@ void CSTimeEvolution(uint3 id : SV_DispatchThreadID) {
 [numthreads(8, 8, 1)]
 void CSFFTHorizontal(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_N || id.y >= (uint)_N) return;
-    int x = int(id.x);
-    int R = _StepSize;
-    int P = R * 2;
+    uint x = id.x;
+    uint R = uint(_StepSize);
+    uint P = R << 1;
 
-    int j = x % R;
-    int k = x / R;
-    int t = k % 2;
-    int g = k / 2;
+    uint j = x & (R - 1u);
+    uint k = x / R;
+    uint t = k & 1u;
+    uint g = k >> 1;
 
-    int i0 = g * R + j;
-    int i1 = i0 + _N / 2;
+    uint i0 = g * R + j;
+    uint i1 = i0 + (uint(_N) >> 1);
 
     float angle = 2.0 * PI * float(j) / float(P);
     float2 w = float2(cos(angle), sin(angle));
@@ -196,17 +193,17 @@ void CSFFTHorizontal(uint3 id : SV_DispatchThreadID) {
 [numthreads(8, 8, 1)]
 void CSFFTVertical(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_N || id.y >= (uint)_N) return;
-    int y = int(id.y);
-    int R = _StepSize;
-    int P = R * 2;
+    uint y = id.y;
+    uint R = uint(_StepSize);
+    uint P = R << 1;
 
-    int j = y % R;
-    int k = y / R;
-    int t = k % 2;
-    int g = k / 2;
+    uint j = y & (R - 1u);
+    uint k = y / R;
+    uint t = k & 1u;
+    uint g = k >> 1;
 
-    int i0 = g * R + j;
-    int i1 = i0 + _N / 2;
+    uint i0 = g * R + j;
+    uint i1 = i0 + (uint(_N) >> 1);
 
     float angle = 2.0 * PI * float(j) / float(P);
     float2 w = float2(cos(angle), sin(angle));
@@ -238,10 +235,11 @@ void CSPackOceanData(uint3 id : SV_DispatchThreadID) {
     float dz = _SpectrumDxDz[pos].z * sign * _Choppiness * norm;
 
     // Finite differences for Jacobian and normal
-    int l = (pos.x - 1 + _N) % _N;
-    int r = (pos.x + 1) % _N;
-    int d = (pos.y - 1 + _N) % _N;
-    int u = (pos.y + 1) % _N;
+    uint mask = uint(_N - 1);
+    int l = int((pos.x - 1 + _N) & mask);
+    int r = int((pos.x + 1) & mask);
+    int d = int((pos.y - 1 + _N) & mask);
+    int u = int((pos.y + 1) & mask);
 
     float signL = ((l + pos.y) & 1) ? -1.0 : 1.0;
     float signR = ((r + pos.y) & 1) ? -1.0 : 1.0;

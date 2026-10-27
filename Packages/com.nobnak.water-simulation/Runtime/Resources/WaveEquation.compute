@@ -1,17 +1,13 @@
 #pragma kernel CSInit
 #pragma kernel CSStep
 #pragma kernel CSAddImpulse
-#pragma kernel CSAddOscillator
 #pragma kernel CSComputeNormal
 
 RWTexture2D<float4> _CurrentState;   // R: eta(t), G: eta(t - dt), B: velocity, A: aux
-Texture2D<float4> _PreviousState;
 RWTexture2D<float4> _NextState;
 Texture2D<float4> _ObstacleTex;      // R: obstacle mask (1 = obstacle/wall, 0 = open water)
 RWTexture2D<float4> _NormalTex;      // RGB: normalWS, A: foam
 RWTexture2D<float4> _WaterDataTex;   // RGB: displacement (0, eta, 0), A: foam
-
-SamplerState sampler_LinearClamp;
 
 cbuffer SimParams {
     int _Width;
@@ -29,7 +25,6 @@ cbuffer InputParams {
     float2 _InputCenter;     // UV coordinates [0..1]
     float _InputRadius;      // in UV space
     float _InputStrength;    // Amplitude [m]
-    float _OscillatorPhase;  // Current phase in radians
 };
 
 // 9-point isotropic Laplacian to avoid grid-aligned anisotropy
@@ -127,25 +122,6 @@ void CSAddImpulse(uint3 id : SV_DispatchThreadID) {
         float4 state = _NextState[pos];
         state.r += impulse;
         state.g += impulse; // Update previous state to give pure initial elevation displacement
-        _NextState[pos] = state;
-    }
-}
-
-[numthreads(8, 8, 1)]
-void CSAddOscillator(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
-    int2 pos = int2(id.xy);
-
-    float2 uv = (float2(pos) + 0.5) / float2(_Width, _Height);
-    float d = distance(uv, _InputCenter);
-
-    if (d < _InputRadius) {
-        float rNorm = d / max(1e-5, _InputRadius);
-        float spatial = exp(-3.0 * rNorm * rNorm);
-        float oscillation = _InputStrength * sin(_OscillatorPhase) * spatial;
-
-        float4 state = _NextState[pos];
-        state.r += oscillation * _DeltaTime * 10.0;
         _NextState[pos] = state;
     }
 }

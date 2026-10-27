@@ -16,7 +16,7 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
         _FoamIntensity ("Foam Intensity", Range(0, 5)) = 0.6
 
         [Header(Visualization Mode)]
-        [KeywordEnum(Realistic, HeightMap, NormalVisual, Wireframe)] _VisualMode ("Visualization Mode", Float) = 0
+        [Enum(Realistic,0,HeightMap,1,NormalVisual,2,Wireframe,3)] _VisualMode ("Visualization Mode", Float) = 0
         _HeightMapRange ("Height Map Range (+/- m)", Float) = 2.0
     }
 

@@ -91,6 +91,14 @@ namespace Nobnak.WaterSimulation {
             }
         }
 
+        public Texture2D CustomBathymetryTexture {
+            get => customBathymetryTexture;
+            set {
+                customBathymetryTexture = value;
+                if (bathymetryMode == BathymetryType.CustomTexture) UpdateBathymetryTexture();
+            }
+        }
+
         public InitialConditionType Condition {
             get => initialCondition;
             set => initialCondition = value;
@@ -367,6 +375,9 @@ namespace Nobnak.WaterSimulation {
                         depth = math.lerp(baseSlope, shoalDepth, shoalFactor * 0.75f);
                         depth = math.lerp(depth, shallowWaterDepth * 0.5f, capeFactor * 0.85f);
                         depth = math.max(0.5f, depth);
+                    } else if (bathymetryMode == BathymetryType.CustomTexture && customBathymetryTexture != null) {
+                        float t = customBathymetryTexture.GetPixelBilinear(nx, ny).r;
+                        depth = math.max(0.5f, math.lerp(shallowWaterDepth, deepWaterDepth, t));
                     }
 
                     // R: still water depth h, G: bed elevation z_b = -h

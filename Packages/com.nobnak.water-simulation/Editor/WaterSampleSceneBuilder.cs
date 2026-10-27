@@ -292,7 +292,7 @@ namespace Nobnak.WaterSimulation.Editor {
             so1.FindProperty("obstaclePattern").enumValueIndex = (int)WaveEquationSimulation.ObstaclePattern.DoubleSlit;
             so1.FindProperty("sourceMode").enumValueIndex = (int)WaveEquationSimulation.InputMode.ContinuousOscillator;
             so1.FindProperty("sourceCenter").vector2Value = new Vector2(0.5f, 0.22f);
-            so1.FindProperty("oscillatorFrequency").floatValue = 1.6f;
+            so1.FindProperty("pulseInterval").floatValue = 0.625f;
             so1.FindProperty("sourceAmplitude").floatValue = 0.5f;
             so1.ApplyModifiedProperties();
 

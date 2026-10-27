@@ -54,7 +54,6 @@ namespace Nobnak.WaterSimulation {
         [SerializeField] private float sourceRadius = 0.03f;
         [SerializeField] private float sourceAmplitude = 1.0f;
         [SerializeField] private float pulseInterval = 1.0f;
-        [SerializeField] private float oscillatorFrequency = 1.0f;
         [SerializeField] private float movingSourceSpeed = 0.25f;
 
         [Header("Compute Shader")]
@@ -66,14 +65,12 @@ namespace Nobnak.WaterSimulation {
         private RenderTexture stateTexB;
         private RenderTexture obstacleTex;
         private bool pingPong;
-        private float oscillatorPhase;
         private float movingPhase;
         private float pulseTimer;
 
         private int kernelInit;
         private int kernelStep;
         private int kernelImpulse;
-        private int kernelOscillator;
         private int kernelNormal;
         #endregion
 
@@ -89,20 +86,12 @@ namespace Nobnak.WaterSimulation {
         }
 
         public float PulseInterval {
-            get {
-                if (pulseInterval <= 0.01f && oscillatorFrequency > 0.01f) {
-                    pulseInterval = 1.0f / oscillatorFrequency;
-                }
-                return pulseInterval;
-            }
-            set {
-                pulseInterval = math.max(0.05f, value);
-                oscillatorFrequency = 1.0f / pulseInterval;
-            }
+            get => pulseInterval;
+            set => pulseInterval = math.max(0.05f, value);
         }
 
         public float OscillatorFrequency {
-            get => 1.0f / math.max(1e-4f, PulseInterval);
+            get => 1.0f / math.max(1e-4f, pulseInterval);
             set => PulseInterval = 1.0f / math.max(1e-4f, value);
         }
 
@@ -187,7 +176,6 @@ namespace Nobnak.WaterSimulation {
             kernelInit = waveShader.FindKernel("CSInit");
             kernelStep = waveShader.FindKernel("CSStep");
             kernelImpulse = waveShader.FindKernel("CSAddImpulse");
-            kernelOscillator = waveShader.FindKernel("CSAddOscillator");
             kernelNormal = waveShader.FindKernel("CSComputeNormal");
         }
 
@@ -202,7 +190,6 @@ namespace Nobnak.WaterSimulation {
         protected override void OnResetSimulation() {
             if (waveShader == null || stateTexA == null) return;
 
-            oscillatorPhase = 0f;
             movingPhase = 0f;
             pulseTimer = 0f;
             pingPong = false;
@@ -422,7 +409,6 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropInputCenter = Shader.PropertyToID("_InputCenter");
         private static readonly int PropInputRadius = Shader.PropertyToID("_InputRadius");
         private static readonly int PropInputStrength = Shader.PropertyToID("_InputStrength");
-        private static readonly int PropOscillatorPhase = Shader.PropertyToID("_OscillatorPhase");
         private static readonly int PropCurrentState = Shader.PropertyToID("_CurrentState");
         private static readonly int PropNextState = Shader.PropertyToID("_NextState");
         private static readonly int PropObstacleTex = Shader.PropertyToID("_ObstacleTex");
