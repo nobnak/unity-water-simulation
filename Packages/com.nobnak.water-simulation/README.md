@@ -34,13 +34,13 @@ All three methods operate completely independently with no shared runtime coupli
 ### 2.1 Coordinate System, Units, and Still Water Level
 - **Coordinate System**: Unity World Space (X: East/Right, Y: Up/Normal, Z: North/Forward).
 - **Units**: Standard SI units (Lengths, depths, amplitudes: meters [m]; Time: seconds [s]; Wave speed and wind velocity: [m/s]).
-- **Reference Water Level**: Still water level $\eta = 0$ is aligned with GameObject origin $Y = 0$. Seabed elevation is defined as $z_b = -h(\mathbf{x}) \le 0$ for positive water depth $h(\mathbf{x}) > 0$.
+- **Reference Water Level**: Still water level $\eta = 0$ is aligned with GameObject origin $Y = 0$. Seabed elevation is defined as $z_{b} = -h(\mathbf{x}) \le 0$ for positive water depth $h(\mathbf{x}) > 0$.
 
 ### 2.2 Texture Standards (`IWaterSimulation`)
 - **WaterDataTexture (`_WaterDataTex`)** (`ARGBHalf`):
-  - **R**: Horizontal X displacement $D_x$ [m] (FFT choppy waves)
+  - **R**: Horizontal X displacement $D_{x}$ [m] (FFT choppy waves)
   - **G**: Vertical surface elevation $\eta$ [m]
-  - **B**: Horizontal Z displacement $D_z$ [m] (FFT choppy waves)
+  - **B**: Horizontal Z displacement $D_{z}$ [m] (FFT choppy waves)
   - **A**: Whitecap / foam intensity $[0, 1]$ (Jacobian compression or steep slope dissipation)
 - **NormalTexture (`_NormalTex`)** (`ARGBHalf`): World-space surface normal vector (RGB) + crest pinch / foam intensity (A).
 - **BathymetryTexture (`_BathymetryTex`)** (`ARGBHalf`): Still water depth $h$ [m] (R) + seabed elevation $-h$ [m] (G).
@@ -56,7 +56,7 @@ All three methods operate completely independently with no shared runtime coupli
   - `3`: Wireframe (Dynamic displacement grid)
   - `4`: Bathymetry (Water depth heatmap + 1m isobath contours + wave crest overlay)
 - **1D Cross-Section Profile Slicer (`WaterProfileViewer.cs`)**:
-  - Slices through the domain along X or Z to directly inspect 1D surface waveforms $\eta$ and seabed topography $z_b$.
+  - Slices through the domain along X or Z to directly inspect 1D surface waveforms $\eta$ and seabed topography $z_{b}$.
 
 ---
 
@@ -67,7 +67,9 @@ High-speed, low-overhead interactive ripple simulation.
 
 - **Governing Equation**:
 
-$$\frac{\partial^2 \eta}{\partial t^2} = c^2 \nabla^2 \eta - \gamma \frac{\partial \eta}{\partial t}$$
+$$
+\frac{\partial^{2} \eta}{\partial t^{2}} = c^{2} \nabla^{2} \eta - \gamma \frac{\partial \eta}{\partial t}
+$$
 
   - $\eta$: Surface elevation [m]
   - $c$: Wave phase speed [m/s]
@@ -91,25 +93,31 @@ Coastal shallow-water wave model capturing depth-dependent wave refraction, shoa
 - **Governing Equations (Peregrine 1967 Weakly Nonlinear, Weakly Dispersive System)**:
   - Continuity:
 
-$$\frac{\partial \eta}{\partial t} + \nabla \cdot ((h + \eta)\mathbf{u}) = S_\eta$$
+$$
+\frac{\partial \eta}{\partial t} + \nabla \cdot ((h + \eta)\mathbf{u}) = S_{\eta}
+$$
 
   - Momentum:
 
-$$\left(1 - \alpha \frac{h^2}{6} \nabla^2\right)\frac{\partial \mathbf{u}}{\partial t} = -g \nabla \eta - (\mathbf{u} \cdot \nabla)\mathbf{u} - \frac{c_f}{h + \eta}\mathbf{u} + \mathbf{S}_u$$
+$$
+\left(1 - \alpha \frac{h^{2}}{6} \nabla^{2}\right)\frac{\partial \mathbf{u}}{\partial t} = -g \nabla \eta - (\mathbf{u} \cdot \nabla)\mathbf{u} - \frac{c_{f}}{h + \eta}\mathbf{u} + \mathbf{S_{u}}
+$$
 
   - $h(\mathbf{x})$: Still water depth [m]
   - $\mathbf{u}$: Depth-averaged horizontal velocity vector [m/s]
-  - $c_f$: Seabed friction coefficient
+  - $c_{f}$: Seabed friction coefficient
 - **Numerical Stabilization (`fp32` Symmetric MacCormack + Helmholtz Dispersion Inverter)**:
-  - Explicit evaluation of the 3rd-order spatial derivative $\nabla(\nabla^2 \eta)$ suffers from severe stiffness ($\propto \Delta x^{-3}$), requiring $\Delta t < 10^{-6}\text{ s}$ and causing explosive checkerboard spikes.
+  - Explicit evaluation of the 3rd-order spatial derivative $\nabla(\nabla^{2} \eta)$ suffers from severe stiffness ($\propto \Delta x^{-3}$), requiring $\Delta t < 10^{-6}\ \mathrm{s}$ and causing explosive checkerboard spikes.
   - This package combines **`fp32` (`ARGBFloat` / `RGFloat`) Symmetric MacCormack Predictor-Corrector** (alternating forward/backward spatial difference direction every substep) with an implicit Helmholtz formulation of the dispersive operator:
 
-$$\left(I - \alpha \frac{h^2}{6} \nabla^2\right)\mathbf{a} = \bar{\mathbf{f}}$$
+$$
+\left(I - \alpha \frac{h^{2}}{6} \nabla^{2}\right)\mathbf{a} = \bar{\mathbf{f}}
+$$
 
     inverted via 6-pass Jacobi relaxation, yielding unconditionally stable frequency-dispersive wave trains across any grid resolution.
 - **Key Features**:
   - **Procedural Bathymetry**: Shoal and Cape, Flat bed, Linear Slope, or custom bathymetry texture.
-  - **Rich Wave Excitation & Soliton Modes**: Offshore progressive wavemaker plus planar solitary waves (Planar Soliton: $\mathrm{sech}^2$) and circular Gaussian pulses (Circular Pulse) across single-shot, periodic, moving source, and interactive mouse click/drag modes via non-destructive GPU injection (`CSAddImpulse`).
+  - **Rich Wave Excitation & Soliton Modes**: Offshore progressive wavemaker plus planar solitary waves (Planar Soliton: ${\mathrm{sech}}^{2}$) and circular Gaussian pulses (Circular Pulse) across single-shot, periodic, moving source, and interactive mouse click/drag modes via non-destructive GPU injection (`CSAddImpulse`).
   - **Dispersion Control**: Continuous slider $\alpha \in [0, 1.2]$ ($\alpha = 1.0$: Boussinesq dispersive waves, $\alpha = 0.0$: non-dispersive shallow water).
 - **Representative Scene**: `02_Boussinesq` (Shoal and Cape)
   - Offshore wave trains enter shallow water (15m to 2.5m), decelerating ($c \sim \sqrt{gh}$), refracting around a diagonal shoal, shortening in wavelength (shoaling), and focusing wave energy onto a protruding headland/cape.
@@ -123,24 +131,30 @@ Deep-ocean statistical spectral model for vast open-water expanses where wind wa
 
 - **Statistical Ocean Wave Spectrum (Tessendorf 2001 / Phillips Spectrum)**:
 
-$$P_h(\mathbf{k}) = A \frac{\exp(-1 / (k L)^2)}{k^4} (\hat{\mathbf{k}} \cdot \hat{\mathbf{w}})^2 \exp(-k^2 l_0^2)$$
+$$
+P_{h}(\mathbf{k}) = A \frac{\exp(-1 / (k L)^{2})}{k^{4}} (\hat{\mathbf{k}} \cdot \hat{\mathbf{w}})^{2} \exp(-k^{2} l_{0}^{2})
+$$
 
-  - $L = V^2 / g$: Maximum wave scale determined by wind speed $V$
+  - $L = V^{2} / g$: Maximum wave scale determined by wind speed $V$
   - Swell component: Superimposes an independent directional Gaussian swell peak representing waves arriving from distant storms.
 - **Dispersion Time Evolution**:
 
-$$\omega(\mathbf{k}) = \sqrt{g \|\mathbf{k}\|}, \quad \tilde{h}(\mathbf{k}, t) = h_0(\mathbf{k}) e^{i \omega t} + h_0^*(-\mathbf{k}) e^{-i \omega t}$$
+$$
+\omega(\mathbf{k}) = \sqrt{g \|\mathbf{k}\|}, \quad \tilde{h}(\mathbf{k}, t) = h_{0}(\mathbf{k}) e^{i \omega t} + h_{0}^{\ast}(-\mathbf{k}) e^{-i \omega t}
+$$
 
 - **Radix-2 Stockham Autosort 2D IFFT**:
   - Compute Shader implementation requiring zero bit-reversal permutations, executing with coalesced memory access.
 - **Wavenumber-Weighted Choppy Waves and Exact Lagrangian Normals**:
 
-$$\mathbf{x}' = \mathbf{x} + \lambda \sum_{\mathbf{k}} i\,w_{\text{chop}}(k) \frac{\mathbf{k}}{k} \tilde{h}(\mathbf{k}, t) e^{i \mathbf{k} \cdot \mathbf{x}}$$
+$$
+\mathbf{X}(\mathbf{x}, t) = \mathbf{x} + \lambda \sum_{\mathbf{k}} i\,w_{\mathrm{chop}}(k) \frac{\mathbf{k}}{k} \tilde{h}(\mathbf{k}, t) e^{i \mathbf{k} \cdot \mathbf{x}}
+$$
 
   - Converges horizontal particles at wave crests ($J < 1$) and expands troughs into sharp trochoidal wave profiles.
-  - Computes the exact Jacobian-coupled tangent cross-product normal $\mathbf{N} = \mathrm{normalize}(\mathbf{T}_z \times \mathbf{T}_x)$ and crest-pinch subsurface scattering ($1 - J$).
+  - Computes the exact Jacobian-coupled tangent cross-product normal $\mathbf{N} = \mathrm{normalize}(\mathbf{T_{z}} \times \mathbf{T_{x}})$ and crest-pinch subsurface scattering ($1 - J$).
 - **Jacobian Whitecap Foam**:
-  - Automatically detects breaking wave crests where the horizontal Jacobian determinant $J = (1 + \partial_x D_x)(1 + \partial_z D_z) - \partial_z D_x \partial_x D_z$ falls below the threshold.
+  - Automatically detects breaking wave crests where the horizontal Jacobian determinant $J = (1 + \partial_{x} D_{x})(1 + \partial_{z} D_{z}) - \partial_{z} D_{x} \partial_{x} D_{z}$ falls below the threshold.
 - **Representative Scene**: `03_FFTWater` (Horizon Ocean)
   - Demonstrates coexistence of long-wavelength swell and local wind waves, sharp choppy crests with whitecaps, and stable horizon-scale rendering under both stationary and free-flying cameras.
 - **Scope & Limitations**:
@@ -168,13 +182,13 @@ Measured on Intel(R) Arc(TM) 140V GPU (16 GB VRAM), Windows 11, Unity 6 (6000.3.
 
 | Simulation Method | Grid Resolution | Physical Step $dt$ | GPU Dispatch Time | Render Framerate |
 | :--- | :---: | :---: | :---: | :---: |
-| **2D Linear Wave Equation** | $256 \times 256$ | $0.003\text{ s}$ (substeps) | $0.15\text{ ms}$ | $140+\text{ FPS}$ |
-| **2D Linear Wave Equation** | $512 \times 512$ | $0.0015\text{ s}$ (substeps) | $0.38\text{ ms}$ | $120+\text{ FPS}$ |
-| **Boussinesq System (`fp32`, 6-step Jacobi)** | $256 \times 256$ | $0.016\text{ s}$ (substeps) | $0.48\text{ ms}$ | $120+\text{ FPS}$ |
-| **Boussinesq System (`fp32`, 6-step Jacobi)** | $512 \times 512$ | $0.008\text{ s}$ (substeps) | $1.35\text{ ms}$ | $95+\text{ FPS}$ |
-| **Spectral / FFT Ocean** | $256 \times 256$ | $0.033\text{ s}$ (time evolution) | $0.35\text{ ms}$ | $130+\text{ FPS}$ |
-| **Spectral / FFT Ocean** | $512 \times 512$ | $0.033\text{ s}$ (time evolution) | $0.95\text{ ms}$ | $105+\text{ FPS}$ |
-| **05 Overview (All 3 Active)** | $256 \times 256 \times 3$ | Method-specific $dt$ | $0.98\text{ ms}$ (Total) | $110+\text{ FPS}$ |
+| **2D Linear Wave Equation** | $256 \times 256$ | $0.003\ \mathrm{s}$ (substeps) | $0.15\ \mathrm{ms}$ | $140+\ \mathrm{FPS}$ |
+| **2D Linear Wave Equation** | $512 \times 512$ | $0.0015\ \mathrm{s}$ (substeps) | $0.38\ \mathrm{ms}$ | $120+\ \mathrm{FPS}$ |
+| **Boussinesq System (`fp32`, 6-step Jacobi)** | $256 \times 256$ | $0.016\ \mathrm{s}$ (substeps) | $0.48\ \mathrm{ms}$ | $120+\ \mathrm{FPS}$ |
+| **Boussinesq System (`fp32`, 6-step Jacobi)** | $512 \times 512$ | $0.008\ \mathrm{s}$ (substeps) | $1.35\ \mathrm{ms}$ | $95+\ \mathrm{FPS}$ |
+| **Spectral / FFT Ocean** | $256 \times 256$ | $0.033\ \mathrm{s}$ (time evolution) | $0.35\ \mathrm{ms}$ | $130+\ \mathrm{FPS}$ |
+| **Spectral / FFT Ocean** | $512 \times 512$ | $0.033\ \mathrm{s}$ (time evolution) | $0.95\ \mathrm{ms}$ | $105+\ \mathrm{FPS}$ |
+| **05 Overview (All 3 Active)** | $256 \times 256 \times 3$ | Method-specific $dt$ | $0.98\ \mathrm{ms}$ (Total) | $110+\ \mathrm{FPS}$ |
 
 > **Note**: Simulation time stepping is decoupled from rendering framerate so integration accuracy is preserved even under heavy rendering load.
 

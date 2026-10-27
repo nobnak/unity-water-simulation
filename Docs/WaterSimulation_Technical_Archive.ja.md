@@ -14,7 +14,7 @@
 | :--- | :--- | :---: | :---: | :--- |
 | `a86b2a57-1d29-4f49-85f0-ba4e54baacd7` | 2026-10-26 14:27 〜 10-27 17:56 | 1,669 | 12 | パッケージ初期実装、入力系修正、Boussinesq数値安定化、描画モード修正、UI拡充、パルス波源化、不要コード掃除、および今後の拡張設計（LOD・自由境界・02シーン拡張） |
 | `c95e553c-8ef9-4ea9-bd31-e34bfc91280f` | 2026-10-27 20:25 〜 10-27 20:27 | 44 | 1 | コミット履歴およびモジュール別の実装到達度調査 |
-| `71f435e1-4ae7-47d9-8753-a7b8ea532229` | 2026-10-27 20:30 〜 10-28 00:15 | 410+ | 10 | アーカイブ資料化、`02_Boussinesq` 波源・水深可視化実装、`fp32` 対称MacCormack＋FFT Choppy強調、全UI監査・接続、アルゴリズム＆性能見積もり完全仕様書の作成・日英両対応 |
+| `71f435e1-4ae7-47d9-8753-a7b8ea532229` | 2026-10-27 20:30 〜 10-28 00:50 | 410+ | 10 | アーカイブ資料化、`02_Boussinesq` 波源・水深可視化実装、`fp32` 対称MacCormack＋FFT Choppy強調、全UI監査・接続、アルゴリズム＆性能見積もり完全仕様書の作成・日英両対応 |
 
 ### 1.2 Gitコミット履歴との対応
 
@@ -117,9 +117,9 @@ classDiagram
 
 | テクスチャ名 | フォーマット | R チャンネル | G チャンネル | B チャンネル | A チャンネル |
 | :--- | :---: | :--- | :--- | :--- | :--- |
-| **`WaterDataTexture`** (`_WaterDataTex`) | `ARGBHalf` | 水平X変位 $D_x$ [m] | 鉛直変位（波高） $\eta$ [m] | 水平Z変位 $D_z$ [m] | 白波・泡強度 $\mathrm{Foam} \in [0, 1]$ |
-| **`NormalTexture`** (`_NormalTex`) | `ARGBHalf` | 法線 $N_x$ | 法線 $N_y$ | 法線 $N_z$ | 波峰圧縮度 / 泡強度 $\in [0, 1]$ |
-| **`BathymetryTexture`** (`_BathymetryTex`) | `ARGBHalf` | 静水深 $h(\mathbf{x})$ [m] | 水底標高 $z_b = -h(\mathbf{x})$ [m] | $0$ | $1$ |
+| **`WaterDataTexture`** (`_WaterDataTex`) | `ARGBHalf` | 水平X変位 $D_{x}$ [m] | 鉛直変位（波高） $\eta$ [m] | 水平Z変位 $D_{z}$ [m] | 白波・泡強度 $\mathrm{Foam} \in [0, 1]$ |
+| **`NormalTexture`** (`_NormalTex`) | `ARGBHalf` | 法線 $N_{x}$ | 法線 $N_{y}$ | 法線 $N_{z}$ | 波峰圧縮度 / 泡強度 $\in [0, 1]$ |
+| **`BathymetryTexture`** (`_BathymetryTex`) | `ARGBHalf` | 静水深 $h(\mathbf{x})$ [m] | 水底標高 $z_{b} = -h(\mathbf{x})$ [m] | $0$ | $1$ |
 
 ---
 
@@ -133,28 +133,32 @@ classDiagram
 
 | 方式・サンプルシーン | 実装クラス / シェーダー | 物理・数値モデル | 格子数 / 内部 $dt$ | GPU時間 / FPS |
 | :--- | :--- | :--- | :---: | :---: |
-| **01_WaveEquation**<br>「波紋と障害物」 | [`WaveEquationSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquationSimulation.cs)<br>[`WaveEquation.compute`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute) | 9点等方性ラプラシアンFDM＋半陰的減衰Leapfrog時間積分、CFL自動サブステップ、外周スポンジ吸収層、スリット障害物マスク | $256^2$ / $0.003\text{ s}$<br>$512^2$ / $0.0015\text{ s}$ | $0.15\text{ ms}$ / $140+$<br>$0.38\text{ ms}$ / $120+$ |
-| **02_Boussinesq**<br>「浅瀬と岬」 | [`BoussinesqSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs)<br>[`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | Peregrine (1967) 弱非線形・弱分散浅水波モデル、`fp32` 対称MacCormack予測子・修正子法、6パスJacobi緩和によるHelmholtz分散インバータ $(I - \beta\nabla^2)\mathbf{a} = \mathbf{f}$ | $256^2$ / $0.016\text{ s}$<br>$512^2$ / $0.008\text{ s}$ | $0.48\text{ ms}$ / $120+$<br>$1.35\text{ ms}$ / $95+$ |
-| **03_FFTWater**<br>「水平線までの海」 | [`FFTOceanSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOceanSimulation.cs)<br>[`FFTOcean.compute`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute) | Tessendorf (2001) Phillipsスペクトル＋独立うねり（Swell）、Radix-2 Stockham 2D IFFT（Height $D_y$・Choppy $(D_x,D_z)$ の計2回）、厳密ラグランジュ法線＋ヤコビアン白波 | $256^2$ / $0.033\text{ s}$<br>$512^2$ / $0.033\text{ s}$ | $0.35\text{ ms}$ / $130+$<br>$0.95\text{ ms}$ / $105+$ |
-| **04_Comparison_Dispersion** | [`WaterComparisonController.cs`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterComparisonController.cs)<br>[`WaterProfileViewer.cs`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterProfileViewer.cs) | 一定水深（5m）・同振幅ガウスパルスからの伝播比較（非分散の単一波形維持 vs Boussinesqの周波数分散波列テール） | $256^2 \times 2$ | $115+\text{ FPS}$ |
-| **05_Comparison_Overview** | 同上 | 3方式の横並び一括同期実行・比較ステージ | $256^2 \times 3$ | $0.92\text{ ms}$ / $110+$ |
+| **01_WaveEquation**<br>「波紋と障害物」 | [`WaveEquationSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquationSimulation.cs)<br>[`WaveEquation.compute`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute) | 9点等方性ラプラシアンFDM＋半陰的減衰Leapfrog時間積分、CFL自動サブステップ、外周スポンジ吸収層、スリット障害物マスク | $256^{2}$ / $0.003\ \mathrm{s}$<br>$512^{2}$ / $0.0015\ \mathrm{s}$ | $0.15\ \mathrm{ms}$ / $140+$<br>$0.38\ \mathrm{ms}$ / $120+$ |
+| **02_Boussinesq**<br>「浅瀬と岬」 | [`BoussinesqSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs)<br>[`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | Peregrine (1967) 弱非線形・弱分散浅水波モデル、`fp32` 対称MacCormack予測子・修正子法、6パスJacobi緩和によるHelmholtz分散インバータ $(I - \beta\nabla^{2})\mathbf{a} = \mathbf{f}$ | $256^{2}$ / $0.016\ \mathrm{s}$<br>$512^{2}$ / $0.008\ \mathrm{s}$ | $0.48\ \mathrm{ms}$ / $120+$<br>$1.35\ \mathrm{ms}$ / $95+$ |
+| **03_FFTWater**<br>「水平線までの海」 | [`FFTOceanSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOceanSimulation.cs)<br>[`FFTOcean.compute`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute) | Tessendorf (2001) Phillipsスペクトル＋独立うねり（Swell）、Radix-2 Stockham 2D IFFT（Height $D_{y}$・Choppy $(D_{x},D_{z})$ の計2回）、厳密ラグランジュ法線＋ヤコビアン白波 | $256^{2}$ / $0.033\ \mathrm{s}$<br>$512^{2}$ / $0.033\ \mathrm{s}$ | $0.35\ \mathrm{ms}$ / $130+$<br>$0.95\ \mathrm{ms}$ / $105+$ |
+| **04_Comparison_Dispersion** | [`WaterComparisonController.cs`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterComparisonController.cs)<br>[`WaterProfileViewer.cs`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterProfileViewer.cs) | 一定水深（5m）・同振幅ガウスパルスからの伝播比較（非分散の単一波形維持 vs Boussinesqの周波数分散波列テール） | $256^{2} \times 2$ | $115+\ \mathrm{FPS}$ |
+| **05_Comparison_Overview** | 同上 | 3方式の横並び一括同期実行・比較ステージ | $256^{2} \times 3$ | $0.92\ \mathrm{ms}$ / $110+$ |
 
 #### シェーダーカーネル構成と離散化数式（確定仕様）
 - **2D波動方程式 ([`WaveEquation.compute`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute))**:
   - **9点等方性ラプラシアン**:
 
-$$\nabla^2 \eta \approx \frac{4(\eta_L + \eta_R + \eta_D + \eta_U) + (\eta_{LD} + \eta_{RD} + \eta_{LU} + \eta_{RU}) - 20\eta_C}{6\Delta x^2}$$
+$$
+\nabla^{2} \eta \approx \frac{4(\eta_{L} + \eta_{R} + \eta_{D} + \eta_{U}) + (\eta_{LD} + \eta_{RD} + \eta_{LU} + \eta_{RU}) - 20\eta_{C}}{6\Delta x^{2}}
+$$
 
   - **半陰的減衰 Leapfrog スキーム**:
 
-$$\eta^{n+1} = \frac{2\eta^n - \eta^{n-1}(1 - \frac{1}{2}\gamma\Delta t) + c^2\Delta t^2 \nabla^2\eta^n}{1 + \frac{1}{2}\gamma\Delta t}$$
+$$
+\eta^{n+1} = \frac{2\eta^{n} - \eta^{n-1}(1 - \frac{1}{2}\gamma\Delta t) + c^{2}\Delta t^{2} \nabla^{2}\eta^{n}}{1 + \frac{1}{2}\gamma\Delta t}
+$$
 
-  - **インパルス注入 (`CSAddImpulse`)**: 現在変位 `state.r` と前ステップ変位 `state.g` の双方に同一ガウス分布 $A\exp(-3(r/R)^2)$ を加算し、初速 $0$ の純粋な初期変位として励起。
+  - **インパルス注入 (`CSAddImpulse`)**: 現在変位 `state.r` と前ステップ変位 `state.g` の双方に同一ガウス分布 $A\exp(-3(r/R)^{2})$ を加算し、初速 $0$ の純粋な初期変位として励起。
 - **Boussinesq系 ([`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute))**:
-  - **7カーネル構成**: `CSInit` → `CSPredict`（サブステップ偶奇で前進/後退差分を交互切替）→ `CSCorrect`（逆向き差分＋平均）→ `CSJacobiStep`（6反復、$\beta = \mathrm{clamp}(\alpha h^2 / (6\Delta x^2), 0, 6)$）→ `CSApplyDispersion` → `CSAddImpulse` → `CSComputeNormal`。
-  - **進行波ソース造波 (`GetWavemakerSources`)**: ガウス幅 $\sigma = 2.5\Delta x$ で質量ソース $S_\eta = c W$ と運動量ソース $S_w = g W$（$c = \sqrt{gh}$）を同時注入し、両端スポンジ層への干渉を防ぐ横方向テーパー `smoothstep(0, _SpongeWidth * 1.5, lateralDist)` を適用。
+  - **7カーネル構成**: `CSInit` → `CSPredict`（サブステップ偶奇で前進/後退差分を交互切替）→ `CSCorrect`（逆向き差分＋平均）→ `CSJacobiStep`（6反復、$\beta = \mathrm{clamp}(\alpha h^{2} / (6\Delta x^{2}), 0, 6)$）→ `CSApplyDispersion` → `CSAddImpulse` → `CSComputeNormal`。
+  - **進行波ソース造波 (`GetWavemakerSources`)**: ガウス幅 $\sigma = 2.5\Delta x$ で質量ソース $S_{\eta} = c W$ と運動量ソース $S_{w} = g W$（$c = \sqrt{gh}$）を同時注入し、両端スポンジ層への干渉を防ぐ横方向テーパー `smoothstep(0, _SpongeWidth * 1.5, lateralDist)` を適用。
 - **FFT海面 ([`FFTOcean.compute`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute))**:
-  - **5カーネル構成**: `CSGenerateSpectrum` → `CSTimeEvolution` → `CSFFTHorizontal` ($\log_2 N$ 段) → `CSFFTVertical` ($\log_2 N$ 段) → `CSPackOceanData`。
+  - **5カーネル構成**: `CSGenerateSpectrum` → `CSTimeEvolution` → `CSFFTHorizontal` ($\log_{2} N$ 段) → `CSFFTVertical` ($\log_{2} N$ 段) → `CSPackOceanData`。
 
 #### 代表シーン検証キャプチャ
 
@@ -183,21 +187,21 @@ $$\eta^{n+1} = \frac{2\eta^n - \eta^{n-1}(1 - \frac{1}{2}\gamma\Delta t) + c^2\D
 
 #### 発散を引き起こしていた5つの要因（Turn 3）
 1. **前進オイラー法（FTCS）の無条件不安定性【主因】**:
-   双曲型浅水波系に対する前進時間差分＋中心空間差分は、フォン・ノイマン安定性解析において増幅係数 $|G(k)|^2 = 1 + \left(c \frac{\Delta t}{\Delta x} \sin(k\Delta x)\right)^2 > 1$ となり、CFL条件に関わらず高周波成分が指数関数的に増大しクランプ限界（$\pm 10\text{ m}$）に張り付いて矩形波発振を起こしていた。
+   双曲型浅水波系に対する前進時間差分＋中心空間差分は、フォン・ノイマン安定性解析において増幅係数 $|G(k)|^{2} = 1 + \left(c \frac{\Delta t}{\Delta x} \sin(k\Delta x)\right)^{2} > 1$ となり、CFL条件に関わらず高周波成分が指数関数的に増大しクランプ限界（$\pm 10\ \mathrm{m}$）に張り付いて矩形波発振を起こしていた。
 2. **コロケート格子（Arakawa A-grid）の奇偶デカップリング（市松模様ノイズ）**:
    水位 $\eta$ と流速 $(u, w)$ を同一格子点に定義し中心差分をとるため、波長 $2\Delta x$ の交互ノイズ（$+1, -1, +1, -1$）に対する勾配が $0$ となり減衰しなかった。
 3. **非線形移流項 $(\mathbf{u}\cdot\nabla)\mathbf{u}$ の風上化なし中心差分**:
    急勾配部で非線形エイリアシングにより最小格子スケールへエネルギーが集中。
 4. **造波帯の強制 Dirichlet 上書き（`state.r = wave`）による段差ショック**:
    浅瀬から戻ってきた反射波が造波ラインで剛体壁のように再反射し、不連続段差から高周波ノイズが連続発生。
-5. **深水部での Helmholtz 分散項 $\beta = \frac{\alpha h^2}{6\Delta x^2}$ の過大化**:
-   Jacobi 反復では深水部（$h=15\text{ m}$）の残差収束と初期値位相が重要となる。
+5. **深水部での Helmholtz 分散項 $\beta = \frac{\alpha h^{2}}{6\Delta x^{2}}$ の過大化**:
+   Jacobi 反復では深水部（$h = 15\ \mathrm{m}$）の残差収束と初期値位相が重要となる。
 
 #### 方針比較と実装内容（Turn 4, 15）
 MacCormack法（方針A）、RK2＋4階超粘性（方針B）、スタガードC-grid化（方針C）を比較し、既存の ping-pong 構造を活かしつつ2階精度と適度な高周波減衰を両立する **方針A（対称 MacCormack 予測子・修正子法）** を採用・実装：
 - [`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute):
   - **`CSPredict`＋`CSCorrect`（サブステップ偶奇で前進/後退を交互反転する対称 MacCormack 法）**: 前進・後退差分の誤差相殺により $|G| \le 1$ となり、$2\Delta x$ の市松模様ノイズが自然消滅し方向バイアスも完全にゼロ化。
-  - **進行波内部ソース造波**: リーマン不変量に基づき質量ソース $S_\eta$ と前進運動量ソース $S_w = \sqrt{g/h}S_\eta$ をガウシアン帯に同時加算し、反射波を透過させつつ $+z$ 方向へクリーンな進行波を生成。
+  - **進行波内部ソース造波**: リーマン不変量に基づき質量ソース $S_{\eta}$ と前進運動量ソース $S_{w} = \sqrt{g/h}S_{\eta}$ をガウシアン帯に同時加算し、反射波を透過させつつ $+z$ 方向へクリーンな進行波を生成。
   - **`fp32` (`ARGBFloat` / `RGFloat`) バッファ化と6反復 Jacobi 分散ソルバ**: 微小 $\Delta t$ での `fp16` 量子化誤差を排除し、現サブステップの $\bar{\mathbf{f}}$ を初期値とした6反復 Jacobi 法により位相遅れのない高精度な分散波列を実現。
 - [`BoussinesqSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs): 予測ステップ用の中間テクスチャ `predTex` を分離し GPU スレッド間の競合（Race Condition）を排除。
 
@@ -241,7 +245,7 @@ MacCormack法（方針A）、RK2＋4階超粘性（方針B）、スタガードC
 
 - **周期的パルス波源（Turn 10 / コミット `45f486d`）**:
   - **課題**: `ContinuousOscillator` が正弦波 $\sin(2\pi f t)$ で常時励起していたため、周波数を下げると1回あたりの隆起時間（半周期 $1/(2f)$）まで間延びし、波長 $\lambda = c/f$ が巨大化して波面全体が鈍い山のように上下し、スリット干渉縞がぼやけていた。
-  - **解決**: 1回あたりの波紋の太さは `sourceRadius` で決まるシャープなガウスインパルス（`TriggerImpulseOnTarget`）に固定し、発生間隔のみを `PulseInterval`（$0.2\text{ s} \sim 3.0\text{ s}$）で制御する水滴モデルに変更。
+  - **解決**: 1回あたりの波紋の太さは `sourceRadius` で決まるシャープなガウスインパルス（`TriggerImpulseOnTarget`）に固定し、発生間隔のみを `PulseInterval`（$0.2\ \mathrm{s} \sim 3.0\ \mathrm{s}$）で制御する水滴モデルに変更。
 
 ![01_WaveEquation_PeriodicPulses](../Captures/01_WaveEquation_PeriodicPulses.png)
 
@@ -256,16 +260,16 @@ MacCormack法（方針A）、RK2＋4階超粘性（方針B）、スタガードC
 ### 3.7 `02_Boussinesq` の海底地形可視化・ソリトン励起モード実装（Turn 14 / コミット `acbff9c`）
 
 #### 1. 海底地形（Bathymetry）の2方式同時可視化
-- **`Realistic` モードでの浅瀬エメラルド透過色＋海底等深線**: [`WaterSurfaceCommon.shader`](../Packages/com.nobnak.water-simulation/Runtime/Shaders/WaterSurfaceCommon.shader) に `_BathymetryTex` と `_HasBathymetry` を接続し、水深 $h$ に応じた透過減衰 $f_{\text{shoal}} = \mathrm{saturate}(\exp(-0.26(h - 1.2)))$ と 2m 等深線により、水面のリアルな質感のまま浅瀬や岬の地形が透けて見える表現を実装。
-- **`Bathymetry` 専用可視化モード (`_VisualMode == 4`)**: 水深 $h \in [1\text{ m}, 15\text{ m}]$ のヒートマップ＋1m 等深線＋波峰ハイライトを重畳表示する専用モードを追加。
+- **`Realistic` モードでの浅瀬エメラルド透過色＋海底等深線**: [`WaterSurfaceCommon.shader`](../Packages/com.nobnak.water-simulation/Runtime/Shaders/WaterSurfaceCommon.shader) に `_BathymetryTex` と `_HasBathymetry` を接続し、水深 $h$ に応じた透過減衰 $f_{\mathrm{shoal}} = \mathrm{saturate}(\exp(-0.26(h - 1.2)))$ と 2m 等深線により、水面のリアルな質感のまま浅瀬や岬の地形が透けて見える表現を実装。
+- **`Bathymetry` 専用可視化モード (`_VisualMode == 4`)**: 水深 $h \in [1\ \mathrm{m}, 15\ \mathrm{m}]$ のヒートマップ＋1m 等深線＋波峰ハイライトを重畳表示する専用モードを追加。
 
 #### 2. GPU非破壊加算カーネル (`CSAddImpulse`) と波源バリエーション
 [`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) に GPU 加算カーネル `CSAddImpulse` を実装し、以下の励起モード・波形を実現：
 
 | バリエーション | 数理モデル・励起方法 | 観察できる Boussinesq 特有の現象 |
 | :--- | :--- | :--- |
-| **1. 1次元平面孤立波**<br>(Planar Solitary Wave) | $\eta(y) = A\,\mathrm{sech}^2\!\left(\frac{y - y_0}{0.6 R}\right),\ w(y) = c\frac{\eta}{h + \eta}$ | 平坦底では波形を保って直進し、斜め浅瀬や岬で波面がハの字に屈折・波高集中（Shoaling）する過程を1波単独で鮮明に観察。 |
-| **2. 円形ガウスパルス**<br>(Circular Pulse) | $\eta(r) = A \exp(-3(r/R)^2)$ | 深水部と浅水部の伝播速度差により、円形だった波面が浅瀬側で扁平・楕円状に歪みながら屈折する過程を観察。 |
+| **1. 1次元平面孤立波**<br>(Planar Solitary Wave) | $\eta(y) = A\,{\mathrm{sech}}^{2}\!\left(\frac{y - y_{0}}{0.6 R}\right),\ w(y) = c\frac{\eta}{h + \eta}$ | 平坦底では波形を保って直進し、斜め浅瀬や岬で波面がハの字に屈折・波高集中（Shoaling）する過程を1波単独で鮮明に観察。 |
+| **2. 円形ガウスパルス**<br>(Circular Pulse) | $\eta(r) = A \exp(-3(r/R)^{2})$ | 深水部と浅水部の伝播速度差により、円形だった波面が浅瀬側で扁平・楕円状に歪みながら屈折する過程を観察。 |
 | **3. 周期パルス列 / 移動波源 / マウス注入** | `PeriodicPulses`, `MovingSource`, `InteractiveMouse` | 一定間隔での連続孤立波射出、移動船舶風の航跡波、および浅瀬・岬の任意位置へのマウスクリック/ドラッグ波源注入。 |
 
 ---
@@ -286,7 +290,7 @@ MacCormack法（方針A）、RK2＋4階超粘性（方針B）、スタガードC
 | :--- | :---: | :---: | :--- |
 | **2D波動方程式** | **完全対応** | ◎ 完全反射・回折・干渉 | 既存の `_ObstacleTex` に任意の湖畔マスクテクスチャをバインドするだけで、任意の岸壁形状での反射・回折がそのまま動作。 |
 | **Boussinesq系** | **完全対応** | ◎ 浅水変形・屈折・回り込み | `CustomBathymetryTexture` に湖畔の水深マップを与えることで、岸に向かって波が減速し汀線と平行に波面が揃う物理的屈折が自然に発生。 |
-| **FFT海面** | **視覚的対応** | × 壁面反射は不可（周期境界のため） | 沖合の波を FFT で解き、岸からの距離 $d_{\text{shore}}$ に応じて頂点変位を減衰させる **Shoreline Damping**（$\mathrm{Disp} = \mathrm{Disp}_{\text{FFT}} \times \mathrm{saturate}(d_{\text{shore}} / d_{\text{fade}})$）＋陸地領域のシェーダークリッピング＋汀線フォーム強調で自然な湖畔を表現。 |
+| **FFT海面** | **視覚的対応** | × 壁面反射は不可（周期境界のため） | 沖合の波を FFT で解き、岸からの距離 $d_{\mathrm{shore}}$ に応じて頂点変位を減衰させる **Shoreline Damping**（$\mathrm{Disp} = \mathrm{Disp_{FFT}} \times \mathrm{saturate}(d_{\mathrm{shore}} / d_{\mathrm{fade}})$）＋陸地領域のシェーダークリッピング＋汀線フォーム強調で自然な湖畔を表現。 |
 
 ---
 
@@ -299,7 +303,7 @@ MacCormack法（方針A）、RK2＋4階超粘性（方針B）、スタガードC
 | **カメラ投影** | **正射影 (Orthographic)** 前提 | **透視投影 (Perspective)**（斜め見下ろし〜水平線視点） | **不適合**: 遠近法による手前・奥のピクセル密度差に対応できない |
 | **LOD 分割基準** | **曲率 (Curvature / Laplacian)** 駆動 | **カメラ距離 (Screen-Space Error)** 駆動 | **特性の相違**: 水面は平坦な領域でも手前なら高密度メッシュが必要 |
 | **配置・座標系** | ローカル XY 平面（高さは $-Z$ 方向） | 水平 XZ 平面（高さは $+Y$ 方向） | Transform とシェーダー座標変換のすり合わせが必要 |
-| **変位次元** | **1次元スカラー高さ $h$** (`RFloat`) | **3次元変位 $(D_x, \eta, D_z)$ + Foam** (`RGBAHalf`) | **変位欠落**: FFT 海面の水平 Choppy 変位（尖った波頭）が扱えない |
+| **変位次元** | **1次元スカラー高さ $h$** (`RFloat`) | **3次元変位 $(D_{x}, \eta, D_{z})$ + Foam** (`RGBAHalf`) | **変位欠落**: FFT 海面の水平 Choppy 変位（尖った波頭）が扱えない |
 | **パッケージ依存** | OpenUPM Scoped Registry の追加が必要 | 単体で完結し即座にインポート・実行可能 | 外部レジストリ依存を増やさない方が配布品質が高い |
 
 > [!TIP]

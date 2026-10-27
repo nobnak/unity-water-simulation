@@ -14,7 +14,7 @@ This reference document systematically consolidates the Git commit history, code
 | :--- | :--- | :---: | :---: | :--- |
 | `a86b2a57-1d29-4f49-85f0-ba4e54baacd7` | 2026-10-26 14:27 – 10-27 17:56 | 1,669 | 12 | Initial UPM package implementation, New Input System support, Boussinesq numerical stabilization, shader visualization mode fix, interactive HUD controls, pulse wave source refactor, dead-code cleanup, and architectural design for future extensions (LOD, arbitrary shorelines, Scene 02 enhancements) |
 | `c95e553c-8ef9-4ea9-bd31-e34bfc91280f` | 2026-10-27 20:25 – 10-27 20:27 | 44 | 1 | Audit of commit history and per-module implementation completeness |
-| `71f435e1-4ae7-47d9-8753-a7b8ea532229` | 2026-10-27 20:30 – 10-28 00:15 | 410+ | 10 | Technical archive compilation, `02_Boussinesq` excitation modes & dual bathymetry visualization, `fp32` Symmetric MacCormack & FFT choppiness enhancements, full UI audit & control wiring, and bilingual Algorithm & Performance Specification |
+| `71f435e1-4ae7-47d9-8753-a7b8ea532229` | 2026-10-27 20:30 – 10-28 00:50 | 410+ | 10 | Technical archive compilation, `02_Boussinesq` excitation modes & dual bathymetry visualization, `fp32` Symmetric MacCormack & FFT choppiness enhancements, full UI audit & control wiring, and bilingual Algorithm & Performance Specification |
 
 ### 1.2 Git Commit History
 
@@ -117,9 +117,9 @@ classDiagram
 
 | Texture Name | Format | R Channel | G Channel | B Channel | A Channel |
 | :--- | :---: | :--- | :--- | :--- | :--- |
-| **`WaterDataTexture`** (`_WaterDataTex`) | `ARGBHalf` | Horizontal X displacement $D_x$ [m] | Vertical elevation $\eta$ [m] | Horizontal Z displacement $D_z$ [m] | Whitecap foam $\mathrm{Foam} \in [0, 1]$ |
-| **`NormalTexture`** (`_NormalTex`) | `ARGBHalf` | Normal $N_x$ | Normal $N_y$ | Normal $N_z$ | Crest pinch / foam $\in [0, 1]$ |
-| **`BathymetryTexture`** (`_BathymetryTex`) | `ARGBHalf` | Still water depth $h(\mathbf{x})$ [m] | Seabed elevation $z_b = -h(\mathbf{x})$ [m] | $0$ | $1$ |
+| **`WaterDataTexture`** (`_WaterDataTex`) | `ARGBHalf` | Horizontal X displacement $D_{x}$ [m] | Vertical elevation $\eta$ [m] | Horizontal Z displacement $D_{z}$ [m] | Whitecap foam $\mathrm{Foam} \in [0, 1]$ |
+| **`NormalTexture`** (`_NormalTex`) | `ARGBHalf` | Normal $N_{x}$ | Normal $N_{y}$ | Normal $N_{z}$ | Crest pinch / foam $\in [0, 1]$ |
+| **`BathymetryTexture`** (`_BathymetryTex`) | `ARGBHalf` | Still water depth $h(\mathbf{x})$ [m] | Seabed elevation $z_{b} = -h(\mathbf{x})$ [m] | $0$ | $1$ |
 
 ---
 
@@ -133,28 +133,32 @@ classDiagram
 
 | Method & Sample Scene | Classes / Shaders | Physical & Numerical Model | Grid / Internal $dt$ | GPU Time / FPS |
 | :--- | :--- | :--- | :---: | :---: |
-| **01_WaveEquation**<br>"Ripples and Obstacles" | [`WaveEquationSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquationSimulation.cs)<br>[`WaveEquation.compute`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute) | 9-point isotropic Laplacian FDM + semi-implicit damped Leapfrog integration, CFL auto-substepping, sponge absorbing perimeter, slit obstacle masks | $256^2$ / $0.003\text{ s}$<br>$512^2$ / $0.0015\text{ s}$ | $0.15\text{ ms}$ / $140+$<br>$0.38\text{ ms}$ / $120+$ |
-| **02_Boussinesq**<br>"Shoal and Cape" | [`BoussinesqSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs)<br>[`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | Peregrine (1967) weakly nonlinear dispersive shallow-water equations, `fp32` Symmetric MacCormack Predictor-Corrector, 6-pass Jacobi Helmholtz dispersion inverter $(I - \beta\nabla^2)\mathbf{a} = \mathbf{f}$ | $256^2$ / $0.016\text{ s}$<br>$512^2$ / $0.008\text{ s}$ | $0.48\text{ ms}$ / $120+$<br>$1.35\text{ ms}$ / $95+$ |
-| **03_FFTWater**<br>"Horizon Ocean" | [`FFTOceanSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOceanSimulation.cs)<br>[`FFTOcean.compute`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute) | Tessendorf (2001) Phillips spectrum + directional swell, Radix-2 Stockham 2D IFFT (2 transforms: height $D_y$ and choppy $(D_x,D_z)$), exact Lagrangian normals + Jacobian foam | $256^2$ / $0.033\text{ s}$<br>$512^2$ / $0.033\text{ s}$ | $0.35\text{ ms}$ / $130+$<br>$0.95\text{ ms}$ / $105+$ |
-| **04_Comparison_Dispersion** | [`WaterComparisonController.cs`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterComparisonController.cs)<br>[`WaterProfileViewer.cs`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterProfileViewer.cs) | Side-by-side propagation from identical Gaussian pulses over constant 5m depth (non-dispersive single ring vs. Boussinesq dispersive trailing wave train) | $256^2 \times 2$ | $115+\text{ FPS}$ |
-| **05_Comparison_Overview** | Same as above | Side-by-side synchronous execution and comparison stage of all 3 simulation methods | $256^2 \times 3$ | $0.92\text{ ms}$ / $110+$ |
+| **01_WaveEquation**<br>"Ripples and Obstacles" | [`WaveEquationSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquationSimulation.cs)<br>[`WaveEquation.compute`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute) | 9-point isotropic Laplacian FDM + semi-implicit damped Leapfrog integration, CFL auto-substepping, sponge absorbing perimeter, slit obstacle masks | $256^{2}$ / $0.003\ \mathrm{s}$<br>$512^{2}$ / $0.0015\ \mathrm{s}$ | $0.15\ \mathrm{ms}$ / $140+$<br>$0.38\ \mathrm{ms}$ / $120+$ |
+| **02_Boussinesq**<br>"Shoal and Cape" | [`BoussinesqSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs)<br>[`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | Peregrine (1967) weakly nonlinear dispersive shallow-water equations, `fp32` Symmetric MacCormack Predictor-Corrector, 6-pass Jacobi Helmholtz dispersion inverter $(I - \beta\nabla^{2})\mathbf{a} = \mathbf{f}$ | $256^{2}$ / $0.016\ \mathrm{s}$<br>$512^{2}$ / $0.008\ \mathrm{s}$ | $0.48\ \mathrm{ms}$ / $120+$<br>$1.35\ \mathrm{ms}$ / $95+$ |
+| **03_FFTWater**<br>"Horizon Ocean" | [`FFTOceanSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOceanSimulation.cs)<br>[`FFTOcean.compute`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute) | Tessendorf (2001) Phillips spectrum + directional swell, Radix-2 Stockham 2D IFFT (2 transforms: height $D_{y}$ and choppy $(D_{x},D_{z})$), exact Lagrangian normals + Jacobian foam | $256^{2}$ / $0.033\ \mathrm{s}$<br>$512^{2}$ / $0.033\ \mathrm{s}$ | $0.35\ \mathrm{ms}$ / $130+$<br>$0.95\ \mathrm{ms}$ / $105+$ |
+| **04_Comparison_Dispersion** | [`WaterComparisonController.cs`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterComparisonController.cs)<br>[`WaterProfileViewer.cs`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterProfileViewer.cs) | Side-by-side propagation from identical Gaussian pulses over constant 5m depth (non-dispersive single ring vs. Boussinesq dispersive trailing wave train) | $256^{2} \times 2$ | $115+\ \mathrm{FPS}$ |
+| **05_Comparison_Overview** | Same as above | Side-by-side synchronous execution and comparison stage of all 3 simulation methods | $256^{2} \times 3$ | $0.92\ \mathrm{ms}$ / $110+$ |
 
 #### Compute Shader Kernel Pipelines and Core Discretizations
 - **2D Wave Equation ([`WaveEquation.compute`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute))**:
   - **9-Point Isotropic Laplacian**:
 
-$$\nabla^2 \eta \approx \frac{4(\eta_L + \eta_R + \eta_D + \eta_U) + (\eta_{LD} + \eta_{RD} + \eta_{LU} + \eta_{RU}) - 20\eta_C}{6\Delta x^2}$$
+$$
+\nabla^{2} \eta \approx \frac{4(\eta_{L} + \eta_{R} + \eta_{D} + \eta_{U}) + (\eta_{LD} + \eta_{RD} + \eta_{LU} + \eta_{RU}) - 20\eta_{C}}{6\Delta x^{2}}
+$$
 
   - **Semi-Implicit Damped Leapfrog Scheme**:
 
-$$\eta^{n+1} = \frac{2\eta^n - \eta^{n-1}(1 - \frac{1}{2}\gamma\Delta t) + c^2\Delta t^2 \nabla^2\eta^n}{1 + \frac{1}{2}\gamma\Delta t}$$
+$$
+\eta^{n+1} = \frac{2\eta^{n} - \eta^{n-1}(1 - \frac{1}{2}\gamma\Delta t) + c^{2}\Delta t^{2} \nabla^{2}\eta^{n}}{1 + \frac{1}{2}\gamma\Delta t}
+$$
 
-  - **Impulse Injection (`CSAddImpulse`)**: Adds the Gaussian profile $A\exp(-3(r/R)^2)$ equally to both current elevation `state.r` and previous elevation `state.g` to excite a pure zero-initial-velocity displacement.
+  - **Impulse Injection (`CSAddImpulse`)**: Adds the Gaussian profile $A\exp(-3(r/R)^{2})$ equally to both current elevation `state.r` and previous elevation `state.g` to excite a pure zero-initial-velocity displacement.
 - **Boussinesq System ([`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute))**:
-  - **7-Kernel Pipeline**: `CSInit` → `CSPredict` (alternating forward/backward parity) → `CSCorrect` (opposite difference + average) → `CSJacobiStep` (6 iterations, $\beta = \mathrm{clamp}(\alpha h^2 / (6\Delta x^2), 0, 6)$) → `CSApplyDispersion` → `CSAddImpulse` → `CSComputeNormal`.
-  - **Progressive Internal Wavemaker (`GetWavemakerSources`)**: Simultaneously injects mass source $S_\eta = c W$ and momentum source $S_w = g W$ ($c = \sqrt{gh}$) over a Gaussian band ($\sigma = 2.5\Delta x$) with lateral taper `smoothstep(0, _SpongeWidth * 1.5, lateralDist)` to avoid exciting the side sponge layers.
+  - **7-Kernel Pipeline**: `CSInit` → `CSPredict` (alternating forward/backward parity) → `CSCorrect` (opposite difference + average) → `CSJacobiStep` (6 iterations, $\beta = \mathrm{clamp}(\alpha h^{2} / (6\Delta x^{2}), 0, 6)$) → `CSApplyDispersion` → `CSAddImpulse` → `CSComputeNormal`.
+  - **Progressive Internal Wavemaker (`GetWavemakerSources`)**: Simultaneously injects mass source $S_{\eta} = c W$ and momentum source $S_{w} = g W$ ($c = \sqrt{gh}$) over a Gaussian band ($\sigma = 2.5\Delta x$) with lateral taper `smoothstep(0, _SpongeWidth * 1.5, lateralDist)` to avoid exciting the side sponge layers.
 - **FFT Ocean ([`FFTOcean.compute`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute))**:
-  - **5-Kernel Pipeline**: `CSGenerateSpectrum` → `CSTimeEvolution` → `CSFFTHorizontal` ($\log_2 N$ stages) → `CSFFTVertical` ($\log_2 N$ stages) → `CSPackOceanData`.
+  - **5-Kernel Pipeline**: `CSGenerateSpectrum` → `CSTimeEvolution` → `CSFFTHorizontal` ($\log_{2} N$ stages) → `CSFFTVertical` ($\log_{2} N$ stages) → `CSPackOceanData`.
 
 #### Representative Scene Captures
 
@@ -183,21 +187,21 @@ $$\eta^{n+1} = \frac{2\eta^n - \eta^{n-1}(1 - \frac{1}{2}\gamma\Delta t) + c^2\D
 
 #### Five Root Causes of Initial Numerical Instability (Turn 3)
 1. **Unconditional Instability of Forward-Time Central-Space (FTCS) [Primary Cause]**:
-   Applying explicit forward Euler in time with central differences in space to the hyperbolic shallow-water system yields a von Neumann amplification factor $|G(k)|^2 = 1 + \left(c \frac{\Delta t}{\Delta x} \sin(k\Delta x)\right)^2 > 1$, causing high-frequency modes to grow exponentially regardless of CFL step size.
+   Applying explicit forward Euler in time with central differences in space to the hyperbolic shallow-water system yields a von Neumann amplification factor $|G(k)|^{2} = 1 + \left(c \frac{\Delta t}{\Delta x} \sin(k\Delta x)\right)^{2} > 1$, causing high-frequency modes to grow exponentially regardless of CFL step size.
 2. **Odd-Even Grid Decoupling on Collocated Arakawa A-Grid**:
    Collocating $\eta$ and $(u, w)$ with central differences produces zero restoring gradient on alternating $2\Delta x$ checkerboard modes ($+1, -1, +1, -1$).
 3. **Un-upwinded Nonlinear Advection $(\mathbf{u}\cdot\nabla)\mathbf{u}$**:
    Focused energy into grid-scale aliasing near steep shoaling fronts.
 4. **Hard Dirichlet Wavemaker Overwrite (`state.r = wave`)**:
    Reflected waves returning from the shoal reflected off the hardcoded wavemaker line as if hitting a rigid wall, generating step shocks.
-5. **Deep-Water Helmholtz Dispersion Stiffness $\beta = \frac{\alpha h^2}{6\Delta x^2}$**:
-   Required proper safety clamping and phase-aligned initial guesses during Jacobi relaxation in deep water ($h = 15\text{ m}$).
+5. **Deep-Water Helmholtz Dispersion Stiffness $\beta = \frac{\alpha h^{2}}{6\Delta x^{2}}$**:
+   Required proper safety clamping and phase-aligned initial guesses during Jacobi relaxation in deep water ($h = 15\ \mathrm{m}$).
 
 #### Solution Comparison and Implementation (Turns 4, 15)
 After comparing MacCormack Predictor-Corrector (Option A), RK2 + 4th-order hyperviscosity (Option B), and staggered Arakawa C-grid (Option C), **Option A (Symmetric MacCormack Predictor-Corrector)** was implemented:
 - [`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute):
   - **`CSPredict` + `CSCorrect` with Alternating Substep Parity**: Cancels truncation error to achieve $|G| \le 1$, naturally damping $2\Delta x$ checkerboard modes while eliminating directional asymmetry.
-  - **Progressive Internal Wavemaker**: Simultaneously injects Riemann-invariant mass source $S_\eta$ and forward momentum source $S_w = \sqrt{g/h}S_\eta$ across a Gaussian band, allowing reflected waves to pass through transparently.
+  - **Progressive Internal Wavemaker**: Simultaneously injects Riemann-invariant mass source $S_{\eta}$ and forward momentum source $S_{w} = \sqrt{g/h}S_{\eta}$ across a Gaussian band, allowing reflected waves to pass through transparently.
   - **`fp32` (`ARGBFloat` / `RGFloat`) Buffers & 6-Step Jacobi Solver**: Eliminates `fp16` quantization under small $\Delta t$ and initializes `_AccelPing` from the current substep's MacCormack-averaged force $\bar{\mathbf{f}}$ to prevent temporal phase lag.
 - [`BoussinesqSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs): Separated intermediate predictor buffer `predTex` to eliminate GPU read/write race conditions.
 
@@ -241,7 +245,7 @@ In [`WaterSurfaceCommon.shader`](../Packages/com.nobnak.water-simulation/Runtime
 
 - **Periodic Pulse Source Refactor (Turn 10 / Commit `45f486d`)**:
   - **Issue**: Continuous sinusoidal excitation $\sin(2\pi f t)$ stretched the wave duration $1/(2f)$ and wavelength $\lambda = c/f$ whenever frequency was lowered, blurring double-slit interference fringes.
-  - **Solution**: Replaced continuous oscillation with discrete, sharp Gaussian droplet impulses (`TriggerImpulseOnTarget` of fixed width `sourceRadius`) fired at configurable intervals `PulseInterval` ($0.2\text{ s} \sim 3.0\text{ s}$).
+  - **Solution**: Replaced continuous oscillation with discrete, sharp Gaussian droplet impulses (`TriggerImpulseOnTarget` of fixed width `sourceRadius`) fired at configurable intervals `PulseInterval` ($0.2\ \mathrm{s} \sim 3.0\ \mathrm{s}$).
 
 ![01_WaveEquation_PeriodicPulses](../Captures/01_WaveEquation_PeriodicPulses.png)
 
@@ -255,16 +259,16 @@ In [`WaterSurfaceCommon.shader`](../Packages/com.nobnak.water-simulation/Runtime
 ### 3.7 `02_Boussinesq` Bathymetry Visualization and Soliton Excitation Modes (Turn 14 / Commit `acbff9c`)
 
 #### 1. Dual Bathymetry Visualization
-- **Shallow-Water Emerald Transmittance + Depth Contours in `Realistic` Mode**: Connected `_BathymetryTex` and `_HasBathymetry` to [`WaterSurfaceCommon.shader`](../Packages/com.nobnak.water-simulation/Runtime/Shaders/WaterSurfaceCommon.shader), blending exponential depth transmittance $f_{\text{shoal}} = \mathrm{saturate}(\exp(-0.26(h - 1.2)))$ and 2m depth contours so submerged shoals and headlands are visibly discernible through the realistic water surface.
-- **Dedicated `Bathymetry` Visualization Mode (`_VisualMode == 4`)**: Displays a warm-to-cool depth heatmap ($h \in [1\text{ m}, 15\text{ m}]$) with 1m isobath contours and $+0.12\eta$ wave crest highlights.
+- **Shallow-Water Emerald Transmittance + Depth Contours in `Realistic` Mode**: Connected `_BathymetryTex` and `_HasBathymetry` to [`WaterSurfaceCommon.shader`](../Packages/com.nobnak.water-simulation/Runtime/Shaders/WaterSurfaceCommon.shader), blending exponential depth transmittance $f_{\mathrm{shoal}} = \mathrm{saturate}(\exp(-0.26(h - 1.2)))$ and 2m depth contours so submerged shoals and headlands are visibly discernible through the realistic water surface.
+- **Dedicated `Bathymetry` Visualization Mode (`_VisualMode == 4`)**: Displays a warm-to-cool depth heatmap ($h \in [1\ \mathrm{m}, 15\ \mathrm{m}]$) with 1m isobath contours and $+0.12\eta$ wave crest highlights.
 
 #### 2. Non-Destructive GPU Impulse Kernel (`CSAddImpulse`) and Excitation Modes
 Added `CSAddImpulse` to [`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute), enabling:
 
 | Excitation Variant | Mathematical Model | Observable Boussinesq Phenomena |
 | :--- | :--- | :--- |
-| **1. Planar Solitary Wave**<br>(Planar Soliton) | $\eta(y) = A\,\mathrm{sech}^2\!\left(\frac{y - y_0}{0.6 R}\right),\ w(y) = c\frac{\eta}{h + \eta}$ | Propagates without changing shape over a flat bed, and cleanly demonstrates wavefront bending (refraction) and amplitude focusing (shoaling) over a diagonal shoal or headland. |
-| **2. Circular Gaussian Pulse**<br>(Circular Pulse) | $\eta(r) = A \exp(-3(r/R)^2)$ | Demonstrates asymmetric ring distortion as the wave slows down over shallow regions while advancing faster in deep water. |
+| **1. Planar Solitary Wave**<br>(Planar Soliton) | $\eta(y) = A\,{\mathrm{sech}}^{2}\!\left(\frac{y - y_{0}}{0.6 R}\right),\ w(y) = c\frac{\eta}{h + \eta}$ | Propagates without changing shape over a flat bed, and cleanly demonstrates wavefront bending (refraction) and amplitude focusing (shoaling) over a diagonal shoal or headland. |
+| **2. Circular Gaussian Pulse**<br>(Circular Pulse) | $\eta(r) = A \exp(-3(r/R)^{2})$ | Demonstrates asymmetric ring distortion as the wave slows down over shallow regions while advancing faster in deep water. |
 | **3. Periodic / Moving / Mouse Injection** | `PeriodicPulses`, `MovingSource`, `InteractiveMouse` | Fires periodic solitary wave trains, moving wake disturbances, or interactive mouse-click/drag pulses anywhere over the shoal or cape. |
 
 ---
@@ -277,7 +281,7 @@ Architectural designs evaluated and ready for future expansion phases:
 
 #### Proposed Input Interfaces
 1. **Boundary Mask / Signed Distance Field Texture (`Texture2D`)**: `0` for open water, `1` for land (or signed distance from the shoreline).
-2. **Terrain Heightmap Intersection (Water Level Clipping)**: Computes local depth $h(x, z) = Y_{\text{water}} - H_{\text{terrain}}(x, z)$ and treats $h \le 0$ as land.
+2. **Terrain Heightmap Intersection (Water Level Clipping)**: Computes local depth $h(x, z) = Y_{\mathrm{water}} - H_{\mathrm{terrain}}(x, z)$ and treats $h \le 0$ as land.
 
 #### Per-Method Boundary Handling Strategy
 
@@ -285,7 +289,7 @@ Architectural designs evaluated and ready for future expansion phases:
 | :--- | :---: | :---: | :--- |
 | **2D Wave Equation** | **Full Support** | ◎ Exact reflection, diffraction & interference | Bind any shoreline mask texture to `_ObstacleTex` to get immediate reflection and diffraction around arbitrary coastlines and islands. |
 | **Boussinesq System** | **Full Support** | ◎ Shoaling, refraction & headland wrapping | Supply a coastal depth map to `CustomBathymetryTexture`; waves naturally decelerate toward the shore and refract parallel to the coastline. |
-| **FFT Ocean** | **Visual Support** | × No wall reflection (periodic domain) | Attenuate FFT vertex displacement near shore via **Shoreline Damping** ($\mathrm{Disp} = \mathrm{Disp}_{\text{FFT}} \times \mathrm{saturate}(d_{\text{shore}} / d_{\text{fade}})$) combined with land clipping and shoreline foam. |
+| **FFT Ocean** | **Visual Support** | × No wall reflection (periodic domain) | Attenuate FFT vertex displacement near shore via **Shoreline Damping** ($\mathrm{Disp} = \mathrm{Disp_{FFT}} \times \mathrm{saturate}(d_{\mathrm{shore}} / d_{\mathrm{fade}})$) combined with land clipping and shoreline foam. |
 
 ---
 
@@ -298,7 +302,7 @@ Comparing the external package `jp.nobnak.heightfield-lod` against a custom wate
 | **Camera Projection** | **Orthographic** assumption | **Perspective** (grazing to horizon views) | **Incompatible**: Cannot adapt mesh density to perspective foreshortening |
 | **Subdivision Criterion** | **Curvature / Laplacian** driven | **Camera Distance (Screen-Space Error)** driven | **Mismatched**: Near-camera water requires high vertex density even when momentarily flat |
 | **Coordinate System** | Local XY plane (height along $-Z$) | Horizontal XZ plane (height along $+Y$) | Requires coordinate and shader transform adaptation |
-| **Displacement Dimension** | **1D scalar height $h$** (`RFloat`) | **3D vector $(D_x, \eta, D_z)$ + Foam** (`RGBAHalf`) | **Missing horizontal displacement**: Cannot represent 3D choppy trochoidal wave crests |
+| **Displacement Dimension** | **1D scalar height $h$** (`RFloat`) | **3D vector $(D_{x}, \eta, D_{z})$ + Foam** (`RGBAHalf`) | **Missing horizontal displacement**: Cannot represent 3D choppy trochoidal wave crests |
 | **Package Dependencies** | Requires OpenUPM scoped registry | Self-contained zero-external-registry UPM package | Keeping the package self-contained improves portability |
 
 > [!TIP]

@@ -31,13 +31,13 @@
 ### 2.1 座標系・単位系・基準水位
 - **座標系**: Unityワールド座標系（X: 東/右, Y: 鉛直上向き, Z: 北/前）
 - **単位系**: SI単位系（長さ・水深・振幅: メートル [m], 時間: 秒 [s], 波速・風速: [m/s]）
-- **基準水位**: 静水面 $\eta = 0$ を GameObject の原点 $Y = 0$ と一致させます。水底は水深 $h(\mathbf{x}) > 0$ に対して標高 $z_b = -h(\mathbf{x}) \le 0$ として定義されます。
+- **基準水位**: 静水面 $\eta = 0$ を GameObject の原点 $Y = 0$ と一致させます。水底は水深 $h(\mathbf{x}) > 0$ に対して標高 $z_{b} = -h(\mathbf{x}) \le 0$ として定義されます。
 
 ### 2.2 出力テクスチャ規格 (`IWaterSimulation`)
 - **WaterDataTexture (`_WaterDataTex`)** (`ARGBHalf`):
-  - **R**: 水平X変位 $D_x$ [m] （FFTチョッピー波）
+  - **R**: 水平X変位 $D_{x}$ [m] （FFTチョッピー波）
   - **G**: 鉛直水位変位 $\eta$ [m] （表面変位）
-  - **B**: 水平Z変位 $D_z$ [m] （FFTチョッピー波）
+  - **B**: 水平Z変位 $D_{z}$ [m] （FFTチョッピー波）
   - **A**: 白波・泡強度 $[0, 1]$ （ヤコビアン圧縮または急勾配散逸）
 - **NormalTexture (`_NormalTex`)** (`ARGBHalf`): ワールド空間法線ベクトル（RGB）＋波峰圧縮度 / 泡強度（A）
 - **BathymetryTexture (`_BathymetryTex`)** (`ARGBHalf`): 水深 $h$ [m]（R）＋水底標高 $-h$ [m]（G）
@@ -53,7 +53,7 @@
   - `3`: Wireframe（格子変形ワイヤフレーム）
   - `4`: Bathymetry（水深ヒートマップ＋1m等深線＋波峰重畳）
 - **断面プロファイル表示 (`WaterProfileViewer.cs`)**:
-  - X軸またはZ軸に沿って水面変位 $\eta$ と海底 $z_b$ を1Dサンプリングし、分散性や波高減衰を直接数値視認。
+  - X軸またはZ軸に沿って水面変位 $\eta$ と海底 $z_{b}$ を1Dサンプリングし、分散性や波高減衰を直接数値視認。
 
 ---
 
@@ -64,7 +64,9 @@
 
 - **支配方程式**:
 
-$$\frac{\partial^2 \eta}{\partial t^2} = c^2 \nabla^2 \eta - \gamma \frac{\partial \eta}{\partial t}$$
+$$
+\frac{\partial^{2} \eta}{\partial t^{2}} = c^{2} \nabla^{2} \eta - \gamma \frac{\partial \eta}{\partial t}
+$$
 
   - $\eta$: 水位変位 [m]
   - $c$: 波速 [m/s]
@@ -88,25 +90,31 @@ $$\frac{\partial^2 \eta}{\partial t^2} = c^2 \nabla^2 \eta - \gamma \frac{\parti
 - **支配方程式 (Peregrine 1967 弱非線形・弱分散浅水波系)**:
   - 連続の式:
 
-$$\frac{\partial \eta}{\partial t} + \nabla \cdot ((h + \eta)\mathbf{u}) = S_\eta$$
+$$
+\frac{\partial \eta}{\partial t} + \nabla \cdot ((h + \eta)\mathbf{u}) = S_{\eta}
+$$
 
   - 運動方程式:
 
-$$\left(1 - \alpha \frac{h^2}{6} \nabla^2\right)\frac{\partial \mathbf{u}}{\partial t} = -g \nabla \eta - (\mathbf{u} \cdot \nabla)\mathbf{u} - \frac{c_f}{h + \eta}\mathbf{u} + \mathbf{S}_u$$
+$$
+\left(1 - \alpha \frac{h^{2}}{6} \nabla^{2}\right)\frac{\partial \mathbf{u}}{\partial t} = -g \nabla \eta - (\mathbf{u} \cdot \nabla)\mathbf{u} - \frac{c_{f}}{h + \eta}\mathbf{u} + \mathbf{S_{u}}
+$$
 
   - $h(\mathbf{x})$: 静水深 [m]
   - $\mathbf{u}$: 水深平均水平流速ベクトル [m/s]
-  - $c_f$: 海底摩擦係数
+  - $c_{f}$: 海底摩擦係数
 - **数値的安定化 (`fp32` 対称MacCormack法＋Helmholtz型分散インバータ)**:
-  - 陽解法での3次導関数 $\nabla(\nabla^2 \eta)$ の直接差分は $\Delta x^{-3}$ に比例する剛性により $\Delta t < 10^{-6}\text{ s}$ を要し即座に発散（トゲ状破綻）します。
+  - 陽解法での3次導関数 $\nabla(\nabla^{2} \eta)$ の直接差分は $\Delta x^{-3}$ に比例する剛性により $\Delta t < 10^{-6}\ \mathrm{s}$ を要し即座に発散（トゲ状破綻）します。
   - 本パッケージでは `fp32` (`ARGBFloat` / `RGFloat`) バッファ上の**対称 MacCormack 予測子・修正子法**（サブステップ毎に前進・後退差分方向を交互反転）に加え、分散項を陰的に再定式化した Helmholtz 型方程式:
 
-$$\left(I - \alpha \frac{h^2}{6} \nabla^2\right)\mathbf{a} = \bar{\mathbf{f}}$$
+$$
+\left(I - \alpha \frac{h^{2}}{6} \nabla^{2}\right)\mathbf{a} = \bar{\mathbf{f}}
+$$
 
     を6パスのJacobi緩和反復法により無条件安定に逆行列求解します。これにより格子解像度を高めても破綻しない安定した分散波列を生成します。
 - **機能**:
   - **プロシージャル海底地形**: 斜め浅瀬と岬（Shoal and Cape）、平坦海底（Flat）、斜面（Linear Slope）、カスタム標高テクスチャ。
-  - **多様な波源・インパルス励起**: 沖合連続進行波造波（Wavemaker）に加え、平面孤立波（Planar Soliton: $\mathrm{sech}^2$）および円形ガウスパルス（Circular Pulse）の単発・周期発生・移動波源・マウスクリック/ドラッグ注入（GPU非破壊加算 `CSAddImpulse`）。
+  - **多様な波源・インパルス励起**: 沖合連続進行波造波（Wavemaker）に加え、平面孤立波（Planar Soliton: ${\mathrm{sech}}^{2}$）および円形ガウスパルス（Circular Pulse）の単発・周期発生・移動波源・マウスクリック/ドラッグ注入（GPU非破壊加算 `CSAddImpulse`）。
   - **分散係数調整**: $\alpha = 1.0$（Boussinesq分散波）から $\alpha = 0.0$（非分散浅水波）まで無段階調整可能。
 - **代表シーン**: `02_Boussinesq`（浅瀬と岬）
   - 沖合（水深15m）から進入した波が、斜めの浅瀬（水深2.5m）で波速 $c \sim \sqrt{gh}$ の低下に伴い屈折（Refraction）し、波長が短縮（Shoaling）、岬の先端に波エネルギーが集中して波高が増大する現象を視覚的に確認できます。
@@ -120,24 +128,30 @@ $$\left(I - \alpha \frac{h^2}{6} \nabla^2\right)\mathbf{a} = \bar{\mathbf{f}}$$
 
 - **統計的海洋波スペクトル (Tessendorf 2001 / Phillips Spectrum)**:
 
-$$P_h(\mathbf{k}) = A \frac{\exp(-1 / (k L)^2)}{k^4} (\hat{\mathbf{k}} \cdot \hat{\mathbf{w}})^2 \exp(-k^2 l_0^2)$$
+$$
+P_{h}(\mathbf{k}) = A \frac{\exp(-1 / (k L)^{2})}{k^{4}} (\hat{\mathbf{k}} \cdot \hat{\mathbf{w}})^{2} \exp(-k^{2} l_{0}^{2})
+$$
 
-  - $L = V^2 / g$: 風速 $V$ による最大波長スケール
+  - $L = V^{2} / g$: 風速 $V$ による最大波長スケール
   - うねり成分: 遠方の嵐から到達する長波長の独立スペクトルピークを重畳。
 - **分散関係の時間発展**:
 
-$$\omega(\mathbf{k}) = \sqrt{g \|\mathbf{k}\|}, \quad \tilde{h}(\mathbf{k}, t) = h_0(\mathbf{k}) e^{i \omega t} + h_0^*(-\mathbf{k}) e^{-i \omega t}$$
+$$
+\omega(\mathbf{k}) = \sqrt{g \|\mathbf{k}\|}, \quad \tilde{h}(\mathbf{k}, t) = h_{0}(\mathbf{k}) e^{i \omega t} + h_{0}^{\ast}(-\mathbf{k}) e^{-i \omega t}
+$$
 
 - **Radix-2 Stockham 2D逆高速フーリエ変換 (IFFT)**:
   - Compute Shader上でビット反転並べ替えが一切不要な Stockham autosort アルゴリズムを採用。完全に合致したメモリアクセスにより高速実行。
 - **チョッピー波（波数重み付き水平変位）と厳密ラグランジュ法線**:
 
-$$\mathbf{x}' = \mathbf{x} + \lambda \sum_{\mathbf{k}} i\,w_{\text{chop}}(k) \frac{\mathbf{k}}{k} \tilde{h}(\mathbf{k}, t) e^{i \mathbf{k} \cdot \mathbf{x}}$$
+$$
+\mathbf{X}(\mathbf{x}, t) = \mathbf{x} + \lambda \sum_{\mathbf{k}} i\,w_{\mathrm{chop}}(k) \frac{\mathbf{k}}{k} \tilde{h}(\mathbf{k}, t) e^{i \mathbf{k} \cdot \mathbf{x}}
+$$
 
   - 波峰で粒子が収束（$J < 1$）し波谷で広がる鋭いトロコイド波形（Trochoidal wave）を形成。
-  - 水平変位勾配とヤコビアン $J$ を結合した厳密な接線外積法線 $\mathbf{N} = \mathrm{normalize}(\mathbf{T}_z \times \mathbf{T}_x)$ および波峰圧縮度 $1 - J$ による透過散乱光（SSS）を計算。
+  - 水平変位勾配とヤコビアン $J$ を結合した厳密な接線外積法線 $\mathbf{N} = \mathrm{normalize}(\mathbf{T_{z}} \times \mathbf{T_{x}})$ および波峰圧縮度 $1 - J$ による透過散乱光（SSS）を計算。
 - **白波・泡検出 (Jacobian Foam)**:
-  - 水平変位のヤコビアン行列式 $J = (1 + \partial_x D_x)(1 + \partial_z D_z) - \partial_z D_x \partial_x D_z$ が閾値を下回る（波頭が圧縮・自己交差する）領域を白波として自動検出。
+  - 水平変位のヤコビアン行列式 $J = (1 + \partial_{x} D_{x})(1 + \partial_{z} D_{z}) - \partial_{z} D_{x} \partial_{x} D_{z}$ が閾値を下回る（波頭が圧縮・自己交差する）領域を白波として自動検出。
 - **代表シーン**: `03_FFTWater`（水平線までの海）
   - 静止視点および自由移動カメラで、長波長のうねりと風波の共存、チョッピー波頭の白波、水平線までの安定した広域海面を確認できます。
 - **適用範囲と限界**:
@@ -165,13 +179,13 @@ $$\mathbf{x}' = \mathbf{x} + \lambda \sum_{\mathbf{k}} i\,w_{\text{chop}}(k) \fr
 
 | シミュレーション方式 | 計算格子解像度 | 物理時間刻み $dt$ | GPU ディスパッチ時間 | 描画 FPS |
 | :--- | :---: | :---: | :---: | :---: |
-| **2D 線形波動方程式** | $256 \times 256$ | $0.003\text{ s}$ (substeps) | $0.15\text{ ms}$ | $140+\text{ FPS}$ |
-| **2D 線形波動方程式** | $512 \times 512$ | $0.0015\text{ s}$ (substeps) | $0.38\text{ ms}$ | $120+\text{ FPS}$ |
-| **Boussinesq 系 (`fp32`, 6-step Jacobi)** | $256 \times 256$ | $0.016\text{ s}$ (substeps) | $0.48\text{ ms}$ | $120+\text{ FPS}$ |
-| **Boussinesq 系 (`fp32`, 6-step Jacobi)** | $512 \times 512$ | $0.008\text{ s}$ (substeps) | $1.35\text{ ms}$ | $95+\text{ FPS}$ |
-| **スペクトル / FFT 海面** | $256 \times 256$ | $0.033\text{ s}$ (時間発展) | $0.35\text{ ms}$ | $130+\text{ FPS}$ |
-| **スペクトル / FFT 海面** | $512 \times 512$ | $0.033\text{ s}$ (時間発展) | $0.95\text{ ms}$ | $105+\text{ FPS}$ |
-| **05 比較Overview (3方式同時稼働)** | $256 \times 256 \times 3$ | 各方式固有 $dt$ | $0.98\text{ ms}$ (合計) | $110+\text{ FPS}$ |
+| **2D 線形波動方程式** | $256 \times 256$ | $0.003\ \mathrm{s}$ (substeps) | $0.15\ \mathrm{ms}$ | $140+\ \mathrm{FPS}$ |
+| **2D 線形波動方程式** | $512 \times 512$ | $0.0015\ \mathrm{s}$ (substeps) | $0.38\ \mathrm{ms}$ | $120+\ \mathrm{FPS}$ |
+| **Boussinesq 系 (`fp32`, 6-step Jacobi)** | $256 \times 256$ | $0.016\ \mathrm{s}$ (substeps) | $0.48\ \mathrm{ms}$ | $120+\ \mathrm{FPS}$ |
+| **Boussinesq 系 (`fp32`, 6-step Jacobi)** | $512 \times 512$ | $0.008\ \mathrm{s}$ (substeps) | $1.35\ \mathrm{ms}$ | $95+\ \mathrm{FPS}$ |
+| **スペクトル / FFT 海面** | $256 \times 256$ | $0.033\ \mathrm{s}$ (時間発展) | $0.35\ \mathrm{ms}$ | $130+\ \mathrm{FPS}$ |
+| **スペクトル / FFT 海面** | $512 \times 512$ | $0.033\ \mathrm{s}$ (時間発展) | $0.95\ \mathrm{ms}$ | $105+\ \mathrm{FPS}$ |
+| **05 比較Overview (3方式同時稼働)** | $256 \times 256 \times 3$ | 各方式固有 $dt$ | $0.98\ \mathrm{ms}$ (合計) | $110+\ \mathrm{FPS}$ |
 
 > **注記**: 本パッケージの実装は描画フレームレートと物理計算ステップを完全に分離（Decoupled）しており、高負荷時でも時間積分精度が保たれます。
 
