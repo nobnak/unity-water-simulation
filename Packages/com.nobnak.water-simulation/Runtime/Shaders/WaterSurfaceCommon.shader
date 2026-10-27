@@ -10,13 +10,15 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
         [Header(Textures)]
         [NoScaleOffset] _WaterDataTex ("Water Data Texture (RGB: Disp, A: Foam)", 2D) = "black" {}
         [NoScaleOffset] _NormalTex ("Normal Texture (RGB: Normal, A: Foam)", 2D) = "black" {}
+        [NoScaleOffset] _BathymetryTex ("Bathymetry Texture (R: Depth h, G: Bed z_b)", 2D) = "black" {}
+        _HasBathymetry ("Has Bathymetry", Float) = 0.0
 
         [Header(Foam)]
         _FoamColor ("Foam Color", Color) = (0.85, 0.92, 0.98, 0.8)
         _FoamIntensity ("Foam Intensity", Range(0, 5)) = 0.6
 
         [Header(Visualization Mode)]
-        [Enum(Realistic,0,HeightMap,1,NormalVisual,2,Wireframe,3)] _VisualMode ("Visualization Mode", Float) = 0
+        [Enum(Realistic,0,HeightMap,1,NormalVisual,2,Wireframe,3,Bathymetry,4)] _VisualMode ("Visualization Mode", Float) = 0
         _HeightMapRange ("Height Map Range (+/- m)", Float) = 2.0
     }
 
@@ -65,6 +67,8 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
             SAMPLER(sampler_WaterDataTex);
             TEXTURE2D(_NormalTex);
             SAMPLER(sampler_NormalTex);
+            TEXTURE2D(_BathymetryTex);
+            SAMPLER(sampler_BathymetryTex);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseColor;
@@ -76,6 +80,7 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                 float _FoamIntensity;
                 float _VisualMode;
                 float _HeightMapRange;
+                float _HasBathymetry;
             CBUFFER_END
 
             Varyings Vert(Attributes input) {
@@ -131,39 +136,63 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                     float wire = smoothstep(0.0, 0.05, edge);
                     float3 base = lerp(float3(0.1, 0.7, 0.9), float3(0.02, 0.05, 0.1), wire);
                     return half4(base, 1.0);
+                } else if (vmode == 4) {
+                    if (_HasBathymetry > 0.5) {
+                        float h = max(0.0, SAMPLE_TEXTURE2D(_BathymetryTex, sampler_BathymetryTex, uv).r);
+                        // Map depth h [0.5m .. 15m] -> warm shallow (+0.85) to deep blue (-0.9)
+                        float normDepth = 1.0 - saturate((h - 1.0) / 14.0) * 1.9;
+                        float3 col = HeatmapColor(normDepth);
+                        // 1m depth contours
+                        float contour = frac(h);
+                        col *= (contour > 0.92 || contour < 0.08) ? 0.72 : 1.0;
+                        // Subtle surface wave overlay so wave crests remain visible on bathymetry map
+                        col += disp.g * 0.12;
+                        return half4(saturate(col), 1.0);
+                    }
+                    return half4(0.08, 0.22, 0.35, 1.0);
                 }
 
                 // Realistic PBR Water Rendering
-                    Light mainLight = GetMainLight();
-                    float3 viewDirWS = normalize(GetCameraPositionWS() - input.positionWS);
+                Light mainLight = GetMainLight();
+                float3 viewDirWS = normalize(GetCameraPositionWS() - input.positionWS);
 
-                    // Fresnel (Schlick)
-                    float nDotV = saturate(dot(normalWS, viewDirWS));
-                    float fresnel = 0.02 + 0.98 * pow(1.0 - nDotV, 5.0);
+                // Fresnel (Schlick)
+                float nDotV = saturate(dot(normalWS, viewDirWS));
+                float fresnel = 0.02 + 0.98 * pow(1.0 - nDotV, 5.0);
 
-                    // Water color depth blend with heightened contrast
-                    float depthFactor = saturate(disp.g * 0.35 + 0.5);
-                    float3 waterCol = lerp(_DeepColor.rgb, _BaseColor.rgb, depthFactor);
+                // Water color depth blend with heightened contrast
+                float depthFactor = saturate(disp.g * 0.35 + 0.5);
+                float3 waterCol = lerp(_DeepColor.rgb, _BaseColor.rgb, depthFactor);
 
-                    // Lighting
-                    float3 lightDir = normalize(mainLight.direction);
-                    float nDotL = saturate(dot(normalWS, lightDir));
-                    float3 halfDir = normalize(lightDir + viewDirWS);
-                    float nDotH = saturate(dot(normalWS, halfDir));
-                    float spec = pow(nDotH, 64.0) * _Smoothness;
+                // Bathymetry shallow water transmittance (shoal & cape emerald tint + depth contours)
+                if (_HasBathymetry > 0.5) {
+                    float h = max(0.1, SAMPLE_TEXTURE2D(_BathymetryTex, sampler_BathymetryTex, uv).r);
+                    float shoal = saturate(exp(-(h - 1.2) * 0.26));
+                    float3 shoalColor = float3(0.16, 0.62, 0.56);
+                    float bedContour = smoothstep(0.08, 0.0, abs(frac(h * 0.5) - 0.5));
+                    shoalColor *= (1.0 - bedContour * 0.14 * shoal);
+                    waterCol = lerp(waterCol, shoalColor, shoal * 0.68);
+                }
 
-                    float3 diffuse = waterCol * (mainLight.color * (nDotL * 0.55 + 0.45));
-                    float3 specular = mainLight.color * (spec * (fresnel * 0.85 + 0.15) * 2.0);
-                    float3 ambient = float3(0.05, 0.12, 0.18);
+                // Lighting
+                float3 lightDir = normalize(mainLight.direction);
+                float nDotL = saturate(dot(normalWS, lightDir));
+                float3 halfDir = normalize(lightDir + viewDirWS);
+                float nDotH = saturate(dot(normalWS, halfDir));
+                float spec = pow(nDotH, 64.0) * _Smoothness;
 
-                    float3 finalColor = diffuse + specular + ambient;
+                float3 diffuse = waterCol * (mainLight.color * (nDotL * 0.55 + 0.45));
+                float3 specular = mainLight.color * (spec * (fresnel * 0.85 + 0.15) * 2.0);
+                float3 ambient = float3(0.05, 0.12, 0.18);
 
-                    // Foam blending: only blend foam if disp.a is active
-                    float foam = saturate(disp.a * _FoamIntensity);
-                    finalColor = lerp(finalColor, _FoamColor.rgb, foam);
+                float3 finalColor = diffuse + specular + ambient;
 
-                    float alpha = lerp(_BaseColor.a, 1.0, fresnel * 0.4 + foam * 0.6);
-                    return half4(finalColor, alpha);
+                // Foam blending: only blend foam if disp.a is active
+                float foam = saturate(disp.a * _FoamIntensity);
+                finalColor = lerp(finalColor, _FoamColor.rgb, foam);
+
+                float alpha = lerp(_BaseColor.a, 1.0, fresnel * 0.4 + foam * 0.6);
+                return half4(finalColor, alpha);
             }
             ENDHLSL
         }

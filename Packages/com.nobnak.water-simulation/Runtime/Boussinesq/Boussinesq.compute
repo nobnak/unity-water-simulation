@@ -3,6 +3,7 @@
 #pragma kernel CSCorrect
 #pragma kernel CSJacobiStep
 #pragma kernel CSApplyDispersion
+#pragma kernel CSAddImpulse
 #pragma kernel CSComputeNormal
 
 RWTexture2D<float4> _StateIn;     // R: eta (surface elevation), G: u (vel X), B: w (vel Z), A: aux
@@ -32,6 +33,13 @@ cbuffer WavemakerParams {
     float _WavemakerFreq;    // Frequency [Hz]
     float _WavemakerPhase;   // Phase [rad]
     int _WavemakerY;         // Grid line Y index where waves are generated
+};
+
+cbuffer ImpulseParams {
+    float2 _ImpulseCenter;   // Normalized UV [0..1]
+    float _ImpulseRadius;    // Normalized UV width / radius
+    float _ImpulseStrength;  // Peak elevation amplitude [m]
+    int _ImpulseShape;       // 0 = Planar Soliton (+Z propagation), 1 = Circular Pulse
 };
 
 void GetWavemakerSources(int2 pos, float h, float phase, out float sourceEta, out float sourceW) {
@@ -279,7 +287,50 @@ void CSApplyDispersion(uint3 id : SV_DispatchThreadID) {
     _StateOut[pos] = float4(eta, uNext, wNext, 0.0);
 }
 
-// 5. Surface normal and foam computation
+// 5. Non-destructive GPU impulse / soliton injection
+[numthreads(8, 8, 1)]
+void CSAddImpulse(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    float2 uv = (float2(pos) + 0.5) / float2(_Width, _Height);
+    float h = max(0.5, _BathymetryTex[pos].r);
+    float4 state = _StateOut[pos];
+
+    if (_ImpulseShape == 0) {
+        // Planar solitary wave propagating in +Z (along +Y in grid)
+        float dy = abs(uv.y - _ImpulseCenter.y);
+        float width = max(0.01, _ImpulseRadius);
+        if (dy < width * 3.0) {
+            float lateralDist = min((float)pos.x, (float)(_Width - 1 - pos.x));
+            float lateralTaper = smoothstep(0.0, _SpongeWidth * 1.5, lateralDist);
+
+            float arg = clamp((uv.y - _ImpulseCenter.y) / (width * 0.6), -8.0, 8.0);
+            float coshVal = 0.5 * (exp(arg) + exp(-arg));
+            float sech2 = 1.0 / (coshVal * coshVal);
+
+            float dEta = _ImpulseStrength * sech2 * lateralTaper;
+            float c = sqrt(_Gravity * (h + max(0.0, dEta)));
+            float dW = c * dEta / (h + max(0.0, dEta));
+
+            state.r = clamp(state.r + dEta, -15.0, 15.0);
+            state.b = clamp(state.b + dW, -30.0, 30.0);
+            _StateOut[pos] = state;
+        }
+    } else {
+        // Circular Gaussian pulse
+        float d = distance(uv, _ImpulseCenter);
+        float radius = max(1e-4, _ImpulseRadius);
+        if (d < radius * 1.8) {
+            float rNorm = d / radius;
+            float dEta = _ImpulseStrength * exp(-3.0 * rNorm * rNorm);
+            state.r = clamp(state.r + dEta, -15.0, 15.0);
+            _StateOut[pos] = state;
+        }
+    }
+}
+
+// 6. Surface normal and foam computation
 [numthreads(8, 8, 1)]
 void CSComputeNormal(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;

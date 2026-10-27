@@ -13,7 +13,8 @@ namespace Nobnak.WaterSimulation {
             Realistic = 0,
             HeightMap = 1,
             NormalVisual = 2,
-            Wireframe = 3
+            Wireframe = 3,
+            Bathymetry = 4
         }
 
         #region serialized fields
@@ -123,6 +124,14 @@ namespace Nobnak.WaterSimulation {
                 if (targetSimulation.NormalTexture != null) {
                     propBlock.SetTexture(PropNormalTex, targetSimulation.NormalTexture);
                 }
+                if (targetSimulation.BathymetryTexture != null) {
+                    propBlock.SetTexture(PropBathymetryTex, targetSimulation.BathymetryTexture);
+                    propBlock.SetFloat(PropHasBathymetry, 1.0f);
+                } else {
+                    propBlock.SetFloat(PropHasBathymetry, 0.0f);
+                }
+            } else {
+                propBlock.SetFloat(PropHasBathymetry, 0.0f);
             }
 
             propBlock.SetFloat(PropVisualMode, (float)visualizationMode);
@@ -220,6 +229,8 @@ namespace Nobnak.WaterSimulation {
         #region constants / static
         private static readonly int PropWaterDataTex = Shader.PropertyToID("_WaterDataTex");
         private static readonly int PropNormalTex = Shader.PropertyToID("_NormalTex");
+        private static readonly int PropBathymetryTex = Shader.PropertyToID("_BathymetryTex");
+        private static readonly int PropHasBathymetry = Shader.PropertyToID("_HasBathymetry");
         private static readonly int PropVisualMode = Shader.PropertyToID("_VisualMode");
         private static readonly int PropHeightMapRange = Shader.PropertyToID("_HeightMapRange");
         private static readonly int PropDisplacementScale = Shader.PropertyToID("_DisplacementScale");

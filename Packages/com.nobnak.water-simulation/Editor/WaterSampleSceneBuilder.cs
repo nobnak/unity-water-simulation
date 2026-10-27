@@ -108,8 +108,10 @@ namespace Nobnak.WaterSimulation.Editor {
             so.FindProperty("deepWaterDepth").floatValue = 15.0f;
             so.FindProperty("shallowWaterDepth").floatValue = 2.5f;
             so.FindProperty("initialCondition").enumValueIndex = (int)BoussinesqSimulation.InitialConditionType.ContinuousWavemaker;
+            so.FindProperty("impulseShape").enumValueIndex = (int)BoussinesqSimulation.ImpulseShapeType.PlanarSoliton;
             so.FindProperty("wavemakerAmplitude").floatValue = 0.8f;
             so.FindProperty("wavemakerFrequency").floatValue = 0.35f;
+            so.FindProperty("pulseInterval").floatValue = 1.8f;
             so.ApplyModifiedProperties();
 
             var mat = CreateWaterMaterial();
@@ -119,8 +121,8 @@ namespace Nobnak.WaterSimulation.Editor {
             var ui = uiGO.AddComponent<WaterSampleUI>();
             var soUI = new SerializedObject(ui);
             soUI.FindProperty("sampleTitle").stringValue = "02 Boussinesq Model - Shoal and Cape";
-            soUI.FindProperty("whatToObserve").stringValue = "沖合から進入した波列が、斜めの浅瀬で水深 h に応じた波速減速（c ~ sqrt(gh)）により屈折（Refraction）し波長が短縮する現象（Shoaling）、および岬の先端に波エネルギーが集中して波高が増大する現象。";
-            soUI.FindProperty("whatCanBeControlled").stringValue = "海底地形の切り替え（平坦海底 vs 斜め浅瀬と岬）、分散項係数 alpha の調整（1.0 = Boussinesq分散、0.0 = 非分散浅水波）、入射波の振幅・周波数。";
+            soUI.FindProperty("whatToObserve").stringValue = "沖合から進入した波列・孤立波が、斜めの浅瀬（エメラルド透過色）で水深 h に応じた波速減速（c ~ sqrt(gh)）により屈折（Refraction）し波長が短縮する現象（Shoaling）、および岬の先端に波エネルギーが集中して波高が増大する現象。";
+            soUI.FindProperty("whatCanBeControlled").stringValue = "海底地形（平坦/浅瀬と岬/斜面）、波源モード（連続造波/単発インパルス/周期パルス/移動波源/マウスクリック）、波形（平面孤立波/円形波）、分散係数 alpha、振幅・周波数・インターバル、Bathymetry水深マップ表示。";
             soUI.FindProperty("scopeAndLimitations").stringValue = "深さ平均モデルのため、砕波による波頭の巻き込み（Plunging breaker）や飛沫・気泡の3D流体計算は含まれません（急勾配での散逸・Foamとして表現）。";
             soUI.FindProperty("simulation").objectReferenceValue = sim;
             soUI.FindProperty("waterRenderer").objectReferenceValue = renderer;
@@ -222,6 +224,9 @@ namespace Nobnak.WaterSimulation.Editor {
             soR.FindProperty("bathymetryMode").enumValueIndex = (int)BoussinesqSimulation.BathymetryType.Flat;
             soR.FindProperty("deepWaterDepth").floatValue = 5.0f;
             soR.FindProperty("initialCondition").enumValueIndex = (int)BoussinesqSimulation.InitialConditionType.GaussianPulse;
+            soR.FindProperty("impulseShape").enumValueIndex = (int)BoussinesqSimulation.ImpulseShapeType.CircularPulse;
+            soR.FindProperty("sourceCenter").vector2Value = new Vector2(0.5f, 0.5f);
+            soR.FindProperty("sourceRadius").floatValue = 0.05f;
             soR.FindProperty("wavemakerAmplitude").floatValue = 1.0f; // 1.0 * 1.5 = 1.5m peak pulse
             soR.ApplyModifiedProperties();
             rightRenderer.WaterMaterial = CreateWaterMaterial();

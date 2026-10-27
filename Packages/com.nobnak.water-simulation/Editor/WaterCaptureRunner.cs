@@ -19,6 +19,12 @@ namespace Nobnak.WaterSimulation.Editor {
             CaptureAllRepresentativeScenes();
         }
 
+        [MenuItem("Tools/Water Simulation/Build And Capture Scene 02", false, 56)]
+        public static void BuildAndCaptureScene02() {
+            WaterSampleSceneBuilder.BuildAllSampleScenes();
+            CaptureScene02();
+        }
+
         [MenuItem("Tools/Water Simulation/Capture All Representative Scenes", false, 60)]
         public static void CaptureAllRepresentativeScenes() {
             if (!Directory.Exists(CaptureDir)) Directory.CreateDirectory(CaptureDir);
@@ -36,7 +42,50 @@ namespace Nobnak.WaterSimulation.Editor {
         public static void CaptureScene02() {
             if (!Directory.Exists(CaptureDir)) Directory.CreateDirectory(CaptureDir);
             CaptureScene("Assets/Scenes/02_Boussinesq.unity", "02_Boussinesq_Initial.png", "02_Boussinesq_Active.png", 240);
-            Debug.Log("[WaterSimulation] Completed Scene 02 Boussinesq capture (240 steps)!");
+
+            var scene = EditorSceneManager.OpenScene("Assets/Scenes/02_Boussinesq.unity", OpenSceneMode.Single);
+            var cam = Camera.main;
+            if (cam == null) cam = Object.FindFirstObjectByType<Camera>();
+            if (cam == null) return;
+
+            int width = 1280;
+            int height = 720;
+            var rt = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+            var prevTarget = cam.targetTexture;
+            cam.targetTexture = rt;
+
+            var boussSim = Object.FindFirstObjectByType<BoussinesqSimulation>();
+            var renderer = Object.FindFirstObjectByType<WaterRenderer>();
+
+            if (boussSim != null && renderer != null) {
+                // 1. Capture Bathymetry visual mode
+                boussSim.ResetSimulation();
+                float dt = 0.033f;
+                for (int i = 0; i < 180; i++) boussSim.Step(dt);
+
+                renderer.SetVisualMode(WaterRenderer.VisualMode.Bathymetry);
+                renderer.UpdateMaterialProperties();
+                cam.Render();
+                SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "02_Boussinesq_Bathymetry.png"));
+
+                // 2. Capture Periodic Planar Soliton mode in Realistic view
+                renderer.SetVisualMode(WaterRenderer.VisualMode.Realistic);
+                boussSim.Condition = BoussinesqSimulation.InitialConditionType.PeriodicPulses;
+                boussSim.ImpulseShape = BoussinesqSimulation.ImpulseShapeType.PlanarSoliton;
+                boussSim.PulseInterval = 1.8f;
+                boussSim.WavemakerAmplitude = 1.0f;
+                boussSim.ResetSimulation();
+
+                for (int i = 0; i < 180; i++) boussSim.Step(dt);
+                renderer.UpdateMaterialProperties();
+                cam.Render();
+                SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "02_Boussinesq_PlanarSoliton.png"));
+            }
+
+            cam.targetTexture = prevTarget;
+            rt.Release();
+            Object.DestroyImmediate(rt);
+            Debug.Log("[WaterSimulation] Completed Scene 02 Boussinesq captures (Active, Bathymetry, PlanarSoliton)!");
         }
 
         [MenuItem("Tools/Water Simulation/Capture Periodic Pulses", false, 63)]

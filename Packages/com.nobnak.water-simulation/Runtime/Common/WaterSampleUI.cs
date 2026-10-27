@@ -140,6 +140,9 @@ namespace Nobnak.WaterSimulation {
                 if (GUILayout.Button("HeightMap")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.HeightMap);
                 if (GUILayout.Button("Normal")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.NormalVisual);
                 if (GUILayout.Button("Wireframe")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.Wireframe);
+                if (simulation != null && simulation.BathymetryTexture != null) {
+                    if (GUILayout.Button("Bathymetry")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.Bathymetry);
+                }
                 GUILayout.EndHorizontal();
             }
 
@@ -226,14 +229,46 @@ namespace Nobnak.WaterSimulation {
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(2);
-                GUILayout.Label("<b>[波源 / Wave Source]</b>");
+                GUILayout.Label("<b>[波源モード / Source Mode]</b>");
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Wavemaker (連続造波)")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.ContinuousWavemaker;
-                if (GUILayout.Button("Pulse (孤立波)")) {
-                    boussSim.Condition = BoussinesqSimulation.InitialConditionType.GaussianPulse;
-                    boussSim.TriggerGaussianPulse(new Vector2(0.5f, 0.15f), 1.2f, 0.05f);
-                }
+                if (GUILayout.Button("Wavemaker")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.ContinuousWavemaker;
+                if (GUILayout.Button("Impulse")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.GaussianPulse;
+                if (GUILayout.Button("Periodic")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.PeriodicPulses;
+                if (GUILayout.Button("Moving")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.MovingSource;
+                if (GUILayout.Button("Mouse")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.InteractiveMouse;
                 GUILayout.EndHorizontal();
+
+                if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.ContinuousWavemaker) {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"Freq: {boussSim.WavemakerFrequency:F2} Hz", GUILayout.Width(90));
+                    boussSim.WavemakerFrequency = GUILayout.HorizontalSlider(boussSim.WavemakerFrequency, 0.15f, 0.8f);
+                    GUILayout.EndHorizontal();
+                } else if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.GaussianPulse ||
+                           boussSim.Condition == BoussinesqSimulation.InitialConditionType.PeriodicPulses) {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("Shape:", GUILayout.Width(50));
+                    if (GUILayout.Button("Planar (平面孤立波)")) boussSim.ImpulseShape = BoussinesqSimulation.ImpulseShapeType.PlanarSoliton;
+                    if (GUILayout.Button("Circular (円形波)")) boussSim.ImpulseShape = BoussinesqSimulation.ImpulseShapeType.CircularPulse;
+                    GUILayout.EndHorizontal();
+
+                    if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.GaussianPulse) {
+                        if (GUILayout.Button("★ Trigger Impulse (孤立波を発生)")) {
+                            boussSim.TriggerImpulse();
+                        }
+                    } else {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label($"Interval: {boussSim.PulseInterval:F2}s ({1f / boussSim.PulseInterval:F1} Hz)", GUILayout.Width(170));
+                        boussSim.PulseInterval = GUILayout.HorizontalSlider(boussSim.PulseInterval, 0.4f, 4.0f);
+                        GUILayout.EndHorizontal();
+                    }
+                } else if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.MovingSource) {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"Interval: {boussSim.PulseInterval:F2}s ({1f / boussSim.PulseInterval:F1} Hz)", GUILayout.Width(170));
+                    boussSim.PulseInterval = GUILayout.HorizontalSlider(boussSim.PulseInterval, 0.2f, 2.5f);
+                    GUILayout.EndHorizontal();
+                } else if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.InteractiveMouse) {
+                    GUILayout.Label("<color=#a0f080><size=10>水面を左クリック / ドラッグして波を発生</size></color>");
+                }
 
                 GUILayout.Space(2);
                 GUILayout.BeginHorizontal();
@@ -243,7 +278,7 @@ namespace Nobnak.WaterSimulation {
 
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"Wave Amp: {boussSim.WavemakerAmplitude:F2}m", GUILayout.Width(90));
-                boussSim.WavemakerAmplitude = GUILayout.HorizontalSlider(boussSim.WavemakerAmplitude, 0.1f, 2.0f);
+                boussSim.WavemakerAmplitude = GUILayout.HorizontalSlider(boussSim.WavemakerAmplitude, 0.1f, 2.5f);
                 GUILayout.EndHorizontal();
             } else if (simulation is FFTOceanSimulation fftSim) {
                 GUILayout.Space(4);

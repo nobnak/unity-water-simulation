@@ -19,7 +19,15 @@ namespace Nobnak.WaterSimulation {
         public enum InitialConditionType {
             Rest = 0,
             ContinuousWavemaker = 1,
-            GaussianPulse = 2
+            GaussianPulse = 2,
+            PeriodicPulses = 3,
+            MovingSource = 4,
+            InteractiveMouse = 5
+        }
+
+        public enum ImpulseShapeType {
+            PlanarSoliton = 0,
+            CircularPulse = 1
         }
 
         #region serialized fields
@@ -42,13 +50,18 @@ namespace Nobnak.WaterSimulation {
 
         [Header("Wave Excitation")]
         [SerializeField] private InitialConditionType initialCondition = InitialConditionType.ContinuousWavemaker;
-        [Tooltip("Wavemaker wave amplitude [m].")]
+        [SerializeField] private ImpulseShapeType impulseShape = ImpulseShapeType.PlanarSoliton;
+        [Tooltip("Wavemaker / impulse wave amplitude [m].")]
         [SerializeField] private float wavemakerAmplitude = 0.8f;
         [Tooltip("Wavemaker wave frequency [Hz].")]
         [SerializeField] private float wavemakerFrequency = 0.4f;
-        [Tooltip("Wavemaker grid Y position normalized [0..1] (0.05 = near offshore boundary).")]
+        [Tooltip("Wavemaker grid Y position normalized [0..1] (0.08 = near offshore boundary).")]
         [Range(0.01f, 0.5f)]
         [SerializeField] private float wavemakerLocationNorm = 0.08f;
+        [SerializeField] private Vector2 sourceCenter = new Vector2(0.5f, 0.12f);
+        [SerializeField] private float sourceRadius = 0.045f;
+        [SerializeField] private float pulseInterval = 1.8f;
+        [SerializeField] private float movingSourceSpeed = 0.25f;
 
         [Header("Boundary")]
         [Range(4, 64)]
@@ -68,12 +81,15 @@ namespace Nobnak.WaterSimulation {
         private RenderTexture accelTexB;
         private bool pingPong;
         private float wavemakerPhase;
+        private float pulseTimer;
+        private float movingPhase;
 
         private int kernelInit;
         private int kernelPredict;
         private int kernelCorrect;
         private int kernelJacobiStep;
         private int kernelApplyDispersion;
+        private int kernelImpulse;
         private int kernelNormal;
         #endregion
 
@@ -104,6 +120,11 @@ namespace Nobnak.WaterSimulation {
             set => initialCondition = value;
         }
 
+        public ImpulseShapeType ImpulseShape {
+            get => impulseShape;
+            set => impulseShape = value;
+        }
+
         public float WavemakerAmplitude {
             get => wavemakerAmplitude;
             set => wavemakerAmplitude = math.max(0f, value);
@@ -113,6 +134,13 @@ namespace Nobnak.WaterSimulation {
             get => wavemakerFrequency;
             set => wavemakerFrequency = math.max(0.01f, value);
         }
+
+        public float PulseInterval {
+            get => pulseInterval;
+            set => pulseInterval = math.max(0.1f, value);
+        }
+
+        public float DeepWaterDepth => deepWaterDepth;
         #endregion
 
         #region Unity lifecycle
@@ -121,6 +149,11 @@ namespace Nobnak.WaterSimulation {
             base.OnEnable();
             UpdateBathymetryTexture();
         }
+
+        protected override void Update() {
+            HandleMouseInput();
+            base.Update();
+        }
         #endregion
 
         #region public interface
@@ -128,29 +161,39 @@ namespace Nobnak.WaterSimulation {
             Bathymetry = type;
         }
 
+        public void TriggerImpulse() {
+            Vector2 center = (impulseShape == ImpulseShapeType.PlanarSoliton)
+                ? new Vector2(0.5f, math.max(0.10f, wavemakerLocationNorm))
+                : sourceCenter;
+            TriggerImpulseOnTarget(CurrentStateTex, center, wavemakerAmplitude * 1.5f, sourceRadius, impulseShape);
+            ComputeNormalAndPackOutput();
+        }
+
+        public void TriggerImpulse(Vector2 uvCenter, float amplitude, float radius, ImpulseShapeType shape) {
+            TriggerImpulseOnTarget(CurrentStateTex, uvCenter, amplitude, radius, shape);
+            ComputeNormalAndPackOutput();
+        }
+
         public void TriggerGaussianPulse(Vector2 uvCenter, float amplitude, float radius) {
-            if (boussinesqShader == null || stateTexA == null) return;
-            RenderTexture current = CurrentStateTex;
+            TriggerImpulseOnTarget(CurrentStateTex, uvCenter, amplitude, radius, ImpulseShapeType.CircularPulse);
+            ComputeNormalAndPackOutput();
+        }
 
-            // Initialize pulse directly
-            int w = resolution.x;
-            int h = resolution.y;
-            var pixels = new Color[w * h];
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    float2 uv = new float2((float)x / w, (float)y / h);
-                    float d = math.distance(uv, (float2)uvCenter);
-                    float rNorm = d / math.max(1e-4f, radius);
-                    float eta = amplitude * math.exp(-3.0f * rNorm * rNorm);
-                    pixels[y * w + x] = new Color(eta, 0f, 0f, 0f);
-                }
-            }
+        public void TriggerImpulseOnTarget(RenderTexture targetTex, Vector2 uvCenter, float amplitude, float radius, ImpulseShapeType shape) {
+            if (boussinesqShader == null || targetTex == null || bathymetryTex == null) return;
 
-            var temp = new Texture2D(w, h, TextureFormat.RGBAHalf, false);
-            temp.SetPixels(pixels);
-            temp.Apply(false);
-            Graphics.Blit(temp, current);
-            DestroyImmediate(temp);
+            boussinesqShader.SetInt(PropWidth, resolution.x);
+            boussinesqShader.SetInt(PropHeight, resolution.y);
+            boussinesqShader.SetFloat(PropGravity, Gravity);
+            boussinesqShader.SetFloat(PropSpongeWidth, spongeWidth);
+            boussinesqShader.SetVector(PropImpulseCenter, new Vector4(uvCenter.x, uvCenter.y, 0f, 0f));
+            boussinesqShader.SetFloat(PropImpulseRadius, radius);
+            boussinesqShader.SetFloat(PropImpulseStrength, amplitude);
+            boussinesqShader.SetInt(PropImpulseShape, (int)shape);
+
+            boussinesqShader.SetTexture(kernelImpulse, PropBathymetryTex, bathymetryTex);
+            boussinesqShader.SetTexture(kernelImpulse, PropStateOut, targetTex);
+            DispatchCompute(kernelImpulse);
         }
         #endregion
 
@@ -187,6 +230,7 @@ namespace Nobnak.WaterSimulation {
             kernelCorrect = boussinesqShader.FindKernel("CSCorrect");
             kernelJacobiStep = boussinesqShader.FindKernel("CSJacobiStep");
             kernelApplyDispersion = boussinesqShader.FindKernel("CSApplyDispersion");
+            kernelImpulse = boussinesqShader.FindKernel("CSAddImpulse");
             kernelNormal = boussinesqShader.FindKernel("CSComputeNormal");
         }
 
@@ -206,6 +250,8 @@ namespace Nobnak.WaterSimulation {
             if (boussinesqShader == null || stateTexA == null) return;
 
             wavemakerPhase = 0f;
+            pulseTimer = 0f;
+            movingPhase = 0f;
             pingPong = false;
 
             boussinesqShader.SetInt(PropWidth, resolution.x);
@@ -228,7 +274,14 @@ namespace Nobnak.WaterSimulation {
             UpdateBathymetryTexture();
 
             if (initialCondition == InitialConditionType.GaussianPulse) {
-                TriggerGaussianPulse(new Vector2(0.5f, 0.5f), wavemakerAmplitude * 1.5f, 0.05f);
+                if (bathymetryMode == BathymetryType.Flat && math.abs(deepWaterDepth - 5.0f) < 0.1f) {
+                    // Scene 04 comparison compatibility: centered circular Gaussian pulse
+                    TriggerGaussianPulse(new Vector2(0.5f, 0.5f), wavemakerAmplitude * 1.5f, 0.05f);
+                } else {
+                    TriggerImpulse();
+                }
+            } else if (initialCondition == InitialConditionType.PeriodicPulses) {
+                TriggerImpulse();
             }
             ComputeNormalAndPackOutput();
         }
@@ -317,9 +370,71 @@ namespace Nobnak.WaterSimulation {
 
             if (initialCondition == InitialConditionType.ContinuousWavemaker) {
                 wavemakerPhase += 2.0f * math.PI * wavemakerFrequency * subDt;
+            } else {
+                ApplySourceExcitation(next, subDt);
             }
 
             pingPong = !pingPong;
+        }
+
+        private void ApplySourceExcitation(RenderTexture target, float subDt) {
+            float interval = PulseInterval;
+            if (initialCondition == InitialConditionType.PeriodicPulses) {
+                pulseTimer += subDt;
+                if (pulseTimer >= interval) {
+                    pulseTimer %= interval;
+                    Vector2 center = (impulseShape == ImpulseShapeType.PlanarSoliton)
+                        ? new Vector2(0.5f, math.max(0.10f, wavemakerLocationNorm))
+                        : sourceCenter;
+                    TriggerImpulseOnTarget(target, center, wavemakerAmplitude * 1.5f, sourceRadius, impulseShape);
+                }
+            } else if (initialCondition == InitialConditionType.MovingSource) {
+                movingPhase += movingSourceSpeed * subDt;
+                float mx = 0.5f + 0.28f * math.cos(movingPhase);
+                float mz = 0.48f + 0.22f * math.sin(movingPhase * 2f);
+                pulseTimer += subDt;
+                if (pulseTimer >= interval) {
+                    pulseTimer %= interval;
+                    TriggerImpulseOnTarget(target, new Vector2(mx, mz), wavemakerAmplitude * 1.2f, sourceRadius * 0.85f, ImpulseShapeType.CircularPulse);
+                }
+            }
+        }
+
+        private void HandleMouseInput() {
+            if (initialCondition != InitialConditionType.InteractiveMouse) return;
+
+            Vector3 screenPos = Vector3.zero;
+            bool isPressed = false;
+
+#if ENABLE_INPUT_SYSTEM
+            var mouse = UnityEngine.InputSystem.Mouse.current;
+            if (mouse != null && mouse.leftButton.isPressed) {
+                Vector2 pos = mouse.position.ReadValue();
+                screenPos = new Vector3(pos.x, pos.y, 0f);
+                isPressed = true;
+            }
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            if (Input.GetMouseButton(0)) {
+                screenPos = Input.mousePosition;
+                isPressed = true;
+            }
+#endif
+
+            if (!isPressed) return;
+
+            Ray ray = Camera.main != null ? Camera.main.ScreenPointToRay(screenPos) : default;
+            Plane plane = new Plane(Vector3.up, transform.position);
+
+            if (plane.Raycast(ray, out float enter)) {
+                Vector3 hitPoint = ray.GetPoint(enter);
+                Vector3 local = transform.InverseTransformPoint(hitPoint);
+                float u = (local.x / areaSize.x) + 0.5f;
+                float v = (local.z / areaSize.y) + 0.5f;
+
+                if (u >= 0f && u <= 1f && v >= 0f && v <= 1f) {
+                    TriggerImpulse(new Vector2(u, v), wavemakerAmplitude * 0.7f, sourceRadius * 0.85f, ImpulseShapeType.CircularPulse);
+                }
+            }
         }
 
         private void ComputeNormalAndPackOutput() {
@@ -407,6 +522,10 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropWavemakerFreq = Shader.PropertyToID("_WavemakerFreq");
         private static readonly int PropWavemakerPhase = Shader.PropertyToID("_WavemakerPhase");
         private static readonly int PropWavemakerY = Shader.PropertyToID("_WavemakerY");
+        private static readonly int PropImpulseCenter = Shader.PropertyToID("_ImpulseCenter");
+        private static readonly int PropImpulseRadius = Shader.PropertyToID("_ImpulseRadius");
+        private static readonly int PropImpulseStrength = Shader.PropertyToID("_ImpulseStrength");
+        private static readonly int PropImpulseShape = Shader.PropertyToID("_ImpulseShape");
         private static readonly int PropStateIn = Shader.PropertyToID("_StateIn");
         private static readonly int PropStatePred = Shader.PropertyToID("_StatePred");
         private static readonly int PropStateOut = Shader.PropertyToID("_StateOut");
