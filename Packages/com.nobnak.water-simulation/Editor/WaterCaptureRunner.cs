@@ -88,6 +88,60 @@ namespace Nobnak.WaterSimulation.Editor {
             Debug.Log("[WaterSimulation] Completed Scene 02 Boussinesq captures (Active, Bathymetry, PlanarSoliton)!");
         }
 
+        [MenuItem("Tools/Water Simulation/Capture Scene 02 And 03", false, 62)]
+        public static void CaptureScene02And03() {
+            CaptureScene02();
+            CaptureScene03Choppiness();
+        }
+
+        [MenuItem("Tools/Water Simulation/Capture Scene 03 Choppiness", false, 63)]
+        public static void CaptureScene03Choppiness() {
+            if (!Directory.Exists(CaptureDir)) Directory.CreateDirectory(CaptureDir);
+            CaptureScene("Assets/Scenes/03_FFTWater.unity", "03_FFTWater_Overview.png", "03_FFTWater_Active.png", 45);
+
+            var scene = EditorSceneManager.OpenScene("Assets/Scenes/03_FFTWater.unity", OpenSceneMode.Single);
+            var cam = Camera.main;
+            if (cam == null) cam = Object.FindFirstObjectByType<Camera>();
+            if (cam == null) return;
+
+            int width = 1280;
+            int height = 720;
+            var rt = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+            var prevTarget = cam.targetTexture;
+            cam.targetTexture = rt;
+
+            var fftSim = Object.FindFirstObjectByType<FFTOceanSimulation>();
+            var renderer = Object.FindFirstObjectByType<WaterRenderer>();
+
+            if (fftSim != null && renderer != null) {
+                fftSim.ApplySeaStatePreset(FFTOceanSimulation.SeaStatePreset.Stormy);
+                fftSim.EnableFoam = false;
+                fftSim.ResetSimulation();
+
+                float dt = 0.033f;
+                for (int i = 0; i < 45; i++) fftSim.Step(dt);
+
+                // 1. Choppiness = 0.0 (Pure sine wave synthesis)
+                fftSim.Choppiness = 0.0f;
+                fftSim.Step(0.001f);
+                renderer.UpdateMaterialProperties();
+                cam.Render();
+                SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "03_FFTWater_Choppy0.png"));
+
+                // 2. Choppiness = 2.2 (Sharp trochoidal choppy wave synthesis at identical phase)
+                fftSim.Choppiness = 2.2f;
+                fftSim.Step(0.001f);
+                renderer.UpdateMaterialProperties();
+                cam.Render();
+                SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "03_FFTWater_Choppy22.png"));
+            }
+
+            cam.targetTexture = prevTarget;
+            rt.Release();
+            Object.DestroyImmediate(rt);
+            Debug.Log("[WaterSimulation] Completed Scene 03 Choppiness comparison captures!");
+        }
+
         [MenuItem("Tools/Water Simulation/Capture Periodic Pulses", false, 63)]
         public static void CapturePeriodicPulses() {
             if (!Directory.Exists(CaptureDir)) Directory.CreateDirectory(CaptureDir);

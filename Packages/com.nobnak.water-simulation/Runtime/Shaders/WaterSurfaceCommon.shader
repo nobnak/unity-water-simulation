@@ -160,8 +160,9 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                 float nDotV = saturate(dot(normalWS, viewDirWS));
                 float fresnel = 0.02 + 0.98 * pow(1.0 - nDotV, 5.0);
 
-                // Water color depth blend with heightened contrast
-                float depthFactor = saturate(disp.g * 0.35 + 0.5);
+                // Water color depth blend with heightened contrast + choppy crest compression
+                float crestPinch = saturate(normalSample.a);
+                float depthFactor = saturate(disp.g * 0.35 + crestPinch * 0.25 + 0.45);
                 float3 waterCol = lerp(_DeepColor.rgb, _BaseColor.rgb, depthFactor);
 
                 // Bathymetry shallow water transmittance (shoal & cape emerald tint + depth contours)
@@ -185,7 +186,13 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                 float3 specular = mainLight.color * (spec * (fresnel * 0.85 + 0.15) * 2.0);
                 float3 ambient = float3(0.05, 0.12, 0.18);
 
-                float3 finalColor = diffuse + specular + ambient;
+                // Crest Subsurface Scattering (SSS): thin choppy wave ridges transmit turquoise-jade light
+                float crestHeightMask = saturate(disp.g * 0.45 + 0.35);
+                float backLight = saturate(dot(viewDirWS, -lightDir) * 0.5 + 0.5);
+                float sssFactor = crestPinch * crestHeightMask * (0.45 + 0.55 * backLight);
+                float3 sssColor = float3(0.14, 0.72, 0.68) * mainLight.color * sssFactor * 0.55;
+
+                float3 finalColor = diffuse + specular + sssColor + ambient;
 
                 // Foam blending: only blend foam if disp.a is active
                 float foam = saturate(disp.a * _FoamIntensity);

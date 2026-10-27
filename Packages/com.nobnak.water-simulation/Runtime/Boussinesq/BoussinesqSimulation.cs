@@ -210,12 +210,12 @@ namespace Nobnak.WaterSimulation {
             int w = resolution.x;
             int h = resolution.y;
 
-            stateTexA = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
-            stateTexB = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
-            predTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
-            forceTex = CreateSimulationTexture(w, h, RenderTextureFormat.RGHalf);
-            accelTexA = CreateSimulationTexture(w, h, RenderTextureFormat.RGHalf);
-            accelTexB = CreateSimulationTexture(w, h, RenderTextureFormat.RGHalf);
+            stateTexA = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
+            stateTexB = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
+            predTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
+            forceTex = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
+            accelTexA = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
+            accelTexB = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
             normalTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
             waterDataTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
             bathymetryTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
@@ -323,20 +323,21 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetFloat(PropBedFriction, bedFriction);
             boussinesqShader.SetFloat(PropSpongeWidth, spongeWidth);
             boussinesqShader.SetFloat(PropSpongeStrength, spongeStrength);
+            boussinesqShader.SetInt(PropStepParity, pingPong ? 1 : 0);
 
             boussinesqShader.SetFloat(PropWavemakerAmp, activeAmp);
             boussinesqShader.SetFloat(PropWavemakerFreq, wavemakerFrequency);
             boussinesqShader.SetFloat(PropWavemakerPhase, wavemakerPhase);
             boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
 
-            // 1. Predictor step (Forward differences -> predTex)
+            // 1. Predictor step (Forward/Backward differences -> predTex)
             boussinesqShader.SetTexture(kernelPredict, PropStateIn, current);
             boussinesqShader.SetTexture(kernelPredict, PropStatePred, predTex);
             boussinesqShader.SetTexture(kernelPredict, PropBathymetryTex, bathymetryTex);
             boussinesqShader.SetTexture(kernelPredict, PropForceTex, forceTex);
             DispatchCompute(kernelPredict);
 
-            // 2. Corrector step (Backward differences on predTex + average -> next)
+            // 2. Corrector step (Opposite differences on predTex + average -> next)
             boussinesqShader.SetTexture(kernelCorrect, PropStateIn, current);
             boussinesqShader.SetTexture(kernelCorrect, PropStatePred, predTex);
             boussinesqShader.SetTexture(kernelCorrect, PropStateOut, next);
@@ -345,11 +346,11 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetTexture(kernelCorrect, PropAccelPing, accelTexA);
             DispatchCompute(kernelCorrect);
 
-            // 3. Helmholtz dispersion inversion (if enabled)
+            // 3. Warm-started Pade (2,2) Helmholtz dispersion inversion (if enabled)
             if (dispersionAlpha > 0.001f) {
                 RenderTexture jSrc = accelTexA;
                 RenderTexture jDst = accelTexB;
-                for (int iter = 0; iter < 4; iter++) {
+                for (int iter = 0; iter < 6; iter++) {
                     boussinesqShader.SetTexture(kernelJacobiStep, PropBathymetryTex, bathymetryTex);
                     boussinesqShader.SetTexture(kernelJacobiStep, PropForceTex, forceTex);
                     boussinesqShader.SetTexture(kernelJacobiStep, PropAccelPing, jSrc);
@@ -361,8 +362,9 @@ namespace Nobnak.WaterSimulation {
                     jDst = tmp;
                 }
 
-                // 4. Apply dispersion acceleration to velocities
+                // 4. Apply Pade (2,2) resolvent-split acceleration to velocities
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropStateOut, next);
+                boussinesqShader.SetTexture(kernelApplyDispersion, PropForceTex, forceTex);
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropAccelPing, jSrc);
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropBathymetryTex, bathymetryTex);
                 DispatchCompute(kernelApplyDispersion);
@@ -518,6 +520,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropBedFriction = Shader.PropertyToID("_BedFriction");
         private static readonly int PropSpongeWidth = Shader.PropertyToID("_SpongeWidth");
         private static readonly int PropSpongeStrength = Shader.PropertyToID("_SpongeStrength");
+        private static readonly int PropStepParity = Shader.PropertyToID("_StepParity");
         private static readonly int PropWavemakerAmp = Shader.PropertyToID("_WavemakerAmp");
         private static readonly int PropWavemakerFreq = Shader.PropertyToID("_WavemakerFreq");
         private static readonly int PropWavemakerPhase = Shader.PropertyToID("_WavemakerPhase");

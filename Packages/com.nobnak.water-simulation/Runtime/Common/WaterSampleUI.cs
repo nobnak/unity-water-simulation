@@ -297,7 +297,7 @@ namespace Nobnak.WaterSimulation {
 
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"Choppy: {fftSim.Choppiness:F2}", GUILayout.Width(90));
-                fftSim.Choppiness = GUILayout.HorizontalSlider(fftSim.Choppiness, 0.0f, 2.0f);
+                fftSim.Choppiness = GUILayout.HorizontalSlider(fftSim.Choppiness, 0.0f, 3.0f);
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();

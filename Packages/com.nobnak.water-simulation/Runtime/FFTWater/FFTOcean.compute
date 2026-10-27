@@ -149,10 +149,13 @@ void CSTimeEvolution(uint3 id : SV_DispatchThreadID) {
     // Height spectrum Dy
     _SpectrumDy[id.xy] = float4(h.x, h.y, 0.0, 0.0);
 
-    // Choppy displacement spectrum: Dx = -i * (kx / k) * h, Dz = -i * (ky / k) * h
-    float2 kUnit = (kLen > 1e-5) ? (k / kLen) : float2(0.0, 0.0);
-    float2 dx = float2(kUnit.x * h.y, -kUnit.x * h.x);
-    float2 dz = float2(kUnit.y * h.y, -kUnit.y * h.x);
+    // Wavenumber-balanced choppy displacement spectrum (+i * (k / |k|) * h for +i IFFT convention):
+    // Converges horizontal particles toward wave crests (J < 1 at crests, J > 1 in troughs)
+    float kRef = 0.42;
+    float choppyWeight = 2.1 / (1.0 + (kLen / kRef));
+    float2 kUnit = (kLen > 1e-5) ? (k / kLen) * choppyWeight : float2(0.0, 0.0);
+    float2 dx = float2(-kUnit.x * h.y, kUnit.x * h.x);
+    float2 dz = float2(-kUnit.y * h.y, kUnit.y * h.x);
 
     _SpectrumDxDz[id.xy] = float4(dx.x, dx.y, dz.x, dz.y);
 }
@@ -259,14 +262,23 @@ void CSPackOceanData(uint3 id : SV_DispatchThreadID) {
     // Jacobian J = (1 + lambda * dx/dx)(1 + lambda * dz/dz) - lambda^2 * (dx/dz * dz/dx)
     float J = (1.0 + dx_dx) * (1.0 + dz_dz) - (dx_dz * dz_dx);
 
+    // Crest horizontal compression factor (0 = flat/trough, 1 = sharp pinched crest)
+    float crestPinch = saturate(1.0 - J);
+
     float foam = 0.0;
     if (_EnableFoam > 0) {
-        foam = saturate((_FoamThreshold - J) * 2.0);
+        foam = saturate((_FoamThreshold - J) * 2.2);
     }
 
-    float3 normal = normalize(float3(-dy_dx, 1.0, -dy_dz));
+    // Exact Lagrangian normal N = normalize(Tz x Tx) coupled with horizontal choppy compression
+    float3 normal = normalize(float3(
+        -dy_dx * (1.0 + dz_dz) + dy_dz * dz_dx,
+        max(0.08, J),
+        -dy_dz * (1.0 + dx_dx) + dy_dx * dx_dz
+    ));
 
     // Pack into WaterDataTex: RGB = displacement, A = foam
+    // Pack into NormalTex: RGB = normal, A = crestPinch
     _WaterDataTex[pos] = float4(dx, dy, dz, foam);
-    _NormalTex[pos] = float4(normal, foam);
+    _NormalTex[pos] = float4(normal, crestPinch);
 }

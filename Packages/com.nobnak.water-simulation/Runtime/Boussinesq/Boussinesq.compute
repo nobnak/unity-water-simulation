@@ -26,6 +26,7 @@ cbuffer SimParams {
     float _BedFriction;      // Bottom friction
     float _SpongeWidth;      // Cells
     float _SpongeStrength;
+    int _StepParity;         // Alternating 0 / 1 for Symmetric MacCormack (F-B / B-F)
 };
 
 cbuffer WavemakerParams {
@@ -85,36 +86,37 @@ void CSInit(uint3 id : SV_DispatchThreadID) {
     _AccelPong[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
 }
 
-// 1. MacCormack Predictor: Forward spatial differences
+// 1. Symmetric MacCormack Predictor: Forward on even parity, Backward on odd parity
 [numthreads(8, 8, 1)]
 void CSPredict(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
     int2 pos = int2(id.xy);
 
-    int2 posR = int2(min(_Width - 1, pos.x + 1), pos.y);
-    int2 posU = int2(pos.x, min(_Height - 1, pos.y + 1));
+    int dir = (_StepParity == 0) ? 1 : -1;
+    int2 posX = int2(clamp(pos.x + dir, 0, _Width - 1), pos.y);
+    int2 posZ = int2(pos.x, clamp(pos.y + dir, 0, _Height - 1));
 
     float4 stateC = _StateIn[pos];
-    float4 stateR = _StateIn[posR];
-    float4 stateU = _StateIn[posU];
+    float4 stateX = _StateIn[posX];
+    float4 stateZ = _StateIn[posZ];
 
     float eta = stateC.r;
     float u   = stateC.g;
     float w   = stateC.b;
 
     float hC = max(0.2, _BathymetryTex[pos].r);
-    float hR = max(0.2, _BathymetryTex[posR].r);
-    float hU = max(0.2, _BathymetryTex[posU].r);
+    float hX = max(0.2, _BathymetryTex[posX].r);
+    float hZ = max(0.2, _BathymetryTex[posZ].r);
 
     float totalHC = max(0.05, hC + eta);
-    float totalHR = max(0.05, hR + stateR.r);
-    float totalHU = max(0.05, hU + stateU.r);
+    float totalHX = max(0.05, hX + stateX.r);
+    float totalHZ = max(0.05, hZ + stateZ.r);
 
-    float invDx = 1.0 / _GridSpacing;
+    float signedInvDx = (float)dir / _GridSpacing;
 
-    // Forward flux divergence: d(Hu)/dx + d(Hw)/dz
-    float dHudx = (totalHR * stateR.g - totalHC * u) * invDx;
-    float dHwdz = (totalHU * stateU.b - totalHC * w) * invDx;
+    // Flux divergence: d(Hu)/dx + d(Hw)/dz
+    float dHudx = (totalHX * stateX.g - totalHC * u) * signedInvDx;
+    float dHwdz = (totalHZ * stateZ.b - totalHC * w) * signedInvDx;
 
     // Directional mass and momentum source
     float srcEta, srcW;
@@ -122,14 +124,14 @@ void CSPredict(uint3 id : SV_DispatchThreadID) {
 
     float etaPred = eta - _DeltaTime * (dHudx + dHwdz) + _DeltaTime * srcEta;
 
-    // Forward spatial derivatives for momentum:
-    float detadx = (stateR.r - eta) * invDx;
-    float detadz = (stateU.r - eta) * invDx;
+    // Spatial derivatives for momentum:
+    float detadx = (stateX.r - eta) * signedInvDx;
+    float detadz = (stateZ.r - eta) * signedInvDx;
 
-    float dudx = (stateR.g - u) * invDx;
-    float dudz = (stateU.g - u) * invDx;
-    float dwdx = (stateR.b - w) * invDx;
-    float dwdz = (stateU.b - w) * invDx;
+    float dudx = (stateX.g - u) * signedInvDx;
+    float dudz = (stateZ.g - u) * signedInvDx;
+    float dwdx = (stateX.b - w) * signedInvDx;
+    float dwdz = (stateZ.b - w) * signedInvDx;
 
     float advectX = u * dudx + w * dudz;
     float advectZ = u * dwdx + w * dwdz;
@@ -156,37 +158,38 @@ void CSPredict(uint3 id : SV_DispatchThreadID) {
     _StatePred[pos] = float4(etaPred, uPred, wPred, 0.0);
 }
 
-// 2. MacCormack Corrector: Backward spatial differences + average with current state
+// 2. Symmetric MacCormack Corrector: Opposite spatial difference + TVD shock limiter
 [numthreads(8, 8, 1)]
 void CSCorrect(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
     int2 pos = int2(id.xy);
 
-    int2 posL = int2(max(0, pos.x - 1), pos.y);
-    int2 posD = int2(pos.x, max(0, pos.y - 1));
+    int dir = (_StepParity == 0) ? -1 : 1;
+    int2 posX = int2(clamp(pos.x + dir, 0, _Width - 1), pos.y);
+    int2 posZ = int2(pos.x, clamp(pos.y + dir, 0, _Height - 1));
 
     float4 stateN = _StateIn[pos];
     float4 statePredC = _StatePred[pos];
-    float4 statePredL = _StatePred[posL];
-    float4 statePredD = _StatePred[posD];
+    float4 statePredX = _StatePred[posX];
+    float4 statePredZ = _StatePred[posZ];
 
     float etaStar = statePredC.r;
     float uStar   = statePredC.g;
     float wStar   = statePredC.b;
 
     float hC = max(0.2, _BathymetryTex[pos].r);
-    float hL = max(0.2, _BathymetryTex[posL].r);
-    float hD = max(0.2, _BathymetryTex[posD].r);
+    float hX = max(0.2, _BathymetryTex[posX].r);
+    float hZ = max(0.2, _BathymetryTex[posZ].r);
 
     float totalHC = max(0.05, hC + etaStar);
-    float totalHL = max(0.05, hL + statePredL.r);
-    float totalHD = max(0.05, hD + statePredD.r);
+    float totalHX = max(0.05, hX + statePredX.r);
+    float totalHZ = max(0.05, hZ + statePredZ.r);
 
-    float invDx = 1.0 / _GridSpacing;
+    float signedInvDx = (float)dir / _GridSpacing;
 
-    // Backward flux divergence on predicted state:
-    float dHudxStar = (totalHC * uStar - totalHL * statePredL.g) * invDx;
-    float dHwdzStar = (totalHC * wStar - totalHD * statePredD.b) * invDx;
+    // Opposite flux divergence on predicted state:
+    float dHudxStar = (totalHX * statePredX.g - totalHC * uStar) * signedInvDx;
+    float dHwdzStar = (totalHZ * statePredZ.b - totalHC * wStar) * signedInvDx;
 
     float nextPhase = _WavemakerPhase + 2.0 * 3.14159265 * _WavemakerFreq * _DeltaTime;
     float srcEtaStar, srcWStar;
@@ -195,14 +198,14 @@ void CSCorrect(uint3 id : SV_DispatchThreadID) {
     // MacCormack 2nd-order elevation update
     float etaNext = 0.5 * (stateN.r + etaStar - _DeltaTime * (dHudxStar + dHwdzStar) + _DeltaTime * srcEtaStar);
 
-    // Backward spatial derivatives for momentum on predicted state:
-    float detadxStar = (etaStar - statePredL.r) * invDx;
-    float detadzStar = (etaStar - statePredD.r) * invDx;
+    // Spatial derivatives for momentum on predicted state:
+    float detadxStar = (statePredX.r - etaStar) * signedInvDx;
+    float detadzStar = (statePredZ.r - etaStar) * signedInvDx;
 
-    float dudxStar = (uStar - statePredL.g) * invDx;
-    float dudzStar = (uStar - statePredD.g) * invDx;
-    float dwdxStar = (wStar - statePredL.b) * invDx;
-    float dwdzStar = (wStar - statePredD.b) * invDx;
+    float dudxStar = (statePredX.g - uStar) * signedInvDx;
+    float dudzStar = (statePredZ.g - uStar) * signedInvDx;
+    float dwdxStar = (statePredX.b - wStar) * signedInvDx;
+    float dwdzStar = (statePredZ.b - wStar) * signedInvDx;
 
     float advectXStar = uStar * dudxStar + wStar * dudzStar;
     float advectZStar = uStar * dwdxStar + wStar * dwdzStar;
@@ -248,17 +251,16 @@ void CSJacobiStep(uint3 id : SV_DispatchThreadID) {
     float h = max(0.2, _BathymetryTex[pos].r);
     float dx = _GridSpacing;
     float beta = _DispersionAlpha * (h * h) / (6.0 * dx * dx);
-    beta = clamp(beta, 0.0, 4.0);
+    beta = clamp(beta, 0.0, 6.0);
 
-    float4 f = _ForceTex[pos];
-    float4 aL = _AccelPing[pos + int2(-1, 0)];
-    float4 aR = _AccelPing[pos + int2( 1, 0)];
-    float4 aD = _AccelPing[pos + int2( 0,-1)];
-    float4 aU = _AccelPing[pos + int2( 0, 1)];
+    float2 f = _ForceTex[pos].xy;
+    float2 aL = _AccelPing[pos + int2(-1, 0)].xy;
+    float2 aR = _AccelPing[pos + int2( 1, 0)].xy;
+    float2 aD = _AccelPing[pos + int2( 0,-1)].xy;
+    float2 aU = _AccelPing[pos + int2( 0, 1)].xy;
 
-    float2 sumNeighbors = aL.xy + aR.xy + aD.xy + aU.xy;
-    float2 aNext = (f.xy + beta * sumNeighbors) / (1.0 + 4.0 * beta);
-
+    float2 sumNeighbors = aL + aR + aD + aU;
+    float2 aNext = (f + beta * sumNeighbors) / (1.0 + 4.0 * beta);
     _AccelPong[pos] = float4(aNext, 0.0, 0.0);
 }
 

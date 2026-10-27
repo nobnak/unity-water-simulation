@@ -27,8 +27,8 @@ namespace Nobnak.WaterSimulation {
         [SerializeField] private float windDirectionDegrees = 45.0f;
 
         [Tooltip("Horizontal choppy wave displacement scale.")]
-        [Range(0f, 2.0f)]
-        [SerializeField] private float choppiness = 0.85f;
+        [Range(0f, 3.0f)]
+        [SerializeField] private float choppiness = 1.35f;
 
         [Header("Swell Component")]
         [Tooltip("Amplitude of distant swell waves [m].")]
@@ -102,12 +102,18 @@ namespace Nobnak.WaterSimulation {
 
         public float Choppiness {
             get => choppiness;
-            set => choppiness = math.clamp(value, 0f, 2.5f);
+            set {
+                choppiness = math.clamp(value, 0f, 3.0f);
+                if (!isRunning) OnStepSimulation(0f);
+            }
         }
 
         public bool EnableFoam {
             get => enableFoam;
-            set => enableFoam = value;
+            set {
+                enableFoam = value;
+                if (!isRunning) OnStepSimulation(0f);
+            }
         }
         #endregion
 
@@ -126,21 +132,21 @@ namespace Nobnak.WaterSimulation {
                 case SeaStatePreset.Calm:
                     windSpeed = 4.0f;
                     windDirectionDegrees = 30.0f;
-                    choppiness = 0.7f;
+                    choppiness = 0.6f;
                     swellStrength = 0.2f;
                     swellDirectionDegrees = 60.0f;
                     break;
                 case SeaStatePreset.Swell:
                     windSpeed = 8.0f;
                     windDirectionDegrees = 45.0f;
-                    choppiness = 1.1f;
+                    choppiness = 1.35f;
                     swellStrength = 2.2f;
                     swellDirectionDegrees = 135.0f;
                     break;
                 case SeaStatePreset.Stormy:
                     windSpeed = 18.0f;
                     windDirectionDegrees = 70.0f;
-                    choppiness = 1.4f;
+                    choppiness = 1.9f;
                     swellStrength = 3.5f;
                     swellDirectionDegrees = 90.0f;
                     break;
