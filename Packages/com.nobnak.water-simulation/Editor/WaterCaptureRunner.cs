@@ -39,6 +39,46 @@ namespace Nobnak.WaterSimulation.Editor {
             Debug.Log("[WaterSimulation] Completed Scene 02 Boussinesq capture (240 steps)!");
         }
 
+        [MenuItem("Tools/Water Simulation/Capture Periodic Pulses", false, 63)]
+        public static void CapturePeriodicPulses() {
+            if (!Directory.Exists(CaptureDir)) Directory.CreateDirectory(CaptureDir);
+
+            var scene = EditorSceneManager.OpenScene("Assets/Scenes/01_WaveEquation.unity", OpenSceneMode.Single);
+            var cam = Camera.main;
+            if (cam == null) cam = Object.FindFirstObjectByType<Camera>();
+            if (cam == null) return;
+
+            int width = 1280;
+            int height = 720;
+            var rt = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+            var prevTarget = cam.targetTexture;
+            cam.targetTexture = rt;
+
+            var waveSim = Object.FindFirstObjectByType<WaveEquationSimulation>();
+            var renderer = Object.FindFirstObjectByType<WaterRenderer>();
+
+            if (waveSim != null) {
+                waveSim.SourceMode = WaveEquationSimulation.InputMode.ContinuousOscillator;
+                waveSim.PulseInterval = 1.0f;
+                waveSim.ResetSimulation();
+
+                float dt = 0.033f;
+                for (int i = 0; i < 90; i++) {
+                    waveSim.Step(dt);
+                }
+            }
+
+            if (renderer != null) renderer.UpdateMaterialProperties();
+
+            cam.Render();
+            SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "01_WaveEquation_PeriodicPulses.png"));
+
+            cam.targetTexture = prevTarget;
+            rt.Release();
+            Object.DestroyImmediate(rt);
+            Debug.Log("[WaterSimulation] Completed Periodic Pulses capture!");
+        }
+
         [MenuItem("Tools/Water Simulation/Capture Visual Modes", false, 62)]
         public static void CaptureVisualModes() {
             if (!Directory.Exists(CaptureDir)) Directory.CreateDirectory(CaptureDir);

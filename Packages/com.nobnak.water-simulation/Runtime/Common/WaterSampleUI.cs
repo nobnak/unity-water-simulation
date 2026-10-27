@@ -196,6 +196,12 @@ namespace Nobnak.WaterSimulation {
                     if (GUILayout.Button("★ Trigger Impulse (波を発生)")) {
                         waveSim.TriggerImpulse();
                     }
+                } else if (waveSim.SourceMode == WaveEquationSimulation.InputMode.ContinuousOscillator ||
+                           waveSim.SourceMode == WaveEquationSimulation.InputMode.MovingSource) {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"Interval: {waveSim.PulseInterval:F2}s ({1f / waveSim.PulseInterval:F1} Hz)", GUILayout.Width(170));
+                    waveSim.PulseInterval = GUILayout.HorizontalSlider(waveSim.PulseInterval, 0.2f, 3.0f);
+                    GUILayout.EndHorizontal();
                 } else if (waveSim.SourceMode == WaveEquationSimulation.InputMode.InteractiveMouse) {
                     GUILayout.Label("<color=#a0f080><size=10>水面を左クリック / ドラッグして波を発生</size></color>");
                 }

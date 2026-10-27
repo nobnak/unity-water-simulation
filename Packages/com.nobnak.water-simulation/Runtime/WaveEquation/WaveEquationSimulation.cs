@@ -53,7 +53,8 @@ namespace Nobnak.WaterSimulation {
         [SerializeField] private Vector2 sourceCenter = new Vector2(0.5f, 0.25f);
         [SerializeField] private float sourceRadius = 0.03f;
         [SerializeField] private float sourceAmplitude = 1.0f;
-        [SerializeField] private float oscillatorFrequency = 1.5f;
+        [SerializeField] private float pulseInterval = 1.0f;
+        [SerializeField] private float oscillatorFrequency = 1.0f;
         [SerializeField] private float movingSourceSpeed = 0.25f;
 
         [Header("Compute Shader")]
@@ -67,6 +68,7 @@ namespace Nobnak.WaterSimulation {
         private bool pingPong;
         private float oscillatorPhase;
         private float movingPhase;
+        private float pulseTimer;
 
         private int kernelInit;
         private int kernelStep;
@@ -84,6 +86,24 @@ namespace Nobnak.WaterSimulation {
         public float Damping {
             get => damping;
             set => damping = math.max(0f, value);
+        }
+
+        public float PulseInterval {
+            get {
+                if (pulseInterval <= 0.01f && oscillatorFrequency > 0.01f) {
+                    pulseInterval = 1.0f / oscillatorFrequency;
+                }
+                return pulseInterval;
+            }
+            set {
+                pulseInterval = math.max(0.05f, value);
+                oscillatorFrequency = 1.0f / pulseInterval;
+            }
+        }
+
+        public float OscillatorFrequency {
+            get => 1.0f / math.max(1e-4f, PulseInterval);
+            set => PulseInterval = 1.0f / math.max(1e-4f, value);
         }
 
         public InputMode SourceMode {
@@ -115,20 +135,24 @@ namespace Nobnak.WaterSimulation {
 
         #region public interface
         public void TriggerImpulse(Vector2 uvPosition, float amplitude, float radius) {
-            if (waveShader == null || stateTexA == null) return;
+            TriggerImpulseOnTarget(CurrentStateTex, uvPosition, amplitude, radius);
+        }
+
+        public void TriggerImpulse() {
+            TriggerImpulse(sourceCenter, sourceAmplitude, sourceRadius);
+        }
+
+        public void TriggerImpulseOnTarget(RenderTexture targetTex, Vector2 uvPosition, float amplitude, float radius) {
+            if (waveShader == null || targetTex == null) return;
 
             waveShader.SetInt(PropWidth, resolution.x);
             waveShader.SetInt(PropHeight, resolution.y);
             waveShader.SetVector(PropInputCenter, new Vector4(uvPosition.x, uvPosition.y, 0, 0));
             waveShader.SetFloat(PropInputRadius, radius);
             waveShader.SetFloat(PropInputStrength, amplitude);
-            waveShader.SetTexture(kernelImpulse, PropNextState, CurrentStateTex);
+            waveShader.SetTexture(kernelImpulse, PropNextState, targetTex);
 
             DispatchCompute(kernelImpulse);
-        }
-
-        public void TriggerImpulse() {
-            TriggerImpulse(sourceCenter, sourceAmplitude, sourceRadius);
         }
 
         public void SetObstaclePattern(ObstaclePattern pattern) {
@@ -180,6 +204,7 @@ namespace Nobnak.WaterSimulation {
 
             oscillatorPhase = 0f;
             movingPhase = 0f;
+            pulseTimer = 0f;
             pingPong = false;
 
             waveShader.SetInt(PropWidth, resolution.x);
@@ -196,7 +221,7 @@ namespace Nobnak.WaterSimulation {
 
             UpdateObstacleTexture();
 
-            if (sourceMode == InputMode.SingleImpulse) {
+            if (sourceMode == InputMode.SingleImpulse || sourceMode == InputMode.ContinuousOscillator) {
                 TriggerImpulse(sourceCenter, sourceAmplitude, sourceRadius);
             }
             ComputeNormalAndPackOutput();
@@ -250,29 +275,23 @@ namespace Nobnak.WaterSimulation {
         }
 
         private void ApplySourceExcitation(RenderTexture target, float subDt) {
+            float interval = PulseInterval;
             if (sourceMode == InputMode.ContinuousOscillator) {
-                oscillatorPhase += 2.0f * math.PI * oscillatorFrequency * subDt;
-                waveShader.SetVector(PropInputCenter, new Vector4(sourceCenter.x, sourceCenter.y, 0, 0));
-                waveShader.SetFloat(PropInputRadius, sourceRadius);
-                waveShader.SetFloat(PropInputStrength, sourceAmplitude);
-                waveShader.SetFloat(PropOscillatorPhase, oscillatorPhase);
-                waveShader.SetFloat(PropDeltaTime, subDt);
-                waveShader.SetTexture(kernelOscillator, PropNextState, target);
-                DispatchCompute(kernelOscillator);
+                pulseTimer += subDt;
+                if (pulseTimer >= interval) {
+                    pulseTimer %= interval;
+                    TriggerImpulseOnTarget(target, sourceCenter, sourceAmplitude, sourceRadius);
+                }
             } else if (sourceMode == InputMode.MovingSource) {
                 movingPhase += movingSourceSpeed * subDt;
                 // Move along an oval or figure-8 path
                 float mx = 0.5f + 0.3f * math.cos(movingPhase);
                 float mz = 0.5f + 0.2f * math.sin(movingPhase * 2f);
-                oscillatorPhase += 2.0f * math.PI * oscillatorFrequency * subDt;
-
-                waveShader.SetVector(PropInputCenter, new Vector4(mx, mz, 0, 0));
-                waveShader.SetFloat(PropInputRadius, sourceRadius);
-                waveShader.SetFloat(PropInputStrength, sourceAmplitude);
-                waveShader.SetFloat(PropOscillatorPhase, oscillatorPhase);
-                waveShader.SetFloat(PropDeltaTime, subDt);
-                waveShader.SetTexture(kernelOscillator, PropNextState, target);
-                DispatchCompute(kernelOscillator);
+                pulseTimer += subDt;
+                if (pulseTimer >= interval) {
+                    pulseTimer %= interval;
+                    TriggerImpulseOnTarget(target, new Vector2(mx, mz), sourceAmplitude, sourceRadius);
+                }
             }
         }
 
