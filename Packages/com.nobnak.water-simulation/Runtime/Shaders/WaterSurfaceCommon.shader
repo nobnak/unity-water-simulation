@@ -40,7 +40,6 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
             #pragma vertex Vert
             #pragma fragment Frag
 
-            #pragma shader_feature_local _VISUALMODE_REALISTIC _VISUALMODE_HEIGHTMAP _VISUALMODE_NORMALVISUAL _VISUALMODE_WIREFRAME
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
             #pragma multi_compile _ _SHADOWS_SOFT
 
@@ -117,22 +116,24 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                     normalWS = normalize(perturbed);
                 }
 
-                #if defined(_VISUALMODE_HEIGHTMAP)
+                int vmode = (int)(_VisualMode + 0.5);
+                if (vmode == 1) {
                     float normHeight = disp.g / max(0.01, _HeightMapRange);
                     float3 col = HeatmapColor(normHeight);
                     float contour = frac(disp.g * 5.0);
                     col *= (contour > 0.9 || contour < 0.1) ? 0.8 : 1.0;
                     return half4(col, 1.0);
-                #elif defined(_VISUALMODE_NORMALVISUAL)
+                } else if (vmode == 2) {
                     return half4(normalWS * 0.5 + 0.5, 1.0);
-                #elif defined(_VISUALMODE_WIREFRAME)
+                } else if (vmode == 3) {
                     float2 grid = frac(uv * 64.0);
                     float edge = min(min(grid.x, 1.0 - grid.x), min(grid.y, 1.0 - grid.y));
                     float wire = smoothstep(0.0, 0.05, edge);
                     float3 base = lerp(float3(0.1, 0.7, 0.9), float3(0.02, 0.05, 0.1), wire);
                     return half4(base, 1.0);
-                #else
-                    // Realistic PBR Water Rendering
+                }
+
+                // Realistic PBR Water Rendering
                     Light mainLight = GetMainLight();
                     float3 viewDirWS = normalize(GetCameraPositionWS() - input.positionWS);
 
@@ -163,7 +164,6 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
 
                     float alpha = lerp(_BaseColor.a, 1.0, fresnel * 0.4 + foam * 0.6);
                     return half4(finalColor, alpha);
-                #endif
             }
             ENDHLSL
         }

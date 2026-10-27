@@ -39,6 +39,69 @@ namespace Nobnak.WaterSimulation.Editor {
             Debug.Log("[WaterSimulation] Completed Scene 02 Boussinesq capture (240 steps)!");
         }
 
+        [MenuItem("Tools/Water Simulation/Capture Visual Modes", false, 62)]
+        public static void CaptureVisualModes() {
+            if (!Directory.Exists(CaptureDir)) Directory.CreateDirectory(CaptureDir);
+
+            var scene = EditorSceneManager.OpenScene("Assets/Scenes/01_WaveEquation.unity", OpenSceneMode.Single);
+            var cam = Camera.main;
+            if (cam == null) cam = Object.FindFirstObjectByType<Camera>();
+            if (cam == null) return;
+
+            int width = 1280;
+            int height = 720;
+            var rt = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+            var prevTarget = cam.targetTexture;
+            cam.targetTexture = rt;
+
+            var sims = Object.FindObjectsByType<WaterSimulationBase>(FindObjectsSortMode.None);
+            var renderers = Object.FindObjectsByType<WaterRenderer>(FindObjectsSortMode.None);
+
+            foreach (var sim in sims) sim.ResetSimulation();
+
+            float dt = 0.033f;
+            for (int i = 0; i < 60; i++) {
+                foreach (var sim in sims) sim.Step(dt);
+            }
+
+            // 1. Realistic
+            foreach (var r in renderers) {
+                r.SetVisualMode(WaterRenderer.VisualMode.Realistic);
+                r.UpdateMaterialProperties();
+            }
+            cam.Render();
+            SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "01_WaveEquation_Realistic.png"));
+
+            // 2. HeightMap
+            foreach (var r in renderers) {
+                r.SetVisualMode(WaterRenderer.VisualMode.HeightMap);
+                r.UpdateMaterialProperties();
+            }
+            cam.Render();
+            SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "01_WaveEquation_HeightMap.png"));
+
+            // 3. NormalVisual
+            foreach (var r in renderers) {
+                r.SetVisualMode(WaterRenderer.VisualMode.NormalVisual);
+                r.UpdateMaterialProperties();
+            }
+            cam.Render();
+            SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "01_WaveEquation_Normal.png"));
+
+            // 4. Wireframe
+            foreach (var r in renderers) {
+                r.SetVisualMode(WaterRenderer.VisualMode.Wireframe);
+                r.UpdateMaterialProperties();
+            }
+            cam.Render();
+            SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "01_WaveEquation_Wireframe.png"));
+
+            cam.targetTexture = prevTarget;
+            rt.Release();
+            Object.DestroyImmediate(rt);
+            Debug.Log("[WaterSimulation] Completed Visual Modes captures (Realistic, HeightMap, Normal, Wireframe)!");
+        }
+
         private static void CaptureScene(string scenePath, string fileNameInit, string fileNameActive, int activeSteps) {
             var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
             var cam = Camera.main;

@@ -53,7 +53,10 @@ namespace Nobnak.WaterSimulation {
 
         public VisualMode Mode {
             get => visualizationMode;
-            set => visualizationMode = value;
+            set {
+                visualizationMode = value;
+                UpdateMaterialProperties();
+            }
         }
 
         public Material WaterMaterial {

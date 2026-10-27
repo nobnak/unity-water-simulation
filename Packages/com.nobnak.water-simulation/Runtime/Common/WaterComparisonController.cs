@@ -146,6 +146,7 @@ namespace Nobnak.WaterSimulation {
             if (GUILayout.Button("Realistic")) SetVisualModeAll(WaterRenderer.VisualMode.Realistic);
             if (GUILayout.Button("Height")) SetVisualModeAll(WaterRenderer.VisualMode.HeightMap);
             if (GUILayout.Button("Normal")) SetVisualModeAll(WaterRenderer.VisualMode.NormalVisual);
+            if (GUILayout.Button("Wireframe")) SetVisualModeAll(WaterRenderer.VisualMode.Wireframe);
             GUILayout.EndHorizontal();
 
             GUILayout.Space(6);
