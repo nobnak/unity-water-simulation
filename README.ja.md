@@ -28,4 +28,4 @@ UPMパッケージ本体は [`Packages/com.nobnak.water-simulation`](file:///c:/
 - **グラフィックスAPI**: Direct3D 12 / 11 / Metal / Vulkan (Compute Shader 5.0 以上)
 - **依存パッケージ**: `com.unity.render-pipelines.universal`, `com.unity.mathematics` (1.3.2)
 
-詳細な数式理論、性能ベンチマーク、利用手順については [パッケージ ドキュメント (日本語)](file:///c:/Users/nakata/Repo/unity-water-simulation/Packages/com.nobnak.water-simulation/README.ja.md) をご覧ください。
+詳細な数式理論、性能ベンチマーク、利用手順については [パッケージ ドキュメント (日本語)](Packages/com.nobnak.water-simulation/README.ja.md) を、これまでの実装履歴・技術検証・拡張設計アーカイブについては [技術検討・議論アーカイブ総合資料](Docs/WaterSimulation_Technical_Archive.ja.md) をご覧ください。
