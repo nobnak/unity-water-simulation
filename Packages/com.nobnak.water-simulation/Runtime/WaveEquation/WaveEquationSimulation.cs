@@ -127,6 +127,10 @@ namespace Nobnak.WaterSimulation {
             DispatchCompute(kernelImpulse);
         }
 
+        public void TriggerImpulse() {
+            TriggerImpulse(sourceCenter, sourceAmplitude, sourceRadius);
+        }
+
         public void SetObstaclePattern(ObstaclePattern pattern) {
             Pattern = pattern;
         }

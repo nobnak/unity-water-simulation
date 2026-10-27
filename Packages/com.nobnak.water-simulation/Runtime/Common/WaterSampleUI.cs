@@ -56,8 +56,8 @@ namespace Nobnak.WaterSimulation {
         #region private methods
         private void DrawHUD() {
             float margin = 10f;
-            float panelWidth = 340f;
-            float panelHeight = isFolded ? 40f : math.min(Screen.height - 20f, 560f);
+            float panelWidth = 360f;
+            float panelHeight = isFolded ? 40f : math.min(Screen.height - 20f, 680f);
 
             Rect panelRect = new Rect(Screen.width - panelWidth - margin, margin, panelWidth, panelHeight);
             GUI.Box(panelRect, "");
@@ -127,6 +127,8 @@ namespace Nobnak.WaterSimulation {
                 GUILayout.Label($"TimeScale: {simulation.TimeScale:F1}", GUILayout.Width(90));
                 simulation.TimeScale = GUILayout.HorizontalSlider(simulation.TimeScale, 0f, 2.5f);
                 GUILayout.EndHorizontal();
+
+                DrawSpecializedControls();
             }
 
             // Visual mode
@@ -168,6 +170,102 @@ namespace Nobnak.WaterSimulation {
 
             GUILayout.EndScrollView();
             GUILayout.EndArea();
+        }
+
+        private void DrawSpecializedControls() {
+            if (simulation is WaveEquationSimulation waveSim) {
+                GUILayout.Space(4);
+                GUILayout.Label("<b>[スリット / 障害物 / Obstacles]</b>");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("None")) waveSim.SetObstaclePattern(WaveEquationSimulation.ObstaclePattern.None);
+                if (GUILayout.Button("Single")) waveSim.SetObstaclePattern(WaveEquationSimulation.ObstaclePattern.SingleSlit);
+                if (GUILayout.Button("Double")) waveSim.SetObstaclePattern(WaveEquationSimulation.ObstaclePattern.DoubleSlit);
+                if (GUILayout.Button("Pillars")) waveSim.SetObstaclePattern(WaveEquationSimulation.ObstaclePattern.ObstaclePillars);
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(2);
+                GUILayout.Label("<b>[波源モード / Source Mode]</b>");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Impulse")) waveSim.SourceMode = WaveEquationSimulation.InputMode.SingleImpulse;
+                if (GUILayout.Button("Oscillator")) waveSim.SourceMode = WaveEquationSimulation.InputMode.ContinuousOscillator;
+                if (GUILayout.Button("Moving")) waveSim.SourceMode = WaveEquationSimulation.InputMode.MovingSource;
+                if (GUILayout.Button("Mouse")) waveSim.SourceMode = WaveEquationSimulation.InputMode.InteractiveMouse;
+                GUILayout.EndHorizontal();
+
+                if (waveSim.SourceMode == WaveEquationSimulation.InputMode.SingleImpulse) {
+                    if (GUILayout.Button("★ Trigger Impulse (波を発生)")) {
+                        waveSim.TriggerImpulse();
+                    }
+                } else if (waveSim.SourceMode == WaveEquationSimulation.InputMode.InteractiveMouse) {
+                    GUILayout.Label("<color=#a0f080><size=10>水面を左クリック / ドラッグして波を発生</size></color>");
+                }
+
+                GUILayout.Space(2);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"WaveSpeed: {waveSim.WaveSpeed:F1}", GUILayout.Width(90));
+                waveSim.WaveSpeed = GUILayout.HorizontalSlider(waveSim.WaveSpeed, 2.0f, 20.0f);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Damping: {waveSim.Damping:F3}", GUILayout.Width(90));
+                waveSim.Damping = GUILayout.HorizontalSlider(waveSim.Damping, 0.0f, 0.1f);
+                GUILayout.EndHorizontal();
+            } else if (simulation is BoussinesqSimulation boussSim) {
+                GUILayout.Space(4);
+                GUILayout.Label("<b>[海底地形 / Bathymetry]</b>");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Flat (平坦)")) boussSim.SetBathymetryType(BoussinesqSimulation.BathymetryType.Flat);
+                if (GUILayout.Button("Shoal (浅瀬・岬)")) boussSim.SetBathymetryType(BoussinesqSimulation.BathymetryType.ShoalAndCape);
+                if (GUILayout.Button("Slope (斜面)")) boussSim.SetBathymetryType(BoussinesqSimulation.BathymetryType.LinearSlope);
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(2);
+                GUILayout.Label("<b>[波源 / Wave Source]</b>");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Wavemaker (連続造波)")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.ContinuousWavemaker;
+                if (GUILayout.Button("Pulse (孤立波)")) {
+                    boussSim.Condition = BoussinesqSimulation.InitialConditionType.GaussianPulse;
+                    boussSim.TriggerGaussianPulse(new Vector2(0.5f, 0.15f), 1.2f, 0.05f);
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(2);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Dispersion: {boussSim.DispersionAlpha:F2}", GUILayout.Width(90));
+                boussSim.DispersionAlpha = GUILayout.HorizontalSlider(boussSim.DispersionAlpha, 0.0f, 1.2f);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Wave Amp: {boussSim.WavemakerAmplitude:F2}m", GUILayout.Width(90));
+                boussSim.WavemakerAmplitude = GUILayout.HorizontalSlider(boussSim.WavemakerAmplitude, 0.1f, 2.0f);
+                GUILayout.EndHorizontal();
+            } else if (simulation is FFTOceanSimulation fftSim) {
+                GUILayout.Space(4);
+                GUILayout.Label("<b>[海況プリセット / Sea State]</b>");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Calm (穏やか)")) fftSim.ApplySeaStatePreset(FFTOceanSimulation.SeaStatePreset.Calm);
+                if (GUILayout.Button("Swell (うねり)")) fftSim.ApplySeaStatePreset(FFTOceanSimulation.SeaStatePreset.Swell);
+                if (GUILayout.Button("Stormy (荒天)")) fftSim.ApplySeaStatePreset(FFTOceanSimulation.SeaStatePreset.Stormy);
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(2);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Wind: {fftSim.WindSpeed:F1}m/s", GUILayout.Width(90));
+                fftSim.WindSpeed = GUILayout.HorizontalSlider(fftSim.WindSpeed, 2.0f, 25.0f);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Choppy: {fftSim.Choppiness:F2}", GUILayout.Width(90));
+                fftSim.Choppiness = GUILayout.HorizontalSlider(fftSim.Choppiness, 0.0f, 2.0f);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Swell: {fftSim.SwellStrength:F1}", GUILayout.Width(90));
+                fftSim.SwellStrength = GUILayout.HorizontalSlider(fftSim.SwellStrength, 0.0f, 4.0f);
+                GUILayout.EndHorizontal();
+
+                fftSim.EnableFoam = GUILayout.Toggle(fftSim.EnableFoam, " Foam (白波・泡立ちの描画)");
+            }
         }
         #endregion
     }
