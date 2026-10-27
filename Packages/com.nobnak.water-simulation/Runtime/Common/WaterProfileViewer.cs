@@ -49,7 +49,8 @@ namespace Nobnak.WaterSimulation {
         #region private fields
         private Vector3[] surfacePoints;
         private Vector3[] bedPoints;
-        private Texture2D readbackTexture;
+        private Texture2D readbackWaterTex;
+        private Texture2D readbackBathyTex;
         private RenderTexture sliceRT;
         #endregion
 
@@ -86,9 +87,13 @@ namespace Nobnak.WaterSimulation {
                 DestroyImmediate(sliceRT);
                 sliceRT = null;
             }
-            if (readbackTexture != null) {
-                DestroyImmediate(readbackTexture);
-                readbackTexture = null;
+            if (readbackWaterTex != null) {
+                DestroyImmediate(readbackWaterTex);
+                readbackWaterTex = null;
+            }
+            if (readbackBathyTex != null) {
+                DestroyImmediate(readbackBathyTex);
+                readbackBathyTex = null;
             }
         }
 
@@ -201,34 +206,46 @@ namespace Nobnak.WaterSimulation {
                     sliceRT.Release();
                     DestroyImmediate(sliceRT);
                 }
-                sliceRT = new RenderTexture(sampleCount, 2, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear) {
+                sliceRT = new RenderTexture(sampleCount, 1, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear) {
                     filterMode = FilterMode.Bilinear
                 };
                 sliceRT.Create();
 
-                if (readbackTexture != null) DestroyImmediate(readbackTexture);
-                readbackTexture = new Texture2D(sampleCount, 2, TextureFormat.RGBAHalf, false, true);
+                if (readbackWaterTex != null) DestroyImmediate(readbackWaterTex);
+                readbackWaterTex = new Texture2D(sampleCount, 1, TextureFormat.RGBAHalf, false, true);
+
+                if (readbackBathyTex != null) DestroyImmediate(readbackBathyTex);
+                readbackBathyTex = new Texture2D(sampleCount, 1, TextureFormat.RGBAHalf, false, true);
             }
 
-            // Readback using Texture2D.ReadPixels
+            Vector2 scale = (sliceAxis == ProfileAxis.XAxis) ? new Vector2(1f, 0f) : new Vector2(0f, 1f);
+            Vector2 offset = (sliceAxis == ProfileAxis.XAxis) ? new Vector2(0f, slicePosition) : new Vector2(slicePosition, 0f);
+
             RenderTexture prev = RenderTexture.active;
-            Graphics.Blit(waterTex, sliceRT);
+            Graphics.Blit(waterTex, sliceRT, scale, offset);
             RenderTexture.active = sliceRT;
-            readbackTexture.ReadPixels(new Rect(0, 0, sampleCount, 2), 0, 0, false);
-            readbackTexture.Apply(false);
+            readbackWaterTex.ReadPixels(new Rect(0, 0, sampleCount, 1), 0, 0, false);
+            readbackWaterTex.Apply(false);
+
+            if (bathyTex != null) {
+                Graphics.Blit(bathyTex, sliceRT, scale, offset);
+                RenderTexture.active = sliceRT;
+                readbackBathyTex.ReadPixels(new Rect(0, 0, sampleCount, 1), 0, 0, false);
+                readbackBathyTex.Apply(false);
+            }
             RenderTexture.active = prev;
         }
 
         private float SampleHeightFromReadback(int index) {
-            if (readbackTexture == null) return 0f;
-            Color c = readbackTexture.GetPixel(index, 0);
+            if (readbackWaterTex == null) return 0f;
+            Color c = readbackWaterTex.GetPixel(index, 0);
             return c.g; // G: elevation eta
         }
 
         private float SampleBedFromReadback(int index) {
-            if (readbackTexture == null) return -2f;
-            Color c = readbackTexture.GetPixel(index, 1);
-            return c.g - 5f; // Static bed level offset
+            if (readbackBathyTex == null) return -2f;
+            Color c = readbackBathyTex.GetPixel(index, 0);
+            return c.g; // G: bed elevation z_b = -h
         }
         #endregion
     }

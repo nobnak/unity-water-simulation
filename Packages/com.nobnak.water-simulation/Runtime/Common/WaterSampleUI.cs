@@ -35,9 +35,14 @@ namespace Nobnak.WaterSimulation {
         private float currentFps;
         private bool isFolded;
         private Vector2 scrollPos;
+        private WaterComparisonController comparisonController;
         #endregion
 
         #region Unity lifecycle
+        private void OnEnable() {
+            comparisonController = FindFirstObjectByType<WaterComparisonController>();
+        }
+
         private void Update() {
             frameCount++;
             fpsAccumulator += Time.unscaledDeltaTime;
@@ -109,39 +114,67 @@ namespace Nobnak.WaterSimulation {
             // Common Simulation Controls
             if (showControls && simulation != null) {
                 GUILayout.Label("<b>[シミュレーション操作 / Controls]</b>");
-                GUILayout.BeginHorizontal();
-                if (GUILayout.Button(simulation.IsRunning ? "Pause" : "Play")) {
-                    if (simulation.IsRunning) simulation.Pause();
-                    else simulation.Play();
-                }
-                if (GUILayout.Button("Step (0.016s)")) {
-                    simulation.Pause();
-                    simulation.Step(0.016f);
-                }
-                if (GUILayout.Button("Reset")) {
-                    simulation.ResetSimulation();
-                }
-                GUILayout.EndHorizontal();
+                if (comparisonController != null) {
+                    GUILayout.BeginHorizontal();
+                    if (GUILayout.Button(comparisonController.IsPaused ? "Play All" : "Pause All")) {
+                        if (comparisonController.IsPaused) comparisonController.PlayAll();
+                        else comparisonController.PauseAll();
+                    }
+                    if (GUILayout.Button("Step (0.016s)")) {
+                        comparisonController.PauseAll();
+                        comparisonController.StepAll(0.016f);
+                    }
+                    if (GUILayout.Button("Reset All")) {
+                        comparisonController.ResetAll();
+                    }
+                    GUILayout.EndHorizontal();
 
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"TimeScale: {simulation.TimeScale:F1}", GUILayout.Width(90));
-                simulation.TimeScale = GUILayout.HorizontalSlider(simulation.TimeScale, 0f, 2.5f);
-                GUILayout.EndHorizontal();
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"TimeScale: {comparisonController.TimeScale:F1}", GUILayout.Width(90));
+                    comparisonController.TimeScale = GUILayout.HorizontalSlider(comparisonController.TimeScale, 0f, 2.5f);
+                    GUILayout.EndHorizontal();
+
+                    if (comparisonController.HasProfileViewers) {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label($"ProfileH: {comparisonController.ProfileVerticalScale:F1}x", GUILayout.Width(90));
+                        comparisonController.ProfileVerticalScale = GUILayout.HorizontalSlider(comparisonController.ProfileVerticalScale, 0.2f, 4.0f);
+                        GUILayout.EndHorizontal();
+                    }
+                } else {
+                    GUILayout.BeginHorizontal();
+                    if (GUILayout.Button(simulation.IsRunning ? "Pause" : "Play")) {
+                        if (simulation.IsRunning) simulation.Pause();
+                        else simulation.Play();
+                    }
+                    if (GUILayout.Button("Step (0.016s)")) {
+                        simulation.Pause();
+                        simulation.Step(0.016f);
+                    }
+                    if (GUILayout.Button("Reset")) {
+                        simulation.ResetSimulation();
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"TimeScale: {simulation.TimeScale:F1}", GUILayout.Width(90));
+                    simulation.TimeScale = GUILayout.HorizontalSlider(simulation.TimeScale, 0f, 2.5f);
+                    GUILayout.EndHorizontal();
+                }
 
                 DrawSpecializedControls();
             }
 
             // Visual mode
-            if (waterRenderer != null) {
+            if (waterRenderer != null || comparisonController != null) {
                 GUILayout.Space(4);
                 GUILayout.Label("<b>[描画モード / Visual Mode]</b>");
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Realistic")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.Realistic);
-                if (GUILayout.Button("HeightMap")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.HeightMap);
-                if (GUILayout.Button("Normal")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.NormalVisual);
-                if (GUILayout.Button("Wireframe")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.Wireframe);
-                if (simulation != null && simulation.BathymetryTexture != null) {
-                    if (GUILayout.Button("Bathymetry")) waterRenderer.SetVisualMode(WaterRenderer.VisualMode.Bathymetry);
+                if (GUILayout.Button("Realistic")) SetVisualMode(WaterRenderer.VisualMode.Realistic);
+                if (GUILayout.Button("HeightMap")) SetVisualMode(WaterRenderer.VisualMode.HeightMap);
+                if (GUILayout.Button("Normal")) SetVisualMode(WaterRenderer.VisualMode.NormalVisual);
+                if (GUILayout.Button("Wireframe")) SetVisualMode(WaterRenderer.VisualMode.Wireframe);
+                if ((simulation != null && simulation.BathymetryTexture != null) || comparisonController != null) {
+                    if (GUILayout.Button("Bathymetry")) SetVisualMode(WaterRenderer.VisualMode.Bathymetry);
                 }
                 GUILayout.EndHorizontal();
             }
@@ -291,21 +324,39 @@ namespace Nobnak.WaterSimulation {
 
                 GUILayout.Space(2);
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Wind: {fftSim.WindSpeed:F1}m/s", GUILayout.Width(90));
+                GUILayout.Label($"Wind: {fftSim.WindSpeed:F1}m/s", GUILayout.Width(95));
                 fftSim.WindSpeed = GUILayout.HorizontalSlider(fftSim.WindSpeed, 2.0f, 25.0f);
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Choppy: {fftSim.Choppiness:F2}", GUILayout.Width(90));
+                GUILayout.Label($"Wind Dir: {fftSim.WindDirectionDegrees:F0}°", GUILayout.Width(95));
+                fftSim.WindDirectionDegrees = GUILayout.HorizontalSlider(fftSim.WindDirectionDegrees, 0.0f, 360.0f);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Choppy: {fftSim.Choppiness:F2}", GUILayout.Width(95));
                 fftSim.Choppiness = GUILayout.HorizontalSlider(fftSim.Choppiness, 0.0f, 3.0f);
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Swell: {fftSim.SwellStrength:F1}", GUILayout.Width(90));
+                GUILayout.Label($"Swell: {fftSim.SwellStrength:F1}m", GUILayout.Width(95));
                 fftSim.SwellStrength = GUILayout.HorizontalSlider(fftSim.SwellStrength, 0.0f, 4.0f);
                 GUILayout.EndHorizontal();
 
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Swell Dir: {fftSim.SwellDirectionDegrees:F0}°", GUILayout.Width(95));
+                fftSim.SwellDirectionDegrees = GUILayout.HorizontalSlider(fftSim.SwellDirectionDegrees, 0.0f, 360.0f);
+                GUILayout.EndHorizontal();
+
                 fftSim.EnableFoam = GUILayout.Toggle(fftSim.EnableFoam, " Foam (白波・泡立ちの描画)");
+            }
+        }
+
+        private void SetVisualMode(WaterRenderer.VisualMode mode) {
+            if (comparisonController != null) {
+                comparisonController.SetVisualModeAll(mode);
+            } else if (waterRenderer != null) {
+                waterRenderer.SetVisualMode(mode);
             }
         }
         #endregion

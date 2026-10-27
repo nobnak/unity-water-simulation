@@ -28,23 +28,24 @@
 - **基準水位**: 静水面 $\eta = 0$ を GameObject の原点 $Y = 0$ と一致させます。水底は水深 $h(\mathbf{x}) > 0$ に対して標高 $z_b = -h(\mathbf{x}) \le 0$ として定義されます。
 
 ### 2.2 出力テクスチャ規格 (`IWaterSimulation`)
-- **WaterDataTexture (`_WaterDataTex`)** (RGBAHalf / RGBAFloat):
+- **WaterDataTexture (`_WaterDataTex`)** (RGBAHalf):
   - **R**: 水平X変位 $\Delta x$ [m] （FFTチョッピー波）
   - **G**: 鉛直水位変位 $\eta$ [m] （表面変位）
   - **B**: 水平Z変位 $\Delta z$ [m] （FFTチョッピー波）
   - **A**: 白波・泡強度 $[0, 1]$ （ヤコビアン圧縮または急勾配散逸）
-- **NormalTexture (`_NormalTex`)** (RGBAHalf): ワールド空間法線ベクトル（RGB）＋泡強度（A）
+- **NormalTexture (`_NormalTex`)** (RGBAHalf): ワールド空間法線ベクトル（RGB）＋波峰圧縮度 / 泡強度（A）
 - **BathymetryTexture (`_BathymetryTex`)** (RGBAHalf): 水深 $h$ [m]（R）＋水底標高 $-h$ [m]（G）
 
 ### 2.3 描画・可視化機能
 - **共通PBR水面シェーダー (`WaterSurfaceCommon.shader`)**:
   - 3D頂点変位（水平チョッピー＋鉛直波高）
-  - フレネル反射、深度カラーグラデーション（浅瀬・深海ブレンド）、主光源鏡面ハイライト、白波ブレンド
+  - フレネル反射、深度カラーグラデーション、浅瀬エメラルド透過色＋等深線（Bathymetry連動）、波峰透過散乱（Crest SSS）、主光源鏡面ハイライト、白波ブレンド
 - **可視化モード（MaterialPropertyBlock連動）**:
   - `0`: Realistic（フォトリアルPBR）
   - `1`: HeightMap（等高線付きカラーヒートマップ）
   - `2`: NormalVisual（法線ベクトル可視化）
   - `3`: Wireframe（格子変形ワイヤフレーム）
+  - `4`: Bathymetry（水深ヒートマップ＋1m等深線＋波峰重畳）
 - **断面プロファイル表示 (`WaterProfileViewer.cs`)**:
   - X軸またはZ軸に沿って水面変位 $\eta$ と海底 $z_b$ を1Dサンプリングし、分散性や波高減衰を直接数値視認。
 
@@ -84,14 +85,14 @@
   - $h(\mathbf{x})$: 静水深 [m]
   - $\mathbf{u}$: 水深平均水平流速ベクトル [m/s]
   - $c_f$: 海底摩擦係数
-- **数値的安定化 (Helmholtz型分散インバータ)**:
+- **数値的安定化 (対称MacCormack法＋Helmholtz型分散インバータ)**:
   - 陽解法での3次導関数 $\nabla(\nabla^2 \eta)$ の直接差分は $\Delta x^{-3}$ に比例する剛性により $dt < 10^{-6}\text{s}$ を要し即座に発散（トゲ状破綻）します。
-  - 本パッケージでは分散項を陰的に再定式化し、Helmholtz型方程式:
-    $$(I - \frac{1}{3} h^2 \nabla^2)\mathbf{a} = \mathbf{f}$$
-    を4パスのJacobi緩和反復法により無条件安定に逆行列求解します。これにより格子解像度を高めても破綻しない安定した分散波列を生成します。
+  - 本パッケージでは `fp32` (`ARGBFloat` / `RGFloat`) バッファ上の**対称 MacCormack 予測子・修正子法**（サブステップ毎に前進・後退差分方向を交互反転）に加え、分散項を陰的に再定式化した Helmholtz 型方程式:
+    $$(I - \alpha \frac{1}{6} h^2 \nabla^2)\mathbf{a} = \mathbf{f}$$
+    を6パスのJacobi緩和反復法により無条件安定に逆行列求解します。これにより格子解像度を高めても破綻しない安定した分散波列を生成します。
 - **機能**:
   - **プロシージャル海底地形**: 斜め浅瀬と岬（Shoal and Cape）、平坦海底（Flat）、斜面（Linear Slope）、カスタム標高テクスチャ。
-  - **沖合造波境界**: 正弦波状の連続入射波列を注入。
+  - **多様な波源・インパルス励起**: 沖合連続進行波造波（Wavemaker）に加え、平面孤立波（Planar Soliton: $\operatorname{sech}^2$）および円形ガウスパルス（Circular Pulse）の単発・周期発生・移動波源・マウスクリック/ドラッグ注入（GPU非破壊加算 `CSAddImpulse`）。
   - **分散係数調整**: $\alpha = 1.0$（Boussinesq分散波）から $\alpha = 0.0$（非分散浅水波）まで無段階調整可能。
 - **代表シーン**: `02_Boussinesq`（浅瀬と岬）
   - 沖合（水深15m）から進入した波が、斜めの浅瀬（水深2.5m）で波速 $c \sim \sqrt{gh}$ の低下に伴い屈折（Refraction）し、波長が短縮（Shoaling）、岬の先端に波エネルギーが集中して波高が増大する現象を視覚的に確認できます。
@@ -112,9 +113,10 @@
   $$h(\mathbf{k}, t) = h_0(\mathbf{k}) e^{i \omega t} + h_0^*(-\mathbf{k}) e^{-i \omega t}$$
 - **Radix-2 Stockham 2D逆高速フーリエ変換 (IFFT)**:
   - Compute Shader上でビット反転並べ替えが一切不要な Stockham autosort アルゴリズムを採用。完全に合致したメモリアクセスにより高速実行。
-- **チョッピー波（水平変位）**:
-  $$\mathbf{x}' = \mathbf{x} - \lambda \sum_{\mathbf{k}} i \frac{\mathbf{k}}{k} h(\mathbf{k}, t) e^{i \mathbf{k} \cdot \mathbf{x}}$$
-  - 尖った波頭と平坦な波谷（Trochoidal wave）を形成。
+- **チョッピー波（波数重み付き水平変位）と厳密ラグランジュ法線**:
+  $$\mathbf{x}' = \mathbf{x} + \lambda \sum_{\mathbf{k}} i w_{\text{chop}}(k) \frac{\mathbf{k}}{k} h(\mathbf{k}, t) e^{i \mathbf{k} \cdot \mathbf{x}}$$
+  - 波峰で粒子が収束（$J < 1$）し波谷で広がる鋭いトロコイド波形（Trochoidal wave）を形成。
+  - 水平変位勾配とヤコビアン $J$ を結合した厳密な接線外積法線 $\mathbf{N} = \operatorname{normalize}(\mathbf{T}_z \times \mathbf{T}_x)$ および波峰圧縮度 $1 - J$ による透過散乱光（SSS）を計算。
 - **白波・泡検出 (Jacobian Foam)**:
   - 水平変位のヤコビアン行列式 $J = (1 + \lambda \partial_x D_x)(1 + \lambda \partial_z D_z) - \lambda^2 (\partial_z D_x \partial_x D_z)$ が閾値を下回る（波頭が自己交差する）領域を白波として自動検出。
 - **代表シーン**: `03_FFTWater`（水平線までの海）

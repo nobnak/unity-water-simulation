@@ -229,6 +229,10 @@ namespace Nobnak.WaterSimulation {
             fftShader.SetTexture(kernelSpectrum, PropInitialSpectrumRW, initialSpectrumTex);
             int gx = math.max(1, n / 8);
             fftShader.Dispatch(kernelSpectrum, gx, gx, 1);
+
+            if (!isRunning) {
+                OnStepSimulation(0f);
+            }
         }
 
         protected override void OnStepSimulation(float dt) {

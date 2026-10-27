@@ -24,6 +24,13 @@
 | [`fa78e4d`](../Packages/com.nobnak.water-simulation/Runtime/Common/WaterSampleUI.cs) | 10/27 15:29 | `feat` | Turn 7〜9 | 障害物・波源励起・物理パラメータの対話的 UI コントロール追加 |
 | [`45f486d`](../Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquationSimulation.cs) | 10/27 15:59 | `feat` | Turn 10 | 2D波動方程式における固定持続時間・周期インターバル制御パルス発生器の実装 |
 | [`56a6495`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute) | 10/27 16:24 | `chore` | Turn 11 | 未使用オシレータフィールド・廃止カーネルの削除および FFT コンピュートインデックス計算の最適化 |
+| [`2494a35`](WaterSimulation_Technical_Archive.ja.md) | 10/27 21:05 | `docs` | Turn 13 | 技術検討・議論アーカイブ総合資料の作成 |
+| [`acbff9c`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/27 22:41 | `feat` | Turn 14 | `02_Boussinesq` の波源・平面孤立波/円形パルス励起モード拡張および海底地形（Bathymetry）の2方式同時可視化 |
+| [`50073b4`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute) | 10/27 23:19 | `feat` | Turn 15 | Boussinesq の `fp32` 化・対称 MacCormack 精度改善および FFT 海洋の厳密ラグランジュ法線・波峰 SSS による Choppiness 強調 |
+
+> [!IMPORTANT]
+> **アルゴリズム・数値計算法・性能見積もりの完全仕様書**:
+> 現在の全アルゴリズムの数理定式化、離散化ステンシル、テクスチャ構造、および VRAM・メモリ帯域・GPU実行時間の見積もりモデルについては **[WaterSimulation_Algorithm_And_Performance_Spec.ja.md](WaterSimulation_Algorithm_And_Performance_Spec.ja.md)** を参照してください。
 
 ---
 

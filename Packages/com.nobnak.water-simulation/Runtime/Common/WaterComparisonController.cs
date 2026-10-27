@@ -19,6 +19,8 @@ namespace Nobnak.WaterSimulation {
         [Range(0f, 3f)]
         [SerializeField] private float synchronizedTimeScale = 1.0f;
         [SerializeField] private WaterRenderer.VisualMode synchronizedVisualMode = WaterRenderer.VisualMode.Realistic;
+        [Range(0.2f, 5f)]
+        [SerializeField] private float profileVerticalScale = 1.0f;
 
         [Header("UI Overlay")]
         [SerializeField] private bool showComparisonUI = true;
@@ -26,6 +28,7 @@ namespace Nobnak.WaterSimulation {
 
         #region private fields
         private bool isPaused;
+        private WaterProfileViewer[] profileViewers;
         #endregion
 
         #region properties
@@ -38,10 +41,21 @@ namespace Nobnak.WaterSimulation {
                 ApplyTimeScale();
             }
         }
+
+        public float ProfileVerticalScale {
+            get => profileVerticalScale;
+            set {
+                profileVerticalScale = value;
+                ApplyProfileScale();
+            }
+        }
+
+        public bool HasProfileViewers => profileViewers != null && profileViewers.Length > 0;
         #endregion
 
         #region Unity lifecycle
         private void OnEnable() {
+            profileViewers = FindObjectsByType<WaterProfileViewer>(FindObjectsSortMode.None);
             if (simulations != null) {
                 foreach (var sim in simulations) {
                     if (sim != null && autoPlay) sim.Play();
@@ -49,10 +63,12 @@ namespace Nobnak.WaterSimulation {
             }
             ApplyTimeScale();
             ApplyVisualMode();
+            ApplyProfileScale();
         }
 
         private void Update() {
             ApplyTimeScale();
+            ApplyProfileScale();
         }
 
         private void OnGUI() {
@@ -113,10 +129,18 @@ namespace Nobnak.WaterSimulation {
             }
         }
 
+        private void ApplyProfileScale() {
+            if (profileViewers == null) return;
+            foreach (var pv in profileViewers) {
+                if (pv != null) pv.VerticalScale = profileVerticalScale;
+            }
+        }
+
         private void DrawGUI() {
+            bool hasProfiles = HasProfileViewers;
             const float padding = 12f;
             const float width = 280f;
-            const float height = 210f;
+            float height = hasProfiles ? 255f : 210f;
             Rect rect = new Rect(padding, padding, width, height);
 
             GUI.Box(rect, "Water Comparison Control");
@@ -139,6 +163,12 @@ namespace Nobnak.WaterSimulation {
             GUILayout.Space(6);
             GUILayout.Label($"Time Scale: {synchronizedTimeScale:F2}");
             synchronizedTimeScale = GUILayout.HorizontalSlider(synchronizedTimeScale, 0f, 2.5f);
+
+            if (hasProfiles) {
+                GUILayout.Space(4);
+                GUILayout.Label($"Profile Scale (断面高さ強調): {profileVerticalScale:F2}x");
+                profileVerticalScale = GUILayout.HorizontalSlider(profileVerticalScale, 0.2f, 4.0f);
+            }
 
             GUILayout.Space(6);
             GUILayout.Label("Visualization Mode:");
