@@ -73,6 +73,8 @@ namespace Nobnak.WaterSimulation {
         [Range(4, 64)]
         [SerializeField] private int spongeWidth = 24;
         [SerializeField] private float spongeStrength = 3.0f;
+        [Tooltip("If enabled, absorbs waves at left and right boundaries too. Disable for wave flume / planar waves to keep crest flat across width.")]
+        [SerializeField] private bool sideWallSponge = false;
 
         [Header("Compute Shader")]
         [SerializeField] private ComputeShader boussinesqShader;
@@ -100,6 +102,7 @@ namespace Nobnak.WaterSimulation {
         private int kernelApplyDispersion;
         private int kernelImpulse;
         private int kernelNormal;
+        private int kernelFilter;
         #endregion
 
         #region properties
@@ -111,6 +114,11 @@ namespace Nobnak.WaterSimulation {
         public int DispersionSweeps {
             get => dispersionSweeps;
             set => dispersionSweeps = math.clamp(value, 1, 6);
+        }
+
+        public bool SideWallSponge {
+            get => sideWallSponge;
+            set => sideWallSponge = value;
         }
 
         public float BedFriction {
@@ -247,6 +255,7 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetInt(PropHeight, resolution.y);
             boussinesqShader.SetFloat(PropGravity, Gravity);
             boussinesqShader.SetFloat(PropSpongeWidth, spongeWidth);
+            boussinesqShader.SetInt(PropSideWallSponge, sideWallSponge ? 1 : 0);
             boussinesqShader.SetVector(PropImpulseCenter, new Vector4(uvCenter.x, uvCenter.y, 0f, 0f));
             boussinesqShader.SetFloat(PropImpulseRadius, radius);
             boussinesqShader.SetFloat(PropImpulseStrength, amplitude);
@@ -297,6 +306,7 @@ namespace Nobnak.WaterSimulation {
             kernelApplyDispersion = boussinesqShader.FindKernel("CSApplyDispersion");
             kernelImpulse = boussinesqShader.FindKernel("CSAddImpulse");
             kernelNormal = boussinesqShader.FindKernel("CSComputeNormal");
+            kernelFilter = boussinesqShader.FindKernel("CSFilterHighFrequency");
         }
 
         protected override void ReleaseTextures() {
@@ -402,6 +412,7 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetFloat(PropBedFriction, bedFriction);
             boussinesqShader.SetFloat(PropSpongeWidth, spongeWidth);
             boussinesqShader.SetFloat(PropSpongeStrength, spongeStrength);
+            boussinesqShader.SetInt(PropSideWallSponge, sideWallSponge ? 1 : 0);
             boussinesqShader.SetInt(PropStepParity, pingPong ? 1 : 0);
 
             boussinesqShader.SetFloat(PropWavemakerAmp, activeAmp);
@@ -441,11 +452,22 @@ namespace Nobnak.WaterSimulation {
             if (dispersionAlpha > 0.001f) {
                 SolvePeregrineDispersion();
 
-                boussinesqShader.SetTexture(kernelApplyDispersion, PropStateOut, next);
+                boussinesqShader.SetTexture(kernelApplyDispersion, PropStateIn, next);
+                boussinesqShader.SetTexture(kernelApplyDispersion, PropStateOut, predTex);
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropForcePredTex, forcePredTex);
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropAccelPing, accelTexA);
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropBathymetryTex, bathymetryTex);
                 DispatchCompute2D(kernelApplyDispersion);
+
+                // 4. Biharmonic high-frequency filter (eliminates 2dx sawtooth modes)
+                boussinesqShader.SetTexture(kernelFilter, PropStateIn, predTex);
+                boussinesqShader.SetTexture(kernelFilter, PropStateOut, next);
+                DispatchCompute2D(kernelFilter);
+            } else {
+                boussinesqShader.SetTexture(kernelFilter, PropStateIn, next);
+                boussinesqShader.SetTexture(kernelFilter, PropStateOut, predTex);
+                DispatchCompute2D(kernelFilter);
+                Graphics.CopyTexture(predTex, next);
             }
 
             if (initialCondition == InitialConditionType.ContinuousWavemaker) {
@@ -622,6 +644,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropBedFriction = Shader.PropertyToID("_BedFriction");
         private static readonly int PropSpongeWidth = Shader.PropertyToID("_SpongeWidth");
         private static readonly int PropSpongeStrength = Shader.PropertyToID("_SpongeStrength");
+        private static readonly int PropSideWallSponge = Shader.PropertyToID("_SideWallSponge");
         private static readonly int PropStepParity = Shader.PropertyToID("_StepParity");
         private static readonly int PropWavemakerAmp = Shader.PropertyToID("_WavemakerAmp");
         private static readonly int PropWavemakerFreq = Shader.PropertyToID("_WavemakerFreq");

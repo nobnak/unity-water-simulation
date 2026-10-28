@@ -251,13 +251,31 @@ $$
 D_{\mathrm{sponge}} = \frac{1}{1 + 15\,\Delta t\, S_{\mathrm{sponge}} \left(1 - \frac{d_{\mathrm{border}}}{W_{\mathrm{sponge}}}\right)^{2}}
 $$
 
-#### (4) Progressive Wavemaker Source (`GetWavemakerSources`) and GPU Soliton Injection (`CSAddImpulse`)
-- **Continuous Progressive Wavemaker (`GetWavemakerSources`)**:
-  Within $|j - y_{0}| \le 10$ cells of the offshore line $y_{0} = \lfloor v_{\mathrm{wm}} N_{z} \rfloor$, coupled mass and momentum sources synthesize a pure $+Z$ progressive wave while remaining transparent to waves reflected from the shoal. Using a Gaussian profile $G(j) = \frac{1}{\sqrt{2\pi}\sigma\Delta x}\exp\!\left(-\frac{(j - y_{0})^{2}}{2\sigma^{2}}\right)$ ($\sigma = 2.5$ cells) and lateral sponge taper $T_{\mathrm{lat}}(i) = \mathrm{smoothstep}(0,\ 1.5 W_{\mathrm{sponge}},\ \min(i, N_{x} - 1 - i))$:
+#### (4b) 4th-Order Biharmonic Spatial Dissipation Filter (`CSFilterHighFrequency`)
+In Peregrine Boussinesq systems, the inverse Helmholtz solve $(I - \alpha \frac{h^2}{3}\nabla^2)^{-1}$ attenuates restoring accelerations at high wavenumbers by $1/(1+4\beta) \approx 1/400$. Consequently, natural Lax-Wendroff numerical dissipation is suppressed, allowing $2\Delta x$ sawtooth checkerboard modes to accumulate undamped on the grid. To eliminate these parasitic modes, a 4th-order biharmonic dissipation filter is applied to each state variable $S \in \{\eta, u, w\}$ at the end of each sub-step:
 
 $$
-W(i, j, \phi) = A_{\mathrm{wm}} \sin(\phi)\, G(j)\, T_{\mathrm{lat}}(i), \quad S_{\eta} = c W, \quad S_{w} = g W \quad \left(c = \sqrt{g \max(0.5, h)}\right)
+D_{4, x} S = S_{i-2, j} - 4S_{i-1, j} + 6S_{i, j} - 4S_{i+1, j} + S_{i+2, j}
 $$
+$$
+D_{4, z} S = S_{i, j-2} - 4S_{i, j-1} + 6S_{i, j} - 4S_{i, j+1} + S_{i, j+2}
+$$
+$$
+S^{\mathrm{final}} = S - \kappa \left(D_{4, x} S + D_{4, z} S\right) \quad (\kappa = 0.025)
+$$
+
+With a maximum 2D discrete eigenvalue of 32, $\kappa = 0.025$ provides an amplification factor of $1 - 32\kappa = 0.20$, guaranteeing unconditional contractive convergence without oscillation. The $2\Delta x$ sawtooth mode is attenuated by $99.4\%$ within 10 sub-steps, while physical long waves ($kh \ll 1$) suffer less than $0.0001\%$ damping.
+
+#### (5) Internal Mass Source Wavemaker (`GetWavemakerSources`) and GPU Soliton Injection (`CSAddImpulse`)
+- **Wei & Kirby (1999) Internal Mass Source Wavemaker (`GetWavemakerSources`)**:
+  Within $|j - y_{0}| \le 18$ cells of the offshore line $y_{0} = \lfloor v_{\mathrm{wm}} N_{z} \rfloor$, waves are generated via an internal Gaussian mass source $G(j) = \frac{1}{\sqrt{2\pi}\sigma\Delta z}\exp\!\left(-\frac{(j - y_{0})^{2}}{2\sigma^{2}}\right)$ ($\sigma = 4.0$ cells). Pure mass injection ($S_w = 0$) eliminates momentum imbalance shocks and localized divergence spikes:
+
+$$
+S_{\eta} = 2 c A_{\mathrm{wm}} \sin(\phi)\, G(j)\, T_{\mathrm{lat}}(i), \quad S_{w} = 0 \quad \left(c = \sqrt{g \max(0.5, h)}\right)
+$$
+
+  The factor of 2 accounts for equal partition between the forward $+Z$ wave and backward $-Z$ wave (absorbed by the offshore sponge).
+  Furthermore, when `SideWallSponge` is disabled (flume mode default), $T_{\mathrm{lat}} = 1.0$ and lateral boundaries enforce Neumann conditions ($\partial_x a_z = 0$), preserving a perfectly flat 1D planar crest across the full width.
 
 - **Planar Soliton and Circular Gaussian Pulse Injection (`CSAddImpulse`)**:
   - **Planar Soliton (`_ImpulseShape == 0`)**:

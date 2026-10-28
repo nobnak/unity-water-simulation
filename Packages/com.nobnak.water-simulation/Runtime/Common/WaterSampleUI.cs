@@ -314,6 +314,10 @@ namespace Nobnak.WaterSimulation {
                 boussSim.WavemakerAmplitude = GUILayout.HorizontalSlider(boussSim.WavemakerAmplitude, 0.1f, 2.5f);
                 GUILayout.EndHorizontal();
 
+                GUILayout.BeginHorizontal();
+                boussSim.SideWallSponge = GUILayout.Toggle(boussSim.SideWallSponge, " Side Wall Sponge (側壁減衰)");
+                GUILayout.EndHorizontal();
+
                 if (boussSim.IsDepthTooDeepForShallowWater) {
                     GUILayout.Label("<color=#ffaa40><size=10>⚠️ 水深が領域長の5%を超過（深水波領域）。群速度が低下し停留します。</size></color>");
                     if (GUILayout.Button("Auto-Clamp Depth (水深を安全域に自動調整)")) {

@@ -253,13 +253,31 @@ $$
 
 で与えられる。
 
-#### (5) 進行波造波ソース (`GetWavemakerSources`) と GPU ソリトン注入 (`CSAddImpulse`)
-- **連続進行波造波 (`GetWavemakerSources`)**:
-  沖合ライン $y_{0} = \lfloor v_{\mathrm{wm}} N_{z} \rfloor$ の前後 $|j - y_{0}| \le 10$ セルにおいて、浅瀬からの反射波を透過させつつ $+Z$ 方向への純粋な進行波を合成するため、ガウス分布 $G(j) = \frac{1}{\sqrt{2\pi}\sigma\Delta x}\exp\!\left(-\frac{(j - y_{0})^{2}}{2\sigma^{2}}\right)$（$\sigma = 2.5$ セル）と横方向スポンジ干渉防止テーパー $T_{\mathrm{lat}}(i) = \mathrm{smoothstep}(0,\ 1.5 W_{\mathrm{sponge}},\ \min(i, N_{x} - 1 - i))$ を用いて質量ソースと運動量ソースを同時注入する：
+#### (4b) 4階バイハーモニック空間散逸フィルター (`CSFilterHighFrequency`)
+Peregrine 分散逆行列演算 $(I - \alpha \frac{h^2}{3}\nabla^2)^{-1}$ により高周波に対する復元加速度が $1/(1+4\beta) \approx 1/400$ に抑制される結果、MacCormack法本来の3次数値粘性が消失し、$2\Delta x$ ノコギリ型モードがグリッド上に残留する。これを解消するため、毎サブステップ終了時に各状態量 $S \in \{\eta, u, w\}$ に対し4階バイハーモニック微小散逸フィルターを適用する：
 
 $$
-W(i, j, \phi) = A_{\mathrm{wm}} \sin(\phi)\, G(j)\, T_{\mathrm{lat}}(i), \quad S_{\eta} = c W, \quad S_{w} = g W \quad \left(c = \sqrt{g \max(0.5, h)}\right)
+D_{4, x} S = S_{i-2, j} - 4S_{i-1, j} + 6S_{i, j} - 4S_{i+1, j} + S_{i+2, j}
 $$
+$$
+D_{4, z} S = S_{i, j-2} - 4S_{i, j-1} + 6S_{i, j} - 4S_{i, j+1} + S_{i, j+2}
+$$
+$$
+S^{\mathrm{final}} = S - \kappa \left(D_{4, x} S + D_{4, z} S\right) \quad (\kappa = 0.025)
+$$
+
+2D最大固有値 32 に対し $\kappa = 0.025$ は $1 - 32\kappa = 0.20$ となり無条件収束かつ厳密に非振動的である。$2\Delta x$ ノコギリ型モードは10ステップで 99.4% 減衰する一方、物理長波（$kh \ll 1$）に対する減衰は $0.0001\%$ 以下に抑えられ、波形を崩さず平滑な水面を維持する。
+
+#### (5) 内部質量ソース造波 (`GetWavemakerSources`) と GPU ソリトン注入 (`CSAddImpulse`)
+- **Wei & Kirby (1999) 型内部質量ソース造波 (`GetWavemakerSources`)**:
+  沖合ライン $y_{0} = \lfloor v_{\mathrm{wm}} N_{z} \rfloor$ の前後 $|j - y_{0}| \le 18$ セルにおいて、ガウス内部質量ソース $G(j) = \frac{1}{\sqrt{2\pi}\sigma\Delta z}\exp\!\left(-\frac{(j - y_{0})^{2}}{2\sigma^{2}}\right)$（$\sigma = 4.0$ セル）により波を生成する。流速 $w$ への直接点源注入（$S_w$）を行わず質量注入のみとすることで、Helmholtz作用素による運動量不均衡ショックと局所発散スパイクを根絶する：
+
+$$
+S_{\eta} = 2 c A_{\mathrm{wm}} \sin(\phi)\, G(j)\, T_{\mathrm{lat}}(i), \quad S_{w} = 0 \quad \left(c = \sqrt{g \max(0.5, h)}\right)
+$$
+
+  係数 2 は $+Z$ 進行波と後方 $-Z$ 波（背後スポンジ層で完全吸収）への質量等配分を補償する。
+  また側壁境界条件 `SideWallSponge` を無効化（デフォルト）した水路モードでは $T_{\mathrm{lat}} = 1.0$ かつ左右壁面でノイマン条件（$\partial_x a_z = 0$）が成立し、水路幅全域にわたり完全な1D平面波面が維持される。
 
 - **平面孤立波（Planar Soliton）および円形ガウスパルス注入 (`CSAddImpulse`)**:
   - **平面孤立波 (`_ImpulseShape == 0`)**:
