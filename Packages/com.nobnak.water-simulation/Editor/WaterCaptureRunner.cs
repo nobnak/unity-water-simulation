@@ -72,8 +72,8 @@ namespace Nobnak.WaterSimulation.Editor {
                 renderer.SetVisualMode(WaterRenderer.VisualMode.Realistic);
                 boussSim.Condition = BoussinesqSimulation.InitialConditionType.PeriodicPulses;
                 boussSim.ImpulseShape = BoussinesqSimulation.ImpulseShapeType.PlanarSoliton;
-                boussSim.PulseInterval = 1.8f;
-                boussSim.WavemakerAmplitude = 1.0f;
+                boussSim.PulseInterval = 4.5f;
+                boussSim.WavemakerAmplitude = 0.35f;
                 boussSim.ResetSimulation();
 
                 for (int i = 0; i < 180; i++) boussSim.Step(dt);

@@ -48,25 +48,25 @@ namespace Nobnak.WaterSimulation {
 
         [Header("Bathymetry (Sea Bed)")]
         [SerializeField] private BathymetryType bathymetryMode = BathymetryType.ShoalAndCape;
-        [Tooltip("Deep sea still water depth [m].")]
-        [SerializeField] private float deepWaterDepth = 15.0f;
+        [Tooltip("Deep sea still water depth [m]. In shallow water Boussinesq regime, keep depth <= 3-5% of domain size to avoid wave trapping.")]
+        [SerializeField] private float deepWaterDepth = 3.5f;
         [Tooltip("Shallow shoal minimum water depth [m].")]
-        [SerializeField] private float shallowWaterDepth = 2.5f;
+        [SerializeField] private float shallowWaterDepth = 0.8f;
         [SerializeField] private Texture2D customBathymetryTexture;
 
         [Header("Wave Excitation")]
         [SerializeField] private InitialConditionType initialCondition = InitialConditionType.ContinuousWavemaker;
         [SerializeField] private ImpulseShapeType impulseShape = ImpulseShapeType.PlanarSoliton;
         [Tooltip("Wavemaker / impulse wave amplitude [m].")]
-        [SerializeField] private float wavemakerAmplitude = 0.8f;
-        [Tooltip("Wavemaker wave frequency [Hz].")]
-        [SerializeField] private float wavemakerFrequency = 0.4f;
+        [SerializeField] private float wavemakerAmplitude = 0.35f;
+        [Tooltip("Wavemaker wave frequency [Hz]. Keep below Peregrine cutoff frequency fc = sqrt(3g/h)/(2*pi) (~0.46Hz at 3.5m depth).")]
+        [SerializeField] private float wavemakerFrequency = 0.15f;
         [Tooltip("Wavemaker grid Y position normalized [0..1] (0.08 = near offshore boundary).")]
         [Range(0.01f, 0.5f)]
         [SerializeField] private float wavemakerLocationNorm = 0.08f;
         [SerializeField] private Vector2 sourceCenter = new Vector2(0.5f, 0.12f);
-        [SerializeField] private float sourceRadius = 0.045f;
-        [SerializeField] private float pulseInterval = 1.8f;
+        [SerializeField] private float sourceRadius = 0.06f;
+        [SerializeField] private float pulseInterval = 4.5f;
         [SerializeField] private float movingSourceSpeed = 0.25f;
 
         [Header("Boundary")]
@@ -160,10 +160,36 @@ namespace Nobnak.WaterSimulation {
             set => pulseInterval = math.max(0.1f, value);
         }
 
-        public float DeepWaterDepth => deepWaterDepth;
+        public float DeepWaterDepth {
+            get => deepWaterDepth;
+            set {
+                if (math.abs(deepWaterDepth - value) < 1e-4f) return;
+                deepWaterDepth = math.max(0.2f, value);
+                UpdateBathymetryTexture();
+            }
+        }
+
+        public float ShallowWaterDepth {
+            get => shallowWaterDepth;
+            set {
+                if (math.abs(shallowWaterDepth - value) < 1e-4f) return;
+                shallowWaterDepth = math.clamp(value, 0.1f, deepWaterDepth);
+                UpdateBathymetryTexture();
+            }
+        }
+
+        public float CutoffFrequency => (1.0f / (2.0f * math.PI)) * math.sqrt(3.0f * Gravity / math.max(0.1f, deepWaterDepth));
+        public float DepthToDomainRatio => deepWaterDepth / math.max(0.1f, math.min(areaSize.x, areaSize.y));
+        public bool IsDepthTooDeepForShallowWater => DepthToDomainRatio > 0.05f;
+        public bool IsFrequencyAboveCutoff => wavemakerFrequency >= CutoffFrequency * 0.85f;
         #endregion
 
         #region Unity lifecycle
+        protected virtual void OnValidate() {
+            if (deepWaterDepth < shallowWaterDepth) shallowWaterDepth = deepWaterDepth;
+            if (wavemakerFrequency <= 0f) wavemakerFrequency = 0.01f;
+        }
+
         protected override void OnEnable() {
             ResolveComputeShader();
             base.OnEnable();

@@ -136,8 +136,8 @@ namespace Nobnak.WaterSimulation.Editor {
                     so.FindProperty("resolution").vector2IntValue = new Vector2Int(res, res);
                     so.FindProperty("dispersionAlpha").floatValue = 1.0f;
                     so.FindProperty("dispersionSweeps").intValue = 2;
-                    so.FindProperty("deepWaterDepth").floatValue = 15.0f;
-                    so.FindProperty("shallowWaterDepth").floatValue = 2.5f;
+                    so.FindProperty("deepWaterDepth").floatValue = 3.5f;
+                    so.FindProperty("shallowWaterDepth").floatValue = 0.8f;
                     so.FindProperty("autoPlay").boolValue = false;
                     so.ApplyModifiedPropertiesWithoutUndo();
 
@@ -156,7 +156,7 @@ namespace Nobnak.WaterSimulation.Editor {
                     double totalMs = sw.Elapsed.TotalMilliseconds;
                     double avgMs = totalMs / measureSteps;
                     sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                        "SolverOnly,Boussinesq,{0}x{0},Peregrine_TridiagPCR,{1},{2},{3},{4:F3},{5:F4},alpha=1_sweeps=2_h=15m",
+                        "SolverOnly,Boussinesq,{0}x{0},Peregrine_TridiagPCR,{1},{2},{3},{4:F3},{5:F4},alpha=1_sweeps=2_h=3.5m",
                         res, measureSteps, sim.LastSubStepCount, sim.LastDispatchCount, totalMs, avgMs));
 
                     Object.DestroyImmediate(go);

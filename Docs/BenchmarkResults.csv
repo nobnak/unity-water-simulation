@@ -1,9 +1,9 @@
-﻿Category,Method,Resolution,Mode,Steps,SubStepsPerStep,DispatchesPerStep,TotalWallMs,AvgWallMsPerStep,Notes
+Category,Method,Resolution,Mode,Steps,SubStepsPerStep,DispatchesPerStep,TotalWallMs,AvgWallMsPerStep,Notes
 SolverOnly,WaveEquation,256x256,RGFloat_Symplectic,100,2,3,18.312,0.1831,c=8m/s_L=50m
-SolverOnly,Boussinesq,256x256,Peregrine_TridiagPCR,100,2,17,105.456,1.0546,alpha=1_sweeps=2_h=15m
+SolverOnly,Boussinesq,256x256,Peregrine_TridiagPCR,100,2,17,105.456,1.0546,alpha=1_sweeps=2_h=3.5m
 SolverOnly,FFTOcean,256x256,SingleIFFT_Packed,100,1,18,31.740,0.3174,RedundantSpectrumRegen=0
 SolverOnly,WaveEquation,512x512,RGFloat_Symplectic,100,3,4,29.833,0.2983,c=8m/s_L=50m
-SolverOnly,Boussinesq,512x512,Peregrine_TridiagPCR,100,4,33,454.437,4.5444,alpha=1_sweeps=2_h=15m
+SolverOnly,Boussinesq,512x512,Peregrine_TridiagPCR,100,4,33,454.437,4.5444,alpha=1_sweeps=2_h=3.5m
 SolverOnly,FFTOcean,512x512,SingleIFFT_Packed,100,1,20,86.889,0.8689,RedundantSpectrumRegen=0
 Scene04_Separation,WaveEq+Boussinesq,512x512,1_SolverOnly,60,1,0,763.939,12.7323,2_Simulations
 Scene04_Separation,WaveEq+Boussinesq,512x512,2_SolverPlusRender,60,1,0,497.975,8.2996,Camera_1280x720

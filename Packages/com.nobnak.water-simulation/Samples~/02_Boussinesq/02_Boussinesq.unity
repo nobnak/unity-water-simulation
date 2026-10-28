@@ -561,17 +561,17 @@ MonoBehaviour:
   dispersionSweeps: 1
   bedFriction: 0.005
   bathymetryMode: 1
-  deepWaterDepth: 15
-  shallowWaterDepth: 2.5
+  deepWaterDepth: 3.5
+  shallowWaterDepth: 0.8
   customBathymetryTexture: {fileID: 0}
   initialCondition: 1
   impulseShape: 0
-  wavemakerAmplitude: 0.8
-  wavemakerFrequency: 0.35
+  wavemakerAmplitude: 0.35
+  wavemakerFrequency: 0.15
   wavemakerLocationNorm: 0.08
   sourceCenter: {x: 0.5, y: 0.12}
-  sourceRadius: 0.045
-  pulseInterval: 1.8
+  sourceRadius: 0.06
+  pulseInterval: 4.5
   movingSourceSpeed: 0.25
   spongeWidth: 24
   spongeStrength: 3

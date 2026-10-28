@@ -105,13 +105,13 @@ namespace Nobnak.WaterSimulation.Editor {
             so.FindProperty("resolution").vector2IntValue = new Vector2Int(512, 512);
             so.FindProperty("dispersionAlpha").floatValue = 1.0f;
             so.FindProperty("bathymetryMode").enumValueIndex = (int)BoussinesqSimulation.BathymetryType.ShoalAndCape;
-            so.FindProperty("deepWaterDepth").floatValue = 15.0f;
-            so.FindProperty("shallowWaterDepth").floatValue = 2.5f;
+            so.FindProperty("deepWaterDepth").floatValue = 3.5f;
+            so.FindProperty("shallowWaterDepth").floatValue = 0.8f;
             so.FindProperty("initialCondition").enumValueIndex = (int)BoussinesqSimulation.InitialConditionType.ContinuousWavemaker;
             so.FindProperty("impulseShape").enumValueIndex = (int)BoussinesqSimulation.ImpulseShapeType.PlanarSoliton;
-            so.FindProperty("wavemakerAmplitude").floatValue = 0.8f;
-            so.FindProperty("wavemakerFrequency").floatValue = 0.35f;
-            so.FindProperty("pulseInterval").floatValue = 1.8f;
+            so.FindProperty("wavemakerAmplitude").floatValue = 0.35f;
+            so.FindProperty("wavemakerFrequency").floatValue = 0.15f;
+            so.FindProperty("pulseInterval").floatValue = 4.5f;
             so.ApplyModifiedProperties();
 
             var mat = CreateWaterMaterial();
@@ -322,11 +322,11 @@ namespace Nobnak.WaterSimulation.Editor {
             so2.FindProperty("resolution").vector2IntValue = new Vector2Int(256, 256);
             so2.FindProperty("dispersionAlpha").floatValue = 1.0f;
             so2.FindProperty("bathymetryMode").enumValueIndex = (int)BoussinesqSimulation.BathymetryType.ShoalAndCape;
-            so2.FindProperty("deepWaterDepth").floatValue = 12.0f;
-            so2.FindProperty("shallowWaterDepth").floatValue = 2.0f;
+            so2.FindProperty("deepWaterDepth").floatValue = 1.8f;
+            so2.FindProperty("shallowWaterDepth").floatValue = 0.5f;
             so2.FindProperty("initialCondition").enumValueIndex = (int)BoussinesqSimulation.InitialConditionType.ContinuousWavemaker;
-            so2.FindProperty("wavemakerAmplitude").floatValue = 0.4f;
-            so2.FindProperty("wavemakerFrequency").floatValue = 0.45f;
+            so2.FindProperty("wavemakerAmplitude").floatValue = 0.15f;
+            so2.FindProperty("wavemakerFrequency").floatValue = 0.25f;
             so2.ApplyModifiedProperties();
 
             // 3. FFT Ocean

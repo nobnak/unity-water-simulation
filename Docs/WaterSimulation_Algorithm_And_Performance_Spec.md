@@ -159,6 +159,15 @@ At $kh = 1$, the phase velocity error relative to the finite-depth linear disper
 - $c_{f}$: Seabed friction coefficient (`_BedFriction`)
 - $S_{\eta},\ \mathbf{S_{u}} = (0, S_{w})^{\mathrm{T}}$: Internal wavemaker mass and momentum source terms
 
+### 3.1.1 Physical Applicability Regime & Froude Scaling Rules
+The Peregrine Boussinesq equations assume shallow-water long-wave conditions ($\mu = h/L \ll 1$). In the short-wave limit ($kh \to \infty$), the frequency saturates at the cutoff frequency $\omega_{\mathrm{cutoff}} = \sqrt{3g/h}$, and the group velocity drops to zero: $c_{g} = \frac{\sqrt{gh}}{(1 + \frac{1}{3}h^{2}k^{2})^{3/2}} \to 0$.
+When modifying domain length $L_{\mathrm{domain}}$, parameters must scale according to Froude similarity rules:
+
+1. **Depth-to-Domain Ratio Rule**: Offshore maximum depth $h_{\mathrm{deep}} \le 0.03 - 0.05 \times \min(L_{x}, L_{z})$.
+   (Exceeding 5% places the wave in the deep-water regime $kh \gg 1$, where group velocity stalls and energy becomes trapped in local standing oscillations.)
+2. **Cutoff Frequency Rule**: Wavemaker frequency $f_{\mathrm{wavemaker}} < \frac{1}{2\pi}\sqrt{\frac{3g}{h_{\mathrm{deep}}}}$.
+   (Frequencies near or above cutoff yield $k^{2} < 0$, making waves evanescent and unable to propagate offshore. Monitored via Inspector `BoussinesqSimulationEditor` and `WaterSampleUI` HelpBoxes.)
+
 ### 3.2 Internal Texture Layout
 To prevent floating-point quantization under small substep intervals ($\Delta t \approx 0.004 \sim 0.01\ \mathrm{s}$), **`fp32` (`ARGBFloat` / `RGFloat`)** buffers are used for state, force, and acceleration fields.
 
@@ -534,8 +543,8 @@ $$
 | :--- | :--- | :---: | :--- | :---: | :---: | :---: | :--- |
 | **SolverOnly** | 01 2D Wave Equation | $256 \times 256$ | RGFloat Symplectic | $2$ | $3$ | **$0.183\ \mathrm{ms}$** | $c=8\ \mathrm{m/s}, L=50\ \mathrm{m}$ |
 | **SolverOnly** | 01 2D Wave Equation | $512 \times 512$ | RGFloat Symplectic | $3$ | $4$ | **$0.298\ \mathrm{ms}$** | $c=8\ \mathrm{m/s}, L=50\ \mathrm{m}$ |
-| **SolverOnly** | 02 Boussinesq | $256 \times 256$ | Peregrine ADI PCR | $2$ | $17$ | **$1.055\ \mathrm{ms}$** | $\alpha=1.0, h=15\ \mathrm{m}$ |
-| **SolverOnly** | 02 Boussinesq | $512 \times 512$ | Peregrine ADI PCR | $4$ | $33$ | **$4.544\ \mathrm{ms}$** | $\alpha=1.0, h=15\ \mathrm{m}$ |
+| **SolverOnly** | 02 Boussinesq | $256 \times 256$ | Peregrine ADI PCR | $2$ | $17$ | **$1.055\ \mathrm{ms}$** | $\alpha=1.0, h=3.5\ \mathrm{m}$ |
+| **SolverOnly** | 02 Boussinesq | $512 \times 512$ | Peregrine ADI PCR | $4$ | $33$ | **$4.544\ \mathrm{ms}$** | $\alpha=1.0, h=3.5\ \mathrm{m}$ |
 | **SolverOnly** | 03 FFT Ocean | $256 \times 256$ | Single-Pass Packed IFFT | $1$ | $18$ | **$0.317\ \mathrm{ms}$** | Redundant regen $0$ |
 | **SolverOnly** | 03 FFT Ocean | $512 \times 512$ | Single-Pass Packed IFFT | $1$ | $20$ | **$0.869\ \mathrm{ms}$** | Redundant regen $0$ |
 

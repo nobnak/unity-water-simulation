@@ -274,7 +274,7 @@ namespace Nobnak.WaterSimulation {
                 if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.ContinuousWavemaker) {
                     GUILayout.BeginHorizontal();
                     GUILayout.Label($"Freq: {boussSim.WavemakerFrequency:F2} Hz", GUILayout.Width(90));
-                    boussSim.WavemakerFrequency = GUILayout.HorizontalSlider(boussSim.WavemakerFrequency, 0.15f, 0.8f);
+                    boussSim.WavemakerFrequency = GUILayout.HorizontalSlider(boussSim.WavemakerFrequency, 0.05f, 0.45f);
                     GUILayout.EndHorizontal();
                 } else if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.GaussianPulse ||
                            boussSim.Condition == BoussinesqSimulation.InitialConditionType.PeriodicPulses) {
@@ -313,6 +313,13 @@ namespace Nobnak.WaterSimulation {
                 GUILayout.Label($"Wave Amp: {boussSim.WavemakerAmplitude:F2}m", GUILayout.Width(90));
                 boussSim.WavemakerAmplitude = GUILayout.HorizontalSlider(boussSim.WavemakerAmplitude, 0.1f, 2.5f);
                 GUILayout.EndHorizontal();
+
+                if (boussSim.IsDepthTooDeepForShallowWater) {
+                    GUILayout.Label("<color=#ffaa40><size=10>⚠️ 水深が領域長の5%を超過（深水波領域）。群速度が低下し停留します。</size></color>");
+                }
+                if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.ContinuousWavemaker && boussSim.IsFrequencyAboveCutoff) {
+                    GUILayout.Label($"<color=#ffaa40><size=10>⚠️ 周波数が遮断限界({boussSim.CutoffFrequency:F2}Hz)付近。波が沖へ進行できず停留・発振します。</size></color>");
+                }
             } else if (simulation is FFTOceanSimulation fftSim) {
                 GUILayout.Space(4);
                 GUILayout.Label("<b>[海況プリセット / Sea State]</b>");

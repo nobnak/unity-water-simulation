@@ -159,6 +159,15 @@ $$
 - $c_{f}$: 海底摩擦係数 (`_BedFriction`)
 - $S_{\eta},\ \mathbf{S_{u}} = (0, S_{w})^{\mathrm{T}}$: 内部造波ソース項
 
+### 3.1.1 物理的適用範囲と Froude 相似則（スケーリング設計基準）
+Peregrine Boussinesq 方程式は浅水長波長条件（$\mu = h/L \ll 1$）を前提とするモデルであり、短波長極限（$kh \to \infty$）において周波数が上限遮断周波数 $\omega_{\mathrm{cutoff}} = \sqrt{3g/h}$ に漸近し、群速度 $c_{g} = \frac{\sqrt{gh}}{(1 + \frac{1}{3}h^{2}k^{2})^{3/2}} \to 0$ となる物理的性質を持つ。
+そのため、領域サイズ $L_{\mathrm{domain}}$ を変更する際は、重力相似則（Froude 相似則）に基づき以下の設計基準を満たす必要がある：
+
+1. **水深比率基準**: 沖合最大水深 $h_{\mathrm{deep}} \le 0.03 \sim 0.05 \times \min(L_{x}, L_{z})$
+   （水深が領域長の 5% を超過すると波が深水波領域 $kh \gg 1$ となり、群速度がゼロに近づき波頭が停留・発振する）
+2. **遮断周波数基準**: 造波周波数 $f_{\mathrm{wavemaker}} < \frac{1}{2\pi}\sqrt{\frac{3g}{h_{\mathrm{deep}}}}$
+   （遮断周波数を超過すると $k^{2} < 0$ となり波がエバネッセント化し沖へ伝播できなくなる。インスペクターの `BoussinesqSimulationEditor` および `WaterSampleUI` にてリアルタイム警告表示を実施）
+
 ### 3.2 内部テクスチャ構成
 微小時間刻み（$\Delta t \approx 0.004 \sim 0.01\ \mathrm{s}$）での量子化誤差を防ぐため、状態・外力・加速度バッファには **`fp32` (`ARGBFloat` / `RGFloat`)** を使用する。
 
@@ -536,8 +545,8 @@ $$
 | :--- | :--- | :---: | :--- | :---: | :---: | :---: | :--- |
 | **SolverOnly** | 01 2D波動方程式 | $256 \times 256$ | RGFloat・シンプレクティック | $2$ | $3$ | **$0.183\ \mathrm{ms}$** | $c=8\ \mathrm{m/s}, L=50\ \mathrm{m}$ |
 | **SolverOnly** | 01 2D波動方程式 | $512 \times 512$ | RGFloat・シンプレクティック | $3$ | $4$ | **$0.298\ \mathrm{ms}$** | $c=8\ \mathrm{m/s}, L=50\ \mathrm{m}$ |
-| **SolverOnly** | 02 Boussinesq | $256 \times 256$ | Peregrine ADI PCR | $2$ | $17$ | **$1.055\ \mathrm{ms}$** | $\alpha=1.0, h=15\ \mathrm{m}$ |
-| **SolverOnly** | 02 Boussinesq | $512 \times 512$ | Peregrine ADI PCR | $4$ | $33$ | **$4.544\ \mathrm{ms}$** | $\alpha=1.0, h=15\ \mathrm{m}$ |
+| **SolverOnly** | 02 Boussinesq | $256 \times 256$ | Peregrine ADI PCR | $2$ | $17$ | **$1.055\ \mathrm{ms}$** | $\alpha=1.0, h=3.5\ \mathrm{m}$ |
+| **SolverOnly** | 02 Boussinesq | $512 \times 512$ | Peregrine ADI PCR | $4$ | $33$ | **$4.544\ \mathrm{ms}$** | $\alpha=1.0, h=3.5\ \mathrm{m}$ |
 | **SolverOnly** | 03 FFT海面 | $256 \times 256$ | 単一IFFT複素パッキング | $1$ | $18$ | **$0.317\ \mathrm{ms}$** | 再生成回数 $0$ |
 | **SolverOnly** | 03 FFT海面 | $512 \times 512$ | 単一IFFT複素パッキング | $1$ | $20$ | **$0.869\ \mathrm{ms}$** | 再生成回数 $0$ |
 
