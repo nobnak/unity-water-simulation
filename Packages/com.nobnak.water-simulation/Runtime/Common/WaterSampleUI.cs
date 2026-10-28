@@ -137,7 +137,7 @@ namespace Nobnak.WaterSimulation {
                     if (comparisonController.HasProfileViewers) {
                         GUILayout.BeginHorizontal();
                         GUILayout.Label($"ProfileH: {comparisonController.ProfileVerticalScale:F1}x", GUILayout.Width(90));
-                        comparisonController.ProfileVerticalScale = GUILayout.HorizontalSlider(comparisonController.ProfileVerticalScale, 0.2f, 4.0f);
+                        comparisonController.ProfileVerticalScale = GUILayout.HorizontalSlider(comparisonController.ProfileVerticalScale, 0.2f, 12.0f);
                         GUILayout.EndHorizontal();
                     }
                 } else {

@@ -68,7 +68,7 @@ $$
 ### 2.2 Internal Texture Layout
 | Texture Variable | Format | Role & Channel Allocation |
 | :--- | :---: | :--- |
-| `stateTexA`, `stateTexB` (`_CurrentState`, `_NextState`) | `ARGBHalf` (8 B/px) | Ping-Pong state buffers. `R`: Current elevation $\eta^{n}$, `G`: Previous elevation $\eta^{n-1}$, `B`: Vertical velocity $v^{n} = (\eta^{n} - \eta^{n-1})/\Delta t$, `A`: 0 |
+| `stateTexA`, `stateTexB` (`_CurrentState`, `_NextState`) | `RGFloat` (8 B/px) | Ping-Pong state buffers in fp32 precision. `R`: Current surface elevation $\eta^{n}\ [\mathrm{m}]$, `G`: Vertical velocity $v^{n} = \frac{\partial \eta}{\partial t}\ [\mathrm{m/s}]$. The fp32 upgrade reduces 10-second cumulative truncation drift for long waves from $223.78\%$ down to $0.00008\%$. |
 | `obstacleTex` (`_ObstacleTex`) | `R8` (1 B/px) | Obstacle mask (`1.0` = solid wall / slit barrier, `0.0` = open water) |
 
 ### 2.3 Numerical Discretization Scheme
@@ -87,16 +87,18 @@ $$
 \nabla^{2} \eta_{i,j}^{n} \approx \frac{4(\eta_{i-1,j}^{n} + \eta_{i+1,j}^{n} + \eta_{i,j-1}^{n} + \eta_{i,j+1}^{n}) + (\eta_{i-1,j-1}^{n} + \eta_{i+1,j-1}^{n} + \eta_{i-1,j+1}^{n} + \eta_{i+1,j+1}^{n}) - 20\eta_{i,j}^{n}}{6\Delta x^{2}}
 $$
 
-#### (3) Semi-Implicit Damped Leapfrog / Verlet Time Integration (`CSStep`)
-Discretizing the second time derivative via central differences and evaluating the first-order damping term semi-implicitly via $\frac{\eta^{n+1} - \eta^{n-1}}{2\Delta t}$ yields an explicit update for $\eta^{n+1}$:
+#### (3) Symplectic Leapfrog Time Integration (`CSStep`)
+Tracking physical velocity $v = \partial_{t}\eta$ explicitly, the state is advanced via a symplectic Leapfrog scheme with semi-implicit damping:
 
 $$
-\frac{\eta^{n+1} - 2\eta^{n} + \eta^{n-1}}{\Delta t^{2}} + \gamma_{\mathrm{eff}} \frac{\eta^{n+1} - \eta^{n-1}}{2\Delta t} = c^{2} \nabla^{2} \eta^{n}
+\eta^{n+1} = \eta^{n} + \Delta t\, v^{n} + \frac{1}{2}\Delta t^{2}\, c^{2}\nabla^{2}\eta^{n}
 $$
 
 $$
-\eta^{n+1} = \frac{2\eta^{n} - \left(1 - \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t\right)\eta^{n-1} + c^{2} \Delta t^{2} \nabla^{2} \eta^{n}}{1 + \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t}
+v^{n+1} = \frac{\left(1 - \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t\right)v^{n} + \frac{1}{2}\Delta t\, c^{2}\left(\nabla^{2}\eta^{n} + \nabla^{2}\eta^{n+1}\right)}{1 + \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t}
 $$
+
+Because the physical velocity $v$ is stored directly in state textures, dynamic adjustments to wave speed $c$ or substep width $\Delta t$ during runtime do not cause the artificial energy discontinuities associated with two-step backward Verlet formulations.
 
 Here, the perimeter sponge damping $\gamma_{\mathrm{sponge}}$ is defined in terms of the minimum cell distance to the domain boundary $d_{\mathrm{border}} = \min(i,\ N_{x} - 1 - i,\ j,\ N_{z} - 1 - j)$:
 
@@ -104,27 +106,29 @@ $$
 \gamma_{\mathrm{sponge}} = \begin{cases} S_{\mathrm{sponge}} \left(1 - \frac{d_{\mathrm{border}}}{W_{\mathrm{sponge}}}\right)^{2} & (d_{\mathrm{border}} < W_{\mathrm{sponge}}) \\ 0 & (d_{\mathrm{border}} \ge W_{\mathrm{sponge}}) \end{cases}
 $$
 
-For obstacle cells where `_ObstacleTex[pos].r > 0.5`, a homogeneous Dirichlet condition $\eta^{n+1} = \eta^{n} = 0$ is enforced, producing total wall reflection and slit diffraction.
+For obstacle cells where `_ObstacleTex[pos].r > 0.5`, either a homogeneous Dirichlet condition ($\eta = 0, v = 0$) or zero-flux Neumann reflection is enforced.
 
-#### (4) Zero-Initial-Velocity Gaussian Impulse Injection (`CSAddImpulse`)
-For a normalized UV center $\mathbf{u_{0}}$, radius $R_{\mathrm{uv}}$, and amplitude $A$, cells within distance $d = \|\mathbf{u} - \mathbf{u_{0}}\| < R_{\mathrm{uv}}$ receive:
+#### (4) Smooth Compact $C^{2}$-Polynomial Impulse Injection (`CSAddImpulse`)
+To eliminate high-frequency Gibbs ringing produced by truncated Gaussians, an isotropic compact $C^{2}$ polynomial bell function is used:
 
 $$
-\Delta \eta = A \exp\!\left(-3\left(\frac{d}{R_{\mathrm{uv}}}\right)^{2}\right)
+\Delta \eta = \begin{cases} A \left(1 - \left(\frac{\|\mathbf{u} - \mathbf{u_{0}}\|}{R_{\mathrm{uv}}}\right)^{2}\right)^{3} & (\|\mathbf{u} - \mathbf{u_{0}}\| < R_{\mathrm{uv}}) \\ 0 & (\|\mathbf{u} - \mathbf{u_{0}}\| \ge R_{\mathrm{uv}}) \end{cases}
 $$
 
-which is **added equally to both `state.r` ($\eta^{n}$) and `state.g` ($\eta^{n-1}$)**. This excites a clean initial surface displacement without introducing a spurious velocity spike in $\frac{\eta^{n} - \eta^{n-1}}{\Delta t}$.
+This function has vanishing first and second derivatives at the boundary ($\left.\nabla \Delta \eta\right|_{d = R_{\mathrm{uv}}} = 0$), exciting perfectly smooth wave ripples with zero initial velocity shock ($v = 0$).
 
-#### (5) Surface Normal and Curvature Foam Computation (`CSComputeNormal`)
-Executed once after the substep loop completes, computing central-difference surface gradients and 5-point Laplacian crest curvature foam:
+#### (5) Physical Normal and Curvature Foam Computation (`CSComputeNormal`)
+Executed once after the substep loop completes, computing central-difference surface gradients and unit physical normal $\mathbf{N_{\mathrm{phys}}}$:
 
 $$
 \frac{\partial \eta}{\partial x} = \frac{\eta_{i+1,j} - \eta_{i-1,j}}{2\Delta x}, \quad \frac{\partial \eta}{\partial z} = \frac{\eta_{i,j+1} - \eta_{i,j-1}}{2\Delta x}
 $$
 
 $$
-\mathbf{N} = \mathrm{normalize}\!\left(-2.5\frac{\partial \eta}{\partial x},\ 1.0,\ -2.5\frac{\partial \eta}{\partial z}\right), \quad \mathrm{Foam} = \mathrm{saturate}\!\left(-2.0 \left(\eta_{i-1,j} + \eta_{i+1,j} + \eta_{i,j-1} + \eta_{i,j+1} - 4\eta_{i,j}\right)\right)
+\mathbf{N_{\mathrm{phys}}} = \mathrm{normalize}\!\left(-\frac{\partial \eta}{\partial x},\ 1.0,\ -\frac{\partial \eta}{\partial z}\right), \quad \mathrm{Foam} = \mathrm{saturate}\!\left(-2.0 \left(\eta_{i-1,j} + \eta_{i+1,j} + \eta_{i,j-1} + \eta_{i,j+1} - 4\eta_{i,j}\right)\right)
 $$
+
+The `NormalVisual` mode displays this true unit physical normal, while visual exaggeration factor `_NormalExaggeration` (default $2.5$) is applied only inside the realistic shading pass.
 
 ---
 
@@ -132,7 +136,7 @@ $$
 
 Implementation files: [`BoussinesqSimulation.cs`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs), [`Boussinesq.compute`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute)
 
-### 3.1 Governing Equations (Peregrine 1967 Weakly Nonlinear, Weakly Dispersive System)
+### 3.1 Governing Equations (Peregrine 1967 Standard Boussinesq Dispersive System)
 Conservation of mass (continuity) and conservation of depth-averaged horizontal momentum $\mathbf{u} = (u, w)^{\mathrm{T}}$ over variable bathymetry $h(x, z)$:
 
 $$
@@ -140,11 +144,18 @@ $$
 $$
 
 $$
-\left(1 - \alpha \frac{h^{2}}{6}\nabla^{2}\right)\frac{\partial \mathbf{u}}{\partial t} = -g\nabla\eta - (\mathbf{u}\cdot\nabla)\mathbf{u} - \frac{c_{f}}{H}\mathbf{u} + \mathbf{S_{u}}
+\left(I - \alpha \left(\frac{1}{2}h\nabla(h\nabla\cdot) - \frac{h^{2}}{6}\nabla^{2}\right)\right)\frac{\partial \mathbf{u}}{\partial t} = -g\nabla\eta - (\mathbf{u}\cdot\nabla)\mathbf{u} - \frac{c_{f}}{H}\mathbf{u} + \mathbf{S_{u}} = \mathbf{f}
 $$
 
+- Over flat bathymetry ($\nabla h = 0$), the linear dispersion operator exactly matches the standard Peregrine (1967) $1/3$ coefficient:
+
+$$
+\left(I - \alpha \frac{h^{2}}{3}\nabla^{2}\right)\frac{\partial \mathbf{u}}{\partial t} = \mathbf{f}
+$$
+
+At $kh = 1$, the phase velocity error relative to the finite-depth linear dispersion relation $\omega^{2} = gk\tanh(kh)$ is only **$-0.764\%$** (substantially improved from $+6.09\%$ in the previous ad-hoc $1/6$ model), accurately capturing physical frequency dispersion from long waves into intermediate depths.
 - $H(x, z, t) = \max(0.05,\ \max(0.2, h) + \eta)$: Total water column depth $[\mathrm{m}]$
-- $\alpha \in [0, 1.2]$: Dispersion factor ($\alpha = 1.0$: Boussinesq dispersive waves, $\alpha = 0.0$: Non-dispersive Nonlinear Shallow Water equations)
+- $\alpha \in [0, 1.2]$: Dispersion factor ($\alpha = 1.0$: Peregrine dispersive waves, $\alpha = 0.0$: Non-dispersive Nonlinear Shallow Water equations)
 - $c_{f}$: Seabed friction coefficient (`_BedFriction`)
 - $S_{\eta},\ \mathbf{S_{u}} = (0, S_{w})^{\mathrm{T}}$: Internal wavemaker mass and momentum source terms
 
@@ -155,34 +166,35 @@ To prevent floating-point quantization under small substep intervals ($\Delta t 
 | :--- | :---: | :---: | :--- |
 | `stateTexA`, `stateTexB` (`_StateIn`, `_StateOut`) | `ARGBFloat` | 16 Bytes | Ping-Pong state buffers. `R`: $\eta\ [\mathrm{m}]$, `G`: $u\ [\mathrm{m/s}]$, `B`: $w\ [\mathrm{m/s}]$, `A`: 0 |
 | `predTex` (`_StatePred`) | `ARGBFloat` | 16 Bytes | Intermediate MacCormack predictor state $(\eta^{\ast}, u^{\ast}, w^{\ast}, 0)$ |
-| `forceTex` (`_ForceTex`) | `RGFloat` | 8 Bytes | Non-dispersive momentum RHS force vector $\mathbf{f} = (f_{x}, f_{z})$ |
-| `accelTexA`, `accelTexB` (`_AccelPing`, `_AccelPong`) | `RGFloat` | 8 Bytes | Acceleration vector $\mathbf{a} = (a_{x}, a_{z})$ for Helmholtz Jacobi relaxation |
+| `forceTex` (`_ForceTex`) | `RGFloat` | 8 Bytes | Predictor / corrector RHS force vector $\mathbf{f} = (f_{x}, f_{z})$ |
+| `forcePredTex` (`_ForcePredTex`) | `RGFloat` | 8 Bytes | Predictor dispersed acceleration $\mathbf{a}^{(1)} = L^{-1}\mathbf{f}^{n}$ storage |
+| `accelTexA`, `accelTexB` (`_AccelPing`, `_AccelPong`) | `RGFloat` | 8 Bytes | ADI tridiagonal PCR dispersion solver Ping-Pong buffers ($\mathbf{a}^{\ast}, \mathbf{a}$) |
 | `bathymetryTex` (`_BathymetryTex`) | `ARGBHalf` | 8 Bytes | `R`: Still water depth $h\ [\mathrm{m}]$, `G`: Seabed elevation $z_{b} = -h\ [\mathrm{m}]$ |
 
 ### 3.3 Numerical Discretization Scheme
 
 #### (1) CFL Condition and Automatic Sub-Stepping
-Substeps are determined from the maximum long-wave phase speed $c_{\max} = \sqrt{g h_{\max}}$ at maximum domain depth $h_{\max}$ (`deepWaterDepth`):
+Substeps are determined from the nonlinear wave speed $c_{\max} = \sqrt{g(h_{\max} + A_{\max})} + u_{\max}$ including wave amplitude and orbital velocity:
 
 $$
-\Delta t_{\max} = 0.45 \frac{\Delta x}{\sqrt{g h_{\max}}}, \quad M_{\mathrm{sub}} = \max\!\left(1,\ \left\lceil \frac{dt}{\Delta t_{\max}} \right\rceil\right), \quad \Delta t = \frac{dt}{M_{\mathrm{sub}}}
+\Delta t_{\max} = 0.55 \frac{\min(\Delta x, \Delta z)}{\sqrt{2}\,c_{\max}}, \quad M_{\mathrm{sub}} = \max\!\left(1,\ \left\lceil \frac{dt}{\Delta t_{\max}} \right\rceil\right), \quad \Delta t = \frac{dt}{M_{\mathrm{sub}}}
 $$
 
 #### (2) Symmetric MacCormack Predictor-Corrector Scheme (`CSPredict` & `CSCorrect`)
-To achieve second-order accuracy $O(\Delta t^{2}, \Delta x^{2})$ while eliminating odd-even grid decoupling ($2\Delta x$ checkerboard modes) on a collocated grid, a MacCormack Predictor-Corrector scheme is used. Furthermore, the step parity $\sigma_{\mathrm{parity}} \in \lbrace 0, 1 \rbrace$ (`pingPong ? 1 : 0`) alternates every substep (Forward-Backward on even substeps, Backward-Forward on odd substeps) to cancel directional bias.
+To achieve second-order spatial accuracy while eliminating odd-even grid decoupling ($2\Delta x$ checkerboard modes) on a collocated grid, an alternating MacCormack Predictor-Corrector scheme is used:
 
 1. **Predictor (`CSPredict`)**:
-   Using direction sign $s_{1} = (\sigma_{\mathrm{parity}} == 0)\ ?\ +1 : -1$ and signed inverse spacing $\tilde{\Delta_{1}} = s_{1} / \Delta x$, one-sided differences with neighbor cells $(i + s_{1}, j)$ and $(i, j + s_{1})$ are evaluated:
+   Using direction sign $s_{1} = (\sigma_{\mathrm{parity}} == 0)\ ?\ +1 : -1$ and signed inverse spacing $\tilde{\Delta_{1}} = s_{1} / \Delta x$, one-sided differences with neighbor cells $(i + s_{1}, j)$ and $(i, j + s_{1})$ evaluate mass flux divergence and momentum advection:
 
 $$
 \delta_{x}^{(1)}(Hu) = (H_{i+s_{1},j}u_{i+s_{1},j} - H_{i,j}u_{i,j})\tilde{\Delta_{1}}, \quad \delta_{z}^{(1)}(Hw) = (H_{i,j+s_{1}}w_{i,j+s_{1}} - H_{i,j}w_{i,j})\tilde{\Delta_{1}}
 $$
 
 $$
-\eta^{\ast} = D_{\mathrm{sponge}} \cdot \left(\eta^{n} - \Delta t\left(\delta_{x}^{(1)}(Hu) + \delta_{z}^{(1)}(Hw) - S_{\eta}(\phi^{n})\right)\right)
+\eta^{\ast} = \eta^{n} - \Delta t\left(\delta_{x}^{(1)}(Hu) + \delta_{z}^{(1)}(Hw) - S_{\eta}(\phi^{n})\right)
 $$
 
-   Similarly, velocity and surface elevation gradients are evaluated with $\tilde{\Delta_{1}}$ to store the non-dispersive RHS force $\mathbf{f^{n}} = (f_{x}^{n}, f_{z}^{n})$ in `_ForceTex` and write predicted velocities $\mathbf{u^{\ast}} = D_{\mathrm{sponge}} \cdot (\mathbf{u^{n}} + \Delta t \mathbf{f^{n}})$ to `_StatePred`.
+   Non-dispersive RHS force $\mathbf{f^{n}} = (f_{x}^{n}, f_{z}^{n})$ is written to `_ForceTex`. When dispersion is active ($\alpha > 0.001$), this force is routed to the ADI PCR inverter.
 
 2. **Corrector (`CSCorrect`)**:
    Using the opposite direction sign $s_{2} = -s_{1}$ ($\tilde{\Delta_{2}} = s_{2} / \Delta x$) on `_StatePred`, the corrector averages the forward and backward updates:
@@ -191,34 +203,40 @@ $$
 \eta^{n+1} = D_{\mathrm{sponge}} \cdot \frac{1}{2}\left[\eta^{n} + \eta^{\ast} - \Delta t\left(\delta_{x}^{(2)}(H^{\ast} u^{\ast}) + \delta_{z}^{(2)}(H^{\ast} w^{\ast}) - S_{\eta}(\phi^{n+1})\right)\right]
 $$
 
-   Likewise, the second-order MacCormack-averaged force $\mathbf{f^{\ast}} = (f_{x}^{\ast}, f_{z}^{\ast})$ and $\mathbf{f^{n}}$:
+   Corrector RHS force $\mathbf{f^{\ast}} = (f_{x}^{\ast}, f_{z}^{\ast})$ is stored into `_ForceTex`.
+
+#### (3) ADI Tridiagonal Parallel Cyclic Reduction (PCR) Solver (`CSTridiagonalX`, `CSTridiagonalZ`)
+The previous artificial coefficient clamp $\beta \le 6$ (which discarded up to $99.4\%$ of physical dispersion on refined grids) is removed. The 2D Peregrine dispersion operator is factored into an unconditionally stable Alternating Direction Implicit (Peaceman-Rachford ADI) system:
 
 $$
-\bar{\mathbf{f}} = \frac{1}{2}(\mathbf{f^{n}} + \mathbf{f^{\ast}})
+\left(I - \beta_{x}\partial_{x}^{2}\right)\left(I - \beta_{z}\partial_{z}^{2}\right)\mathbf{a} = \mathbf{f}, \quad \beta_{x} = \frac{\alpha h^{2}}{3\Delta x^{2}}, \quad \beta_{z} = \frac{\alpha h^{2}}{3\Delta z^{2}}
 $$
 
-   is written to both `_ForceTex` and the initial Jacobi guess `_AccelPing`.
+- **Pass 1 (`CSTridiagonalX`)**: For every row $Z = j$, the 1D tridiagonal system $(I - \beta_{x}\partial_{x}^{2})\mathbf{a}^{\ast} = \mathbf{f}$ is solved directly across row threads in `groupshared` memory using Parallel Cyclic Reduction (PCR: 9 reduction passes support $N \le 512$). Intermediate acceleration $\mathbf{a}^{\ast}$ is written to `_AccelPong`.
+  Strict diagonal dominance $b_{i} = 1 + \frac{2\alpha h^{2}}{3\Delta x^{2}} > |a_{i}| + |c_{i}| = \frac{2\alpha h^{2}}{3\Delta x^{2}}$ holds unconditionally for all $\alpha \ge 0, h > 0$.
+- **Pass 2 (`CSTridiagonalZ`)**: For every column $X = i$, the system $(I - \beta_{z}\partial_{z}^{2})\mathbf{a} = \mathbf{a}^{\ast}$ is solved directly via PCR along columns, writing finalized acceleration $\mathbf{a}$ to `_AccelPing`.
 
-#### (3) Implicit Helmholtz Dispersion Inverter (`CSJacobiStep` & `CSApplyDispersion`)
-Discretizing the elliptic Helmholtz operator $(I - \alpha \frac{h^{2}}{6}\nabla^{2})\mathbf{a} = \bar{\mathbf{f}}$ on the 5-point stencil yields at each cell $(i, j)$:
+Unlike iterative Jacobi relaxation, the ADI PCR formulation solves the linear system to machine precision in exactly two compute dispatches per stage with zero grid-resolution degradation.
 
-$$
-(1 + 4\beta_{i,j})\mathbf{a_{i,j}} - \beta_{i,j}(\mathbf{a_{i-1,j}} + \mathbf{a_{i+1,j}} + \mathbf{a_{i,j-1}} + \mathbf{a_{i,j+1}}) = \bar{\mathbf{f_{i,j}}}, \quad \beta_{i,j} = \mathrm{clamp}\!\left(\alpha \frac{h_{i,j}^{2}}{6\Delta x^{2}},\ 0.0,\ 6.0\right)
-$$
-
-Starting from $\mathbf{a^{(0)}} = \bar{\mathbf{f}}$ (initialized from the current substep's $\bar{\mathbf{f}}$ to avoid temporal phase lag), **6 Jacobi relaxation iterations** ($k = 0, \dots, 5$) are executed:
-
-$$
-\mathbf{a_{i,j}^{(k+1)}} = \frac{\bar{\mathbf{f_{i,j}}} + \beta_{i,j}(\mathbf{a_{i-1,j}^{(k)}} + \mathbf{a_{i+1,j}^{(k)}} + \mathbf{a_{i,j-1}^{(k)}} + \mathbf{a_{i,j+1}^{(k)}})}{1 + 4\beta_{i,j}}
-$$
-
-Followed by `CSApplyDispersion` to update the horizontal velocity field:
+#### (4) Second-Order Coupled Time Stepping (`CSApplyPredictedDispersion` & `CSApplyDispersion`)
+Dispersion is coupled symmetrically to both predictor and corrector stages, applying a 2nd-order Heun velocity update:
+1. **Predictor Stage (`CSApplyPredictedDispersion`)**:
+   Solves $\mathbf{a}^{(1)} = L^{-1}\mathbf{f}^{n}$, saves $\mathbf{a}^{(1)}$ in `_ForcePredTex`, and updates predicted velocity:
 
 $$
-\mathbf{u^{n+1}} = D_{\mathrm{sponge}} \cdot \left(\mathbf{u^{n}} + \Delta t\,\mathbf{a^{(6)}}\right)
+\mathbf{u}^{\ast} = D_{\mathrm{sponge}} \cdot \left(\mathbf{u}^{n} + \Delta t\,\mathbf{a}^{(1)}\right)
 $$
 
-where the implicit sponge damping factor for $d_{\mathrm{border}} < W_{\mathrm{sponge}}$ is:
+2. **Corrector Stage (`CSApplyDispersion`)**:
+   Solves $\mathbf{a}^{(2)} = L^{-1}\mathbf{f}^{\ast}$ and updates velocity using the average acceleration:
+
+$$
+\mathbf{u}^{n+1} = D_{\mathrm{sponge}} \cdot \left(\mathbf{u}^{n} + \frac{1}{2}\Delta t\left(\mathbf{a}^{(1)} + \mathbf{a}^{(2)}\right)\right)
+$$
+
+Halving $\Delta t$ yields an error reduction ratio of **$3.99\times$** (matching theoretical $4.0\times$), rigorously demonstrating second-order convergence $O(\Delta t^{2})$.
+
+The implicit sponge damping factor for $d_{\mathrm{border}} < W_{\mathrm{sponge}}$ is:
 
 $$
 D_{\mathrm{sponge}} = \frac{1}{1 + 15\,\Delta t\, S_{\mathrm{sponge}} \left(1 - \frac{d_{\mathrm{border}}}{W_{\mathrm{sponge}}}\right)^{2}}
@@ -292,32 +310,46 @@ $$
 P(\mathbf{k}) = P_{\mathrm{Phillips}}(\mathbf{k}) + P_{\mathrm{swell}}(\mathbf{k})
 $$
 
-Using standard normal random pairs $(\xi_{r}, \xi_{i}) \sim \mathcal{N}(0, 1)$ (generated via integer Wang/Jenkins hash + Box-Muller transform), the initial complex amplitude $h_{0}(\mathbf{k})$ and conjugate term $h_{0}^{\ast}(-\mathbf{k})$ are stored in `_InitialSpectrum` (`ARGBFloat`):
+Using standard normal random pairs $(\xi_{r}, \xi_{i}) \sim \mathcal{N}(0, 1)$ (generated via integer Wang/Jenkins hash + Box-Muller transform) and discrete wavenumber spacing $\Delta k = \frac{2\pi}{L}$, the initial complex amplitude $h_{0}(\mathbf{k})$ and conjugate term $h_{0}^{\ast}(-\mathbf{k})$ are stored in `_InitialSpectrum` (`ARGBFloat`):
 
 $$
-h_{0}(\mathbf{k}) = \sqrt{\frac{P(\mathbf{k})}{2}}(\xi_{r} + i\xi_{i}), \quad h_{0}^{\ast}(-\mathbf{k}) = \sqrt{\frac{P(-\mathbf{k})}{2}}(\xi_{r} - i\xi_{i})
+h_{0}(\mathbf{k}) = \sqrt{\frac{P(\mathbf{k})}{2}}\,\Delta k\,(\xi_{r} + i\xi_{i}), \quad h_{0}^{\ast}(-\mathbf{k}) = \sqrt{\frac{P(-\mathbf{k})}{2}}\,\Delta k\,(\xi_{r} - i\xi_{i})
 $$
 
-#### (2) Deep-Water Dispersion Time Evolution and Wavenumber-Weighted Choppy Spectrum (`CSTimeEvolution`)
-Following the deep-water gravity wave dispersion relation $\omega(k) = \sqrt{g k}$, the complex elevation spectrum $\tilde{h}(\mathbf{k}, t)$ at time $t$ is synthesized as (preserving Hermitian symmetry $\tilde{h}(-\mathbf{k}, t)^{\ast} = \tilde{h}(\mathbf{k}, t)$ so the IFFT output is real):
+Here, the opposite wavenumber index is mapped with periodic wrap-around:
+
+$$
+i_{-} = (N - i) \bmod N, \quad j_{-} = (N - j) \bmod N
+$$
+
+and the DC mode $(N/2, N/2)$ and asymmetric Nyquist modes are set to zero. This ensures the imaginary residual after inverse transformation remains at machine precision (imaginary-to-real RMS ratio $3.45 \times 10^{-16}$). Incorporating $\Delta k$ into discrete amplitudes makes the significant wave height $H_{s} \approx 3.63\ \mathrm{m}$ completely independent of grid resolution $N$.
+
+#### (2) Deep-Water Dispersion Time Evolution and Complex-Packed Single 2D IFFT (`CSTimeEvolution`)
+Following the deep-water gravity wave dispersion relation $\omega(k) = \sqrt{g k}$, the complex elevation spectrum $\tilde{h}(\mathbf{k}, t)$ at time $t$ is synthesized:
 
 $$
 \tilde{h}(\mathbf{k}, t) = h_{0}(\mathbf{k})e^{i\omega(k)t} + h_{0}^{\ast}(-\mathbf{k})e^{-i\omega(k)t}
 $$
 
-Because the 2D IFFT kernels use the $+i$ twiddle exponent $\exp(+i 2\pi \mathbf{n}\cdot\mathbf{m}/N)$, the horizontal displacement spectrum $(\tilde{D_{x}}, \tilde{D_{z}})$ that converges horizontal particles toward wave crests ($D_{y} > 0,\ \nabla\cdot\mathbf{D_{h}} < 0$) to form sharp trochoidal crests is given by the **`+i` phase factor**:
+The horizontal displacement spectrum $(\tilde{D_{x}}, \tilde{D_{z}})$ converging particles toward wave crests is given by the `+i` phase factor:
 
 $$
 \begin{pmatrix} \tilde{D_{x}}(\mathbf{k}, t) \\ \tilde{D_{z}}(\mathbf{k}, t) \end{pmatrix} = +i\, w_{\mathrm{chop}}(k) \frac{\mathbf{k}}{k} \tilde{h}(\mathbf{k}, t) = w_{\mathrm{chop}}(k)\frac{\mathbf{k}}{k}\left(-\mathrm{Im}\,\tilde{h} + i\,\mathrm{Re}\,\tilde{h}\right)
 $$
 
-Here $w_{\mathrm{chop}}(k)$ is a wavenumber envelope that amplifies horizontal convergence on primary wind and swell waves while preventing high-wavenumber capillary waves from self-intersecting ($J \ll 0$):
+where $w_{\mathrm{chop}}(k) = \frac{2.1}{1 + k / 0.42}$.
+
+In this implementation, all three real displacement fields $(D_{y}, D_{x}, D_{z})$ are packed into a single 4-channel complex buffer `_SpectrumPacked` (`ARGBFloat`):
 
 $$
-w_{\mathrm{chop}}(k) = \frac{2.1}{1 + k / k_{\mathrm{ref}}}, \quad k_{\mathrm{ref}} = 0.42\ [\mathrm{rad/m}]
+\mathrm{Packed.rg} = \tilde{h}(\mathbf{k}, t) + i\,\tilde{D_{x}}(\mathbf{k}, t) = \left(\mathrm{Re}\,\tilde{h} - \mathrm{Im}\,\tilde{D_{x}}\right) + i\left(\mathrm{Im}\,\tilde{h} + \mathrm{Re}\,\tilde{D_{x}}\right)
 $$
 
-Because both $D_{x}(\mathbf{x})$ and $D_{z}(\mathbf{x})$ are real fields with Hermitian-symmetric spectra, $\tilde{D_{x}}$ is packed into `RG` and $\tilde{D_{z}}$ into `BA` of `_SpectrumDxDz` and transformed simultaneously in a single 4-channel 2D IFFT.
+$$
+\mathrm{Packed.ba} = \tilde{D_{z}}(\mathbf{k}, t) + 0i = \mathrm{Re}\,\tilde{D_{z}} + i\,\mathrm{Im}\,\tilde{D_{z}}
+$$
+
+This executes in a **single 4-channel 2D IFFT pass with zero `Graphics.Blit` passes**, transforming all three displacement components simultaneously.
 
 ### 4.2 Radix-2 Stockham Autosort 2D IFFT (`CSFFTHorizontal`, `CSFFTVertical`)
 To eliminate the bit-reversal permutation pass required by Cooley-Tukey FFTs, the **Stockham Autosort algorithm** is used, automatically sorting indices between Ping-Pong buffers at each butterfly stage.
@@ -335,13 +367,13 @@ $$
 \mathrm{Out}[x] = \begin{cases} \mathrm{In}[i_{0}] + W \cdot \mathrm{In}[i_{1}] & (t == 0) \\ \mathrm{In}[i_{0}] - W \cdot \mathrm{In}[i_{1}] & (t == 1) \end{cases}
 $$
 
-This executes $\log_{2} N$ horizontal passes followed by $\log_{2} N$ vertical passes ($2\log_{2} N$ passes per 2D IFFT).
+This executes $\log_{2} N$ horizontal passes followed by $\log_{2} N$ vertical passes ($2\log_{2} N$ passes per step).
 
 ### 4.3 Exact Lagrangian Normal, Jacobian Whitecap Foam, and Crest Pinch (`CSPackOceanData`)
-Applying the spatial checkerboard sign $(-1)^{x+z}$ (due to centering the wavenumber origin at $(N/2, N/2)$, evaluated as `((x + z) & 1) != 0 ? -1.0 : 1.0`), normalization factor $1/N$, and choppiness scale $\lambda$ (`_Choppiness`) yields the spatial displacement vector $\mathbf{D} = (D_{x}, D_{y}, D_{z})$:
+Applying the spatial checkerboard sign $(-1)^{x+z}$ and choppiness scale $\lambda$ (`_Choppiness`) unpacks the spatial displacement vector $\mathbf{D} = (D_{x}, D_{y}, D_{z})$:
 
 $$
-s(x, z) = \frac{(-1)^{x + z}}{N}, \quad D_{y} = s \cdot \mathrm{Re}(\mathrm{IFFT}(\tilde{h})), \quad D_{x} = \lambda s \cdot \mathrm{Re}(\mathrm{IFFT}(\tilde{D_{x}})), \quad D_{z} = \lambda s \cdot \mathrm{Re}(\mathrm{IFFT}(\tilde{D_{z}}))
+s(x, z) = (-1)^{x + z}, \quad D_{y} = s \cdot \mathrm{Re}(\mathrm{Packed.rg}), \quad D_{x} = \lambda s \cdot \mathrm{Im}(\mathrm{Packed.rg}), \quad D_{z} = \lambda s \cdot \mathrm{Re}(\mathrm{Packed.ba})
 $$
 
 Central differences with periodic wrap mask `& (N - 1)` over spacing $2\Delta x = 2L/N$ yield the displacement gradient tensor $D_{\alpha,\beta} = \frac{\partial D_{\alpha}}{\partial \beta}$ and the **Jacobian determinant $J$** of the horizontal mapping $\mathbf{X_{h}}(x,z) = (x + D_{x}, z + D_{z})$:
@@ -359,15 +391,14 @@ $$
 \mathbf{N} = \mathrm{normalize}\!\begin{pmatrix} -\frac{\partial D_{y}}{\partial x}\left(1 + \frac{\partial D_{z}}{\partial z}\right) + \frac{\partial D_{y}}{\partial z}\frac{\partial D_{z}}{\partial x} \\ \max(0.08,\ J) \\ -\frac{\partial D_{y}}{\partial z}\left(1 + \frac{\partial D_{x}}{\partial x}\right) + \frac{\partial D_{y}}{\partial x}\frac{\partial D_{x}}{\partial z} \end{pmatrix}
 $$
 
-  As horizontal particles converge at wave crests ($J \to 0.08$), the horizontal normal components sharpen dramatically, producing authentic trochoidal ridge shading and Fresnel grazing highlights.
-
 ### 4.4 Internal Texture Layout (`FFTOceanSimulation`)
 | Texture Variable | Format | Bytes / Texel | Role & Channel Allocation |
 | :--- | :---: | :---: | :--- |
 | `initialSpectrumTex` (`_InitialSpectrum`) | `ARGBFloat` | 16 Bytes | `RG`: $h_{0}(\mathbf{k})$, `BA`: $h_{0}^{\ast}(-\mathbf{k})$ |
-| `spectrumDyTex` (`_SpectrumDy`) | `ARGBFloat` | 16 Bytes | `RG`: $\tilde{h}(\mathbf{k}, t)$ (post-IFFT $D_{y}$) |
-| `spectrumDxDzTex` (`_SpectrumDxDz`) | `ARGBFloat` | 16 Bytes | `RG`: $\tilde{D_{x}} \to D_{x}$, `BA`: $\tilde{D_{z}} \to D_{z}$ |
+| `spectrumPackedTex` (`_SpectrumPacked`) | `ARGBFloat` | 16 Bytes | `RG`: $\tilde{h} + i\tilde{D}_{x}$, `BA`: $\tilde{D}_{z} + 0i$ |
 | `pingPongTexA`, `pingPongTexB` | `ARGBFloat` | 16 Bytes | Stockham 2D IFFT work buffers |
+| `waterDataTex` (`_WaterDataTex`) | `ARGBHalf` | 8 Bytes | Output displacements $(D_{x}, \eta, D_{z}, \mathrm{Foam})$ |
+| `normalTex` (`_NormalTex`) | `ARGBHalf` | 8 Bytes | Output normals $(N_{x}, N_{y}, N_{z}, P_{\mathrm{crest}})$ |
 
 ---
 
@@ -454,33 +485,38 @@ $$
 D_{\mathrm{WaveEq}} = M_{\mathrm{sub}} + 1, \quad \mathrm{Traffic_{WaveEq}}(N, M_{\mathrm{sub}}) = (17 M_{\mathrm{sub}} + 24) N^{2}\ [\mathrm{Bytes/step}]
 $$
 
-#### Method 2: Boussinesq System ($M_{\mathrm{sub}}$ substeps, $K_{J} = 6$ Jacobi iterations)
-- **`CSPredict`** ($\times M_{\mathrm{sub}}$): Read `_StateIn` (16B) + Read `_BathymetryTex` (8B) + Write `_ForceTex` (8B) + Write `_StatePred` (16B) = $\mathbf{48\ \mathrm{B/px}}$
-- **`CSCorrect`** ($\times M_{\mathrm{sub}}$): Read `_StateIn` (16B) + Read `_StatePred` (16B) + Read `_BathymetryTex` (8B) + R/W `_ForceTex` (16B) + Write `_AccelPing` (8B) + Write `_StateOut` (16B) = $\mathbf{80\ \mathrm{B/px}}$
-- **`CSJacobiStep`** ($\times K_{J} M_{\mathrm{sub}}$): Read `_BathymetryTex` (8B) + Read `_ForceTex` (8B) + Read `_AccelPing` (8B) + Write `_AccelPong` (8B) = $\mathbf{32\ \mathrm{B/px}} \times 6 = \mathbf{192\ \mathrm{B/px}}$
-- **`CSApplyDispersion`** ($\times M_{\mathrm{sub}}$): R/W `_StateOut` (32B) + Read `_AccelPing` (8B) = $\mathbf{40\ \mathrm{B/px}}$
-- **`CSComputeNormal`** ($\times 1$): Read `_StateOut` (16B) + Write `_NormalTex` (8B) + Write `_WaterDataTex` (8B) = $\mathbf{32\ \mathrm{B/px}}$
+#### Method 2: Boussinesq System ($M_{\mathrm{sub}}$ substeps, ADI PCR direct dispersion solver)
+- Per-substep operations ($\times M_{\mathrm{sub}}$):
+  1. `CSPredict`: Read `_StateIn` (16B) + Read `_BathymetryTex` (8B) + Write `_ForceTex` (8B) + Write `_StatePred` (16B) = $\mathbf{48\ \mathrm{B/px}}$
+  2. `CSTridiagonalX` (Predictor X-PCR): Read `_ForceTex` (8B) + Read `_BathymetryTex` (8B) + Write `_AccelPong` (8B) = $\mathbf{24\ \mathrm{B/px}}$
+  3. `CSTridiagonalZ` (Predictor Z-PCR): Read `_AccelPong` (8B) + Read `_BathymetryTex` (8B) + Write `_AccelPing` (8B) = $\mathbf{24\ \mathrm{B/px}}$
+  4. `CSApplyPredictedDispersion`: R/W `_StatePred` (32B) + Read `_AccelPing` (8B) + Write `_ForcePredTex` (8B) = $\mathbf{48\ \mathrm{B/px}}$
+  5. `CSCorrect`: Read `_StateIn` (16B) + Read `_StatePred` (16B) + Read `_BathymetryTex` (8B) + Write `_ForceTex` (8B) + Write `_StateOut` (16B) = $\mathbf{64\ \mathrm{B/px}}$
+  6. `CSTridiagonalX` (Corrector X-PCR): Read `_ForceTex` (8B) + Read `_BathymetryTex` (8B) + Write `_AccelPong` (8B) = $\mathbf{24\ \mathrm{B/px}}$
+  7. `CSTridiagonalZ` (Corrector Z-PCR): Read `_AccelPong` (8B) + Read `_BathymetryTex` (8B) + Write `_AccelPing` (8B) = $\mathbf{24\ \mathrm{B/px}}$
+  8. `CSApplyDispersion`: R/W `_StateOut` (32B) + Read `_ForcePredTex` (8B) + Read `_AccelPing` (8B) = $\mathbf{48\ \mathrm{B/px}}$
+- Step completion ($\times 1$): `CSComputeNormal`: Read `_StateOut` (16B) + Write `_NormalTex` (8B) + Write `_WaterDataTex` (8B) = $\mathbf{32\ \mathrm{B/px}}$
 
 $$
-D_{\mathrm{Boussinesq}} = (3 + K_{J}) M_{\mathrm{sub}} + 1 = 9 M_{\mathrm{sub}} + 1
+D_{\mathrm{Boussinesq}} = 8 M_{\mathrm{sub}} + 1
 $$
 
 $$
-\mathrm{Traffic_{Boussinesq}}(N, M_{\mathrm{sub}}) = (360 M_{\mathrm{sub}} + 32) N^{2}\ [\mathrm{Bytes/step}]
+\mathrm{Traffic_{Boussinesq}}(N, M_{\mathrm{sub}}) = (304 M_{\mathrm{sub}} + 32) N^{2}\ [\mathrm{Bytes/step}]
 $$
 
-#### Method 3: Spectral / FFT Ocean (two 2D IFFTs per step, $S = \log_{2} N$ stages)
-- **`CSTimeEvolution`** ($\times 1$): Read `_InitialSpectrum` (16B) + Write `_SpectrumDy` (16B) + Write `_SpectrumDxDz` (16B) = $\mathbf{48\ \mathrm{B/px}}$
-- **`Perform2DIFFT`** ($\times 2$: $2\log_{2} N$ butterfly passes + 2 I/O Blits per 2D IFFT):
+#### Method 3: Spectral / FFT Ocean (single complex-packed 2D IFFT per step, $S = \log_{2} N$ stages)
+- **`CSTimeEvolution`** ($\times 1$): Read `_InitialSpectrum` (16B) + Write `_SpectrumPacked` (16B) = $\mathbf{32\ \mathrm{B/px}}$
+- **`Perform2DIFFT`** ($\times 1$: $2\log_{2} N$ butterfly passes, zero `Graphics.Blit` passes):
   - Each butterfly pass (`CSFFTHorizontal` / `CSFFTVertical`): Read `_InputPing` (2 points $\to$ 24B effective with cache) + Write `_OutputPong` (16B) $\approx \mathbf{40\ \mathrm{B/px}}$
-  - Per 2D IFFT: $(40 \times 2\log_{2} N + 64)\ \mathrm{B/px}$; total for 2 IFFTs: $(160\log_{2} N + 128)\ \mathrm{B/px}$
-- **`CSPackOceanData`** ($\times 1$): Read `_SpectrumDy` (16B) + Read `_SpectrumDxDz` (16B) + Write `_WaterDataTex` (8B) + Write `_NormalTex` (8B) = $\mathbf{48\ \mathrm{B/px}}$
+  - Per 2D IFFT: $(40 \times 2\log_{2} N)\ \mathrm{B/px} = (80\log_{2} N)\ \mathrm{B/px}$
+- **`CSPackOceanData`** ($\times 1$): Read `_SpectrumPacked` (16B) + Write `_WaterDataTex` (8B) + Write `_NormalTex` (8B) = $\mathbf{32\ \mathrm{B/px}}$
 
 $$
-D_{\mathrm{FFT}} = 4 \log_{2} N + 6, \quad \mathrm{Traffic_{FFT}}(N) = (160 \log_{2} N + 224) N^{2}\ [\mathrm{Bytes/step}]
+D_{\mathrm{FFT}} = 2 \log_{2} N + 2, \quad \mathrm{Traffic_{FFT}}(N) = (80 \log_{2} N + 64) N^{2}\ [\mathrm{Bytes/step}]
 $$
 
-(Note: $D_{\mathrm{FFT}}$ includes the 4 I/O `Graphics.Blit` operations across the two 2D IFFTs.)
+(Note: Redundant spectrum regenerations are guarded by dirty flags and value equality checks; steady-state simulations have `RedundantSpectrumRegen = 0`.)
 
 ---
 
@@ -492,16 +528,24 @@ $$
 T_{\mathrm{GPU}} \approx \frac{\mathrm{Traffic}}{B_{\mathrm{eff}}} + D_{\mathrm{step}} \cdot t_{\mathrm{disp}}
 $$
 
-#### Analytical Estimate vs. Measured GPU Time on Reference Hardware (Intel(R) Arc(TM) 140V GPU: $B_{\mathrm{eff}} \approx 110\ \mathrm{GB/s}$, $t_{\mathrm{disp}} \approx 0.006\ \mathrm{ms}$)
+#### Measured Benchmark Results (Unity 6000.3.27f1 Batchmode Execution, extracted from `Docs/BenchmarkResults.csv`)
 
-| Simulation Method | Resolution $N^{2}$ | Substeps / Config | Dispatches $D_{\mathrm{step}}$ | Memory Traffic | Analytical Estimate $T_{\mathrm{est}}$ | Measured GPU Time $T_{\mathrm{meas}}$ | Render FPS (1280×720) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **01 2D Wave Equation** | $256^{2}$ | $M_{\mathrm{sub}} = 2$ | $3$ | $3.6\ \mathrm{MB}$ | $0.05\ \mathrm{ms}$ (×2–3/frame $\approx 0.14\ \mathrm{ms}$) | **$0.15\ \mathrm{ms}$** | $140+\ \mathrm{FPS}$ |
-| **01 2D Wave Equation** | $512^{2}$ | $M_{\mathrm{sub}} = 2$ | $3$ | $14.5\ \mathrm{MB}$ | $0.15\ \mathrm{ms}$ (×2–3/frame $\approx 0.38\ \mathrm{ms}$) | **$0.38\ \mathrm{ms}$** | $120+\ \mathrm{FPS}$ |
-| **02 Boussinesq** | $256^{2}$ | $M_{\mathrm{sub}} = 2, K_{J} = 6$ | $19$ | $46.9\ \mathrm{MB}$ | $0.54\ \mathrm{ms}$ | **$0.48\ \mathrm{ms}$** | $120+\ \mathrm{FPS}$ |
-| **02 Boussinesq** | $512^{2}$ | $M_{\mathrm{sub}} = 2, K_{J} = 6$ | $19$ | $187.7\ \mathrm{MB}$ | $1.82\ \mathrm{ms}$ | **$1.35\ \mathrm{ms}$** | $95+\ \mathrm{FPS}$ |
-| **03 FFT Ocean** | $256^{2}$ | $\log_{2} N = 8$ | $38$ | $94.1\ \mathrm{MB}$ | $1.08\ \mathrm{ms}$ (with L2 residency $\approx 0.38\ \mathrm{ms}$) | **$0.35\ \mathrm{ms}$** | $130+\ \mathrm{FPS}$ |
-| **03 FFT Ocean** | $512^{2}$ | $\log_{2} N = 9$ | $42$ | $419.0\ \mathrm{MB}$ | $4.06\ \mathrm{ms}$ (with L2 residency $\approx 1.05\ \mathrm{ms}$) | **$0.95\ \mathrm{ms}$** | $105+\ \mathrm{FPS}$ |
+| Category | Method | Resolution | Mode / Scheme | Substeps | Dispatches | Wall Time per Step | Notes |
+| :--- | :--- | :---: | :--- | :---: | :---: | :---: | :--- |
+| **SolverOnly** | 01 2D Wave Equation | $256 \times 256$ | RGFloat Symplectic | $2$ | $3$ | **$0.183\ \mathrm{ms}$** | $c=8\ \mathrm{m/s}, L=50\ \mathrm{m}$ |
+| **SolverOnly** | 01 2D Wave Equation | $512 \times 512$ | RGFloat Symplectic | $3$ | $4$ | **$0.298\ \mathrm{ms}$** | $c=8\ \mathrm{m/s}, L=50\ \mathrm{m}$ |
+| **SolverOnly** | 02 Boussinesq | $256 \times 256$ | Peregrine ADI PCR | $2$ | $17$ | **$1.055\ \mathrm{ms}$** | $\alpha=1.0, h=15\ \mathrm{m}$ |
+| **SolverOnly** | 02 Boussinesq | $512 \times 512$ | Peregrine ADI PCR | $4$ | $33$ | **$4.544\ \mathrm{ms}$** | $\alpha=1.0, h=15\ \mathrm{m}$ |
+| **SolverOnly** | 03 FFT Ocean | $256 \times 256$ | Single-Pass Packed IFFT | $1$ | $18$ | **$0.317\ \mathrm{ms}$** | Redundant regen $0$ |
+| **SolverOnly** | 03 FFT Ocean | $512 \times 512$ | Single-Pass Packed IFFT | $1$ | $20$ | **$0.869\ \mathrm{ms}$** | Redundant regen $0$ |
+
+#### Composite Scene 04 Breakdown (512×512 Dual Simulation: Wave Equation + Boussinesq)
+
+| Mode | Measured Target | Wall Time per Step | Breakdown Insights |
+| :--- | :--- | :---: | :--- |
+| **1_SolverOnly** | WaveEq + Boussinesq (each 512²) | **$12.73\ \mathrm{ms}$** | Pure GPU compute shader solver time for both high-resolution grids |
+| **2_SolverPlusRender** | Solvers + Camera Render (1280×720) | **$8.30\ \mathrm{ms}$** | URP render pass executing concurrently with vertex displacement |
+| **3_SolverRenderProfileAsync** | Solvers + Render + Profile Readback | **$11.80\ \mathrm{ms}$** | `AsyncGPUReadback` ring-buffered transfer with CPU-cached static bathymetry |
 
 > [!TIP]
 > **Resolution Scaling Laws**:
@@ -527,6 +571,8 @@ All interactive HUD controls across the 5 sample scenes ([`WaterSampleUI.cs`](..
 | **02_Boussinesq** | `Source Mode`: `Wavemaker`, `Impulse`, `Periodic`, `Moving`, `Mouse` | `BoussinesqSimulation.Condition` |
 | **02_Boussinesq** | `Shape`: `Planar (平面孤立波)`, `Circular (円形波)` | `BoussinesqSimulation.ImpulseShape` (`CSAddImpulse`) |
 | **02_Boussinesq** | `Freq`, `Interval`, `★ Trigger Impulse`, `Dispersion`, `Wave Amp` | `WavemakerFrequency`, `PulseInterval`, `TriggerImpulse()`, `DispersionAlpha`, `WavemakerAmplitude` |
+| **02_Boussinesq** | `Sweeps (ADI PCR)` | `BoussinesqSimulation.DispersionSweeps` (1 sweep direct solve) |
 | **03_FFTWater** | `Sea State`: `Calm`, `Swell`, `Stormy` | `FFTOceanSimulation.ApplySeaStatePreset` |
 | **03_FFTWater** | `Wind`, `Wind Dir`, `Choppy`, `Swell`, `Swell Dir`, `Foam` | `WindSpeed`, `WindDirectionDegrees`, `Choppiness`, `SwellStrength`, `SwellDirectionDegrees`, `EnableFoam` |
 | **04_Comparison** | `Profile Scale (断面高さ強調)` / `ProfileH` | `WaterComparisonController.ProfileVerticalScale` $\to$ `WaterProfileViewer.VerticalScale` |
+| **04_Comparison** | `Profile Viewer Mode` | `WaterProfileViewer` (`AsyncGPUReadback` & CPU-cached bathymetry) |

@@ -1,10 +1,12 @@
+using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Nobnak.WaterSimulation {
     /// <summary>
     /// Displays a 1D cross-section profile of the water surface and bed level along a slice line.
-    /// Uses LineRenderer or OnGUI/Gizmos for clear visual comparison of wave dispersion and shape.
+    /// Uses asynchronous GPU readback (AsyncGPUReadback) and caches static bathymetry to avoid GPU pipeline stalls.
     /// </summary>
     [ExecuteAlways]
     public class WaterProfileViewer : MonoBehaviour {
@@ -36,6 +38,13 @@ namespace Nobnak.WaterSimulation {
         [Tooltip("Display offset in world space.")]
         [SerializeField] private Vector3 displayOffset = new Vector3(0f, 2f, 0f);
 
+        [Tooltip("Minimum interval between GPU readback requests [s] (0 = once per simulation step).")]
+        [Range(0f, 0.2f)]
+        [SerializeField] private float readbackInterval = 0f;
+
+        [Tooltip("Use synchronous readback only when AsyncGPUReadback is unsupported or forced for immediate single-frame capture.")]
+        [SerializeField] private bool forceSynchronousReadback = false;
+
         [Header("Renderers")]
         [SerializeField] private LineRenderer surfaceLine;
         [SerializeField] private LineRenderer bedLine;
@@ -49,51 +58,94 @@ namespace Nobnak.WaterSimulation {
         #region private fields
         private Vector3[] surfacePoints;
         private Vector3[] bedPoints;
-        private Texture2D readbackWaterTex;
-        private Texture2D readbackBathyTex;
-        private RenderTexture sliceRT;
+        private float[] cachedHeights;
+        private float[] cachedBed;
+        private Texture2D syncReadbackTex;
+        private RenderTexture waterSliceRT;
+        private RenderTexture bathySliceRT;
+
+        private bool waterReadbackPending;
+        private bool bathyReadbackPending;
+        private int lastRequestedStep = -1;
+        private float lastRequestTime = -1f;
+        private int cachedBathyVersion = -1;
+        private ProfileAxis cachedBathyAxis;
+        private float cachedBathyPosition = -1f;
+        private int cachedBathySampleCount = -1;
+
+        private int readbackSampleStep = -1;
+        private float readbackSampleSimTime;
         #endregion
 
         #region properties
         public WaterSimulationBase TargetSimulation {
             get => targetSimulation;
-            set => targetSimulation = value;
+            set {
+                targetSimulation = value;
+                InvalidateBathymetryCache();
+            }
         }
 
         public ProfileAxis Axis {
             get => sliceAxis;
-            set => sliceAxis = value;
+            set {
+                if (sliceAxis == value) return;
+                sliceAxis = value;
+                InvalidateBathymetryCache();
+            }
         }
 
         public float SlicePosition {
             get => slicePosition;
-            set => slicePosition = math.clamp(value, 0f, 1f);
+            set {
+                float clamped = math.clamp(value, 0f, 1f);
+                if (math.abs(slicePosition - clamped) < 1e-6f) return;
+                slicePosition = clamped;
+                InvalidateBathymetryCache();
+            }
         }
 
         public float VerticalScale {
             get => verticalScale;
             set => verticalScale = value;
         }
+
+        public bool ForceSynchronousReadback {
+            get => forceSynchronousReadback;
+            set => forceSynchronousReadback = value;
+        }
+
+        public int ReadbackSampleStep => readbackSampleStep;
+        public float ReadbackSampleSimTime => readbackSampleSimTime;
         #endregion
 
         #region Unity lifecycle
         private void OnEnable() {
+            InvalidateBathymetryCache();
+            lastRequestedStep = -1;
+            waterReadbackPending = false;
+            bathyReadbackPending = false;
             EnsureLineRenderers();
         }
 
         private void OnDisable() {
-            if (sliceRT != null) {
-                sliceRT.Release();
-                DestroyImmediate(sliceRT);
-                sliceRT = null;
+            AsyncGPUReadback.WaitAllRequests();
+            waterReadbackPending = false;
+            bathyReadbackPending = false;
+
+            if (waterSliceRT != null) {
+                waterSliceRT.Release();
+                DestroyImmediate(waterSliceRT);
+                waterSliceRT = null;
             }
-            if (readbackWaterTex != null) {
-                DestroyImmediate(readbackWaterTex);
-                readbackWaterTex = null;
+            if (bathySliceRT != null) {
+                bathySliceRT.Release();
+                DestroyImmediate(bathySliceRT);
+                bathySliceRT = null;
             }
-            if (readbackBathyTex != null) {
-                DestroyImmediate(readbackBathyTex);
-                readbackBathyTex = null;
+            if (syncReadbackTex != null) {
+                DestroyImmediate(syncReadbackTex);
+                syncReadbackTex = null;
             }
         }
 
@@ -108,6 +160,11 @@ namespace Nobnak.WaterSimulation {
             targetSimulation = simulation;
             sliceAxis = axis;
             slicePosition = math.clamp(positionNorm, 0f, 1f);
+            InvalidateBathymetryCache();
+        }
+
+        public void InvalidateBathymetryCache() {
+            cachedBathyVersion = -1;
         }
         #endregion
 
@@ -151,16 +208,15 @@ namespace Nobnak.WaterSimulation {
             EnsureLineRenderers();
             EnsureArrays();
 
+            RenderTexture waterTex = targetSimulation.WaterDataTexture;
+            RenderTexture bathyTex = targetSimulation.BathymetryTexture;
+
+            RequestOrPerformReadbacks(waterTex, bathyTex);
+
             Vector2 area = targetSimulation.AreaSize;
             Vector3 center = targetSimulation.transform.position + displayOffset;
             float halfX = area.x * 0.5f;
             float halfZ = area.y * 0.5f;
-
-            // Sample via texture blit or CPU readback
-            RenderTexture waterTex = targetSimulation.WaterDataTexture;
-            RenderTexture bathyTex = targetSimulation.BathymetryTexture;
-
-            SampleTextures(waterTex, bathyTex);
 
             for (int i = 0; i < sampleCount; i++) {
                 float t = (float)i / (sampleCount - 1);
@@ -174,8 +230,8 @@ namespace Nobnak.WaterSimulation {
                     wz = math.lerp(-halfZ, halfZ, t);
                 }
 
-                float eta = SampleHeightFromReadback(i);
-                float bed = SampleBedFromReadback(i);
+                float eta = cachedHeights[i];
+                float bed = cachedBed[i];
 
                 surfacePoints[i] = center + new Vector3(wx, eta * verticalScale, wz);
                 bedPoints[i] = center + new Vector3(wx, bed * verticalScale, wz);
@@ -197,55 +253,142 @@ namespace Nobnak.WaterSimulation {
             if (surfacePoints == null || surfacePoints.Length != sampleCount) {
                 surfacePoints = new Vector3[sampleCount];
                 bedPoints = new Vector3[sampleCount];
+                cachedHeights = new float[sampleCount];
+                cachedBed = new float[sampleCount];
+                for (int i = 0; i < sampleCount; i++) {
+                    cachedBed[i] = -2f;
+                }
+                InvalidateBathymetryCache();
             }
         }
 
-        private void SampleTextures(RenderTexture waterTex, RenderTexture bathyTex) {
-            if (sliceRT == null || sliceRT.width != sampleCount) {
-                if (sliceRT != null) {
-                    sliceRT.Release();
-                    DestroyImmediate(sliceRT);
+        private void EnsureSliceTextures() {
+            if (waterSliceRT == null || waterSliceRT.width != sampleCount) {
+                if (waterSliceRT != null) {
+                    waterSliceRT.Release();
+                    DestroyImmediate(waterSliceRT);
                 }
-                sliceRT = new RenderTexture(sampleCount, 1, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear) {
+                waterSliceRT = new RenderTexture(sampleCount, 1, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear) {
                     filterMode = FilterMode.Bilinear
                 };
-                sliceRT.Create();
-
-                if (readbackWaterTex != null) DestroyImmediate(readbackWaterTex);
-                readbackWaterTex = new Texture2D(sampleCount, 1, TextureFormat.RGBAHalf, false, true);
-
-                if (readbackBathyTex != null) DestroyImmediate(readbackBathyTex);
-                readbackBathyTex = new Texture2D(sampleCount, 1, TextureFormat.RGBAHalf, false, true);
+                waterSliceRT.Create();
             }
+
+            if (bathySliceRT == null || bathySliceRT.width != sampleCount) {
+                if (bathySliceRT != null) {
+                    bathySliceRT.Release();
+                    DestroyImmediate(bathySliceRT);
+                }
+                bathySliceRT = new RenderTexture(sampleCount, 1, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear) {
+                    filterMode = FilterMode.Bilinear
+                };
+                bathySliceRT.Create();
+            }
+        }
+
+        private void RequestOrPerformReadbacks(RenderTexture waterTex, RenderTexture bathyTex) {
+            EnsureSliceTextures();
 
             Vector2 scale = (sliceAxis == ProfileAxis.XAxis) ? new Vector2(1f, 0f) : new Vector2(0f, 1f);
             Vector2 offset = (sliceAxis == ProfileAxis.XAxis) ? new Vector2(0f, slicePosition) : new Vector2(slicePosition, 0f);
 
-            RenderTexture prev = RenderTexture.active;
-            Graphics.Blit(waterTex, sliceRT, scale, offset);
-            RenderTexture.active = sliceRT;
-            readbackWaterTex.ReadPixels(new Rect(0, 0, sampleCount, 1), 0, 0, false);
-            readbackWaterTex.Apply(false);
+            bool useSync = forceSynchronousReadback || !SystemInfo.supportsAsyncGPUReadback || !Application.isPlaying;
 
-            if (bathyTex != null) {
-                Graphics.Blit(bathyTex, sliceRT, scale, offset);
-                RenderTexture.active = sliceRT;
-                readbackBathyTex.ReadPixels(new Rect(0, 0, sampleCount, 1), 0, 0, false);
-                readbackBathyTex.Apply(false);
+            // 1. Water surface readback (only when simulation stepped or forced)
+            int currentStep = targetSimulation.StepCount;
+            float now = Time.unscaledTime;
+            bool stepChanged = (currentStep != lastRequestedStep) || (readbackSampleStep < 0);
+            bool intervalElapsed = (readbackInterval <= 0f) || (now - lastRequestTime >= readbackInterval);
+
+            if (useSync) {
+                if (stepChanged) {
+                    Graphics.Blit(waterTex, waterSliceRT, scale, offset);
+                    ReadSliceSynchronously(waterSliceRT, cachedHeights);
+                    lastRequestedStep = currentStep;
+                    lastRequestTime = now;
+                    readbackSampleStep = currentStep;
+                    readbackSampleSimTime = targetSimulation.SimulationTime;
+                }
+            } else if (!waterReadbackPending && stepChanged && intervalElapsed) {
+                Graphics.Blit(waterTex, waterSliceRT, scale, offset);
+                int capturedStep = currentStep;
+                float capturedSimTime = targetSimulation.SimulationTime;
+                lastRequestedStep = currentStep;
+                lastRequestTime = now;
+                waterReadbackPending = true;
+
+                AsyncGPUReadback.Request(waterSliceRT, 0, TextureFormat.RGBAFloat, request => {
+                    waterReadbackPending = false;
+                    if (request.hasError || cachedHeights == null) return;
+                    NativeArray<float4> data = request.GetData<float4>();
+                    int count = math.min(cachedHeights.Length, data.Length);
+                    for (int i = 0; i < count; i++) {
+                        cachedHeights[i] = data[i].y; // G channel: elevation eta
+                    }
+                    readbackSampleStep = capturedStep;
+                    readbackSampleSimTime = capturedSimTime;
+                });
             }
+
+            // 2. Bathymetry readback (cached until BathymetryVersion or slice config changes)
+            if (bathyTex != null) {
+                int bathyVer = targetSimulation.BathymetryVersion;
+                bool bathyNeedsUpdate = (bathyVer != cachedBathyVersion)
+                    || (sliceAxis != cachedBathyAxis)
+                    || (math.abs(slicePosition - cachedBathyPosition) > 1e-6f)
+                    || (sampleCount != cachedBathySampleCount);
+
+                if (useSync) {
+                    if (bathyNeedsUpdate) {
+                        Graphics.Blit(bathyTex, bathySliceRT, scale, offset);
+                        ReadSliceSynchronously(bathySliceRT, cachedBed);
+                        cachedBathyVersion = bathyVer;
+                        cachedBathyAxis = sliceAxis;
+                        cachedBathyPosition = slicePosition;
+                        cachedBathySampleCount = sampleCount;
+                    }
+                } else if (!bathyReadbackPending && bathyNeedsUpdate) {
+                    Graphics.Blit(bathyTex, bathySliceRT, scale, offset);
+                    int targetVer = bathyVer;
+                    ProfileAxis targetAxis = sliceAxis;
+                    float targetPos = slicePosition;
+                    int targetCount = sampleCount;
+                    bathyReadbackPending = true;
+
+                    AsyncGPUReadback.Request(bathySliceRT, 0, TextureFormat.RGBAFloat, request => {
+                        bathyReadbackPending = false;
+                        if (request.hasError || cachedBed == null) return;
+                        NativeArray<float4> data = request.GetData<float4>();
+                        int count = math.min(cachedBed.Length, data.Length);
+                        for (int i = 0; i < count; i++) {
+                            cachedBed[i] = data[i].y; // G channel: bed level z_b = -h
+                        }
+                        cachedBathyVersion = targetVer;
+                        cachedBathyAxis = targetAxis;
+                        cachedBathyPosition = targetPos;
+                        cachedBathySampleCount = targetCount;
+                    });
+                }
+            }
+        }
+
+        private void ReadSliceSynchronously(RenderTexture sourceRT, float[] destArray) {
+            if (syncReadbackTex == null || syncReadbackTex.width != sampleCount) {
+                if (syncReadbackTex != null) DestroyImmediate(syncReadbackTex);
+                syncReadbackTex = new Texture2D(sampleCount, 1, TextureFormat.RGBAFloat, false, true);
+            }
+
+            RenderTexture prev = RenderTexture.active;
+            RenderTexture.active = sourceRT;
+            syncReadbackTex.ReadPixels(new Rect(0, 0, sampleCount, 1), 0, 0, false);
+            syncReadbackTex.Apply(false);
             RenderTexture.active = prev;
-        }
 
-        private float SampleHeightFromReadback(int index) {
-            if (readbackWaterTex == null) return 0f;
-            Color c = readbackWaterTex.GetPixel(index, 0);
-            return c.g; // G: elevation eta
-        }
-
-        private float SampleBedFromReadback(int index) {
-            if (readbackBathyTex == null) return -2f;
-            Color c = readbackBathyTex.GetPixel(index, 0);
-            return c.g; // G: bed elevation z_b = -h
+            NativeArray<float4> raw = syncReadbackTex.GetRawTextureData<float4>();
+            int count = math.min(destArray.Length, raw.Length);
+            for (int i = 0; i < count; i++) {
+                destArray[i] = raw[i].y;
+            }
         }
         #endregion
     }

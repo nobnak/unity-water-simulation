@@ -20,6 +20,7 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
         [Header(Visualization Mode)]
         [Enum(Realistic,0,HeightMap,1,NormalVisual,2,Wireframe,3,Bathymetry,4)] _VisualMode ("Visualization Mode", Float) = 0
         _HeightMapRange ("Height Map Range (+/- m)", Float) = 2.0
+        _NormalExaggeration ("Normal XZ Exaggeration", Range(0.5, 4.0)) = 2.0
     }
 
     SubShader {
@@ -80,6 +81,7 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                 float _FoamIntensity;
                 float _VisualMode;
                 float _HeightMapRange;
+                float _NormalExaggeration;
                 float _HasBathymetry;
             CBUFFER_END
 
@@ -114,10 +116,13 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                 float4 disp = input.displacement;
                 float4 normalSample = SAMPLE_TEXTURE2D(_NormalTex, sampler_NormalTex, uv);
 
-                float3 normalWS = normalize(input.normalWS);
+                float3 rawNormalWS = normalize(input.normalWS);
+                float3 normalWS = rawNormalWS;
                 if (length(normalSample.xyz) > 0.1) {
-                    float3 perturbed = normalSample.xyz;
-                    perturbed.xz *= 2.0;
+                    rawNormalWS = normalize(normalSample.xyz);
+                    float3 perturbed = rawNormalWS;
+                    float exag = (_NormalExaggeration > 0.01) ? _NormalExaggeration : 1.0;
+                    perturbed.xz *= exag;
                     normalWS = normalize(perturbed);
                 }
 
@@ -129,7 +134,7 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                     col *= (contour > 0.9 || contour < 0.1) ? 0.8 : 1.0;
                     return half4(col, 1.0);
                 } else if (vmode == 2) {
-                    return half4(normalWS * 0.5 + 0.5, 1.0);
+                    return half4(rawNormalWS * 0.5 + 0.5, 1.0);
                 } else if (vmode == 3) {
                     float2 grid = frac(uv * 64.0);
                     float edge = min(min(grid.x, 1.0 - grid.x), min(grid.y, 1.0 - grid.y));

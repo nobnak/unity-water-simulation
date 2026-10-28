@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &61633432
+--- !u!1 &255952200
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,11 +127,11 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 61633437}
-  - component: {fileID: 61633434}
-  - component: {fileID: 61633436}
-  - component: {fileID: 61633435}
-  - component: {fileID: 61633433}
+  - component: {fileID: 255952205}
+  - component: {fileID: 255952202}
+  - component: {fileID: 255952204}
+  - component: {fileID: 255952203}
+  - component: {fileID: 255952201}
   m_Layer: 0
   m_Name: FFTOceanWater
   m_TagString: Untagged
@@ -139,31 +139,32 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &61633433
+--- !u!114 &255952201
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 61633432}
+  m_GameObject: {fileID: 255952200}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 32a887e87e650614d9e9c42e2d2d5109, type: 3}
   m_Name: 
   m_EditorClassIdentifier: com.nobnak.water-simulation::Nobnak.WaterSimulation.WaterRenderer
-  targetSimulation: {fileID: 61633434}
+  targetSimulation: {fileID: 255952202}
   meshResolution: {x: 256, y: 256}
   visualizationMode: 0
-  waterMaterial: {fileID: 567277882}
+  waterMaterial: {fileID: 1266936151}
   heightMapRange: 2
   displacementScale: 1
---- !u!114 &61633434
+  normalExaggeration: 2
+--- !u!114 &255952202
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 61633432}
+  m_GameObject: {fileID: 255952200}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 02bc321e85acfa949b8ac5fe025815e7, type: 3}
@@ -183,13 +184,13 @@ MonoBehaviour:
   enableFoam: 1
   foamThreshold: 0.35
   fftShader: {fileID: 7200000, guid: 0cb9a7344041607409b4664fd81d2a2b, type: 3}
---- !u!23 &61633435
+--- !u!23 &255952203
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 61633432}
+  m_GameObject: {fileID: 255952200}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -208,7 +209,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 567277882}
+  - {fileID: 1266936151}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -232,21 +233,21 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!33 &61633436
+--- !u!33 &255952204
 MeshFilter:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 61633432}
-  m_Mesh: {fileID: 370293852}
---- !u!4 &61633437
+  m_GameObject: {fileID: 255952200}
+  m_Mesh: {fileID: 802214506}
+--- !u!4 &255952205
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 61633432}
+  m_GameObject: {fileID: 255952200}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -255,7 +256,210 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!43 &370293852
+--- !u!1 &433918932
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 433918936}
+  - component: {fileID: 433918935}
+  - component: {fileID: 433918934}
+  - component: {fileID: 433918933}
+  m_Layer: 0
+  m_Name: Main Camera
+  m_TagString: MainCamera
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &433918933
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 433918932}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 396683b514eaec7438ea39ee3003c726, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: com.nobnak.water-simulation::Nobnak.WaterSimulation.SimpleCameraController
+  moveSpeed: 15
+  fastMultiplier: 2.5
+  lookSensitivity: 2
+  defaultPosition: {x: 0, y: 15, z: -25}
+  defaultEulerAngles: {x: 30, y: 0, z: 0}
+  lowAnglePosition: {x: 0, y: 1.5, z: -20}
+  lowAngleEulerAngles: {x: 5, y: 0, z: 0}
+--- !u!114 &433918934
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 433918932}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 1
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 0
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
+--- !u!20 &433918935
+Camera:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 433918932}
+  m_Enabled: 1
+  serializedVersion: 2
+  m_ClearFlags: 1
+  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_projectionMatrixMode: 1
+  m_GateFitMode: 2
+  m_FOVAxisMode: 0
+  m_Iso: 200
+  m_ShutterSpeed: 0.005
+  m_Aperture: 16
+  m_FocusDistance: 10
+  m_FocalLength: 50
+  m_BladeCount: 5
+  m_Curvature: {x: 2, y: 11}
+  m_BarrelClipping: 0.25
+  m_Anamorphism: 0
+  m_SensorSize: {x: 36, y: 24}
+  m_LensShift: {x: 0, y: 0}
+  m_NormalizedViewPortRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  near clip plane: 0.3
+  far clip plane: 1000
+  field of view: 60
+  orthographic: 0
+  orthographic size: 5
+  m_Depth: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingPath: -1
+  m_TargetTexture: {fileID: 0}
+  m_TargetDisplay: 0
+  m_TargetEye: 3
+  m_HDR: 1
+  m_AllowMSAA: 1
+  m_AllowDynamicResolution: 0
+  m_ForceIntoRT: 0
+  m_OcclusionCulling: 1
+  m_StereoConvergence: 10
+  m_StereoSeparation: 0.022
+--- !u!4 &433918936
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 433918932}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.1305262, y: 0, z: 0, w: 0.9914449}
+  m_LocalPosition: {x: 0, y: 12, z: -40}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &595765051
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 595765053}
+  - component: {fileID: 595765052}
+  m_Layer: 0
+  m_Name: SampleUI
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &595765052
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 595765051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0a4ca4c4f1de66948a8bc18a83f70e9e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: com.nobnak.water-simulation::Nobnak.WaterSimulation.WaterSampleUI
+  sampleTitle: 03 FFT Ocean Surface - Horizon Ocean
+  whatToObserve: "\u9060\u65B9\u306E\u5D50\u304B\u3089\u5C4A\u304F\u9577\u6CE2\u9577\u306E\u3046\u306D\u308A\uFF08Swell\uFF09\u3068\u3001\u5C40\u6240\u7684\u306A\u98A8\u6CE2\uFF08Wind
+    sea\uFF09\u306E\u5171\u5B58\u3002\u30C1\u30E7\u30C3\u30D4\u30FC\u6CE2\u306B\u3088\u308B\u5C16\u3063\u305F\u6CE2\u982D\uFF08Trochoidal
+    wave\uFF09\u3068\u30E4\u30B3\u30D3\u30A2\u30F3\u306B\u3088\u308B\u767D\u6CE2\uFF08Foam\uFF09\u3002"
+  whatCanBeControlled: "\u6D77\u6CC1\u30D7\u30EA\u30BB\u30C3\u30C8\uFF08\u7A4F\u3084\u304B/\u3046\u306D\u308A/\u8352\u308C\u305F\u6D77\uFF09\u3001\u3046\u306D\u308A\u5F37\u5EA6\u30FB\u65B9\u5411\u3001\u98A8\u901F\u30FB\u98A8\u5411\u3001\u30C1\u30E7\u30C3\u30D4\u30FC\u4FC2\u6570\u3001Foam\u306E\u30C8\u30B0\u30EB\uFF08\u6CE1\u3092\u7121\u52B9\u306B\u3057\u3066\u6CE2\u5F62\u306E\u307F\u3092\u8A55\u4FA1\u53EF\u80FD\uFF09\u3002"
+  scopeAndLimitations: "\u7D71\u8A08\u7684\u5468\u6CE2\u6570\u9818\u57DF\u30E2\u30C7\u30EB\u306E\u305F\u3081\u3001\u6D77\u5CB8\u7DDA\u3084\u969C\u5BB3\u7269\u3068\u306E\u53CD\u5C04\u30FB\u56DE\u6298\u3068\u3044\u3063\u305F\u5C40\u6240\u7684\u306A\u5883\u754C\u76F8\u4E92\u4F5C\u7528\u306F\u76F4\u63A5\u6271\u3048\u307E\u305B\u3093\u3002"
+  simulation: {fileID: 255952202}
+  waterRenderer: {fileID: 255952201}
+  cameraController: {fileID: 433918933}
+  showInfoPanel: 1
+  showControls: 1
+--- !u!4 &595765053
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 595765051}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!43 &802214506
 Mesh:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -433,155 +637,7 @@ Mesh:
       - serializedVersion: 1
         m_IndexStart: 0
         m_IndexCount: 0
---- !u!1 &541544625
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 541544629}
-  - component: {fileID: 541544628}
-  - component: {fileID: 541544627}
-  - component: {fileID: 541544626}
-  m_Layer: 0
-  m_Name: Main Camera
-  m_TagString: MainCamera
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &541544626
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 541544625}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 396683b514eaec7438ea39ee3003c726, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: com.nobnak.water-simulation::Nobnak.WaterSimulation.SimpleCameraController
-  moveSpeed: 15
-  fastMultiplier: 2.5
-  lookSensitivity: 2
-  defaultPosition: {x: 0, y: 15, z: -25}
-  defaultEulerAngles: {x: 30, y: 0, z: 0}
-  lowAnglePosition: {x: 0, y: 1.5, z: -20}
-  lowAngleEulerAngles: {x: 5, y: 0, z: 0}
---- !u!114 &541544627
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 541544625}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
-  m_RenderShadows: 1
-  m_RequiresDepthTextureOption: 2
-  m_RequiresOpaqueTextureOption: 2
-  m_CameraType: 0
-  m_Cameras: []
-  m_RendererIndex: -1
-  m_VolumeLayerMask:
-    serializedVersion: 2
-    m_Bits: 1
-  m_VolumeTrigger: {fileID: 0}
-  m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
-  m_Antialiasing: 0
-  m_AntialiasingQuality: 2
-  m_StopNaN: 0
-  m_Dithering: 0
-  m_ClearDepth: 1
-  m_AllowXRRendering: 1
-  m_AllowHDROutput: 1
-  m_UseScreenCoordOverride: 0
-  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
-  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
-  m_RequiresDepthTexture: 0
-  m_RequiresColorTexture: 0
-  m_TaaSettings:
-    m_Quality: 3
-    m_FrameInfluence: 0.1
-    m_JitterScale: 1
-    m_MipBias: 0
-    m_VarianceClampScale: 0.9
-    m_ContrastAdaptiveSharpening: 0
-  m_Version: 2
---- !u!20 &541544628
-Camera:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 541544625}
-  m_Enabled: 1
-  serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
-  m_projectionMatrixMode: 1
-  m_GateFitMode: 2
-  m_FOVAxisMode: 0
-  m_Iso: 200
-  m_ShutterSpeed: 0.005
-  m_Aperture: 16
-  m_FocusDistance: 10
-  m_FocalLength: 50
-  m_BladeCount: 5
-  m_Curvature: {x: 2, y: 11}
-  m_BarrelClipping: 0.25
-  m_Anamorphism: 0
-  m_SensorSize: {x: 36, y: 24}
-  m_LensShift: {x: 0, y: 0}
-  m_NormalizedViewPortRect:
-    serializedVersion: 2
-    x: 0
-    y: 0
-    width: 1
-    height: 1
-  near clip plane: 0.3
-  far clip plane: 1000
-  field of view: 60
-  orthographic: 0
-  orthographic size: 5
-  m_Depth: 0
-  m_CullingMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_RenderingPath: -1
-  m_TargetTexture: {fileID: 0}
-  m_TargetDisplay: 0
-  m_TargetEye: 3
-  m_HDR: 1
-  m_AllowMSAA: 1
-  m_AllowDynamicResolution: 0
-  m_ForceIntoRT: 0
-  m_OcclusionCulling: 1
-  m_StereoConvergence: 10
-  m_StereoSeparation: 0.022
---- !u!4 &541544629
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 541544625}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0.1305262, y: 0, z: 0, w: 0.9914449}
-  m_LocalPosition: {x: 0, y: 12, z: -40}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!21 &567277882
+--- !u!21 &1266936151
 Material:
   serializedVersion: 8
   m_ObjectHideFlags: 0
@@ -592,8 +648,7 @@ Material:
   m_Shader: {fileID: 4800000, guid: b837823a3cfd9d446825d16ec6d32d57, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
-  m_ValidKeywords:
-  - _VISUALMODE_REALISTIC
+  m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
@@ -605,6 +660,10 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _BathymetryTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _NormalTex:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -617,8 +676,10 @@ Material:
     m_Floats:
     - _DisplacementScale: 1
     - _FoamIntensity: 0.6
+    - _HasBathymetry: 0
     - _HeightMapRange: 2
     - _Metallic: 0.05
+    - _NormalExaggeration: 2
     - _Smoothness: 0.96
     - _VisualMode: 0
     m_Colors:
@@ -627,7 +688,7 @@ Material:
     - _FoamColor: {r: 0.85, g: 0.92, b: 0.97999996, a: 0.8}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
---- !u!1 &1108254114
+--- !u!1 &1296079081
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -635,63 +696,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1108254116}
-  - component: {fileID: 1108254115}
-  m_Layer: 0
-  m_Name: SampleUI
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1108254115
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1108254114}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0a4ca4c4f1de66948a8bc18a83f70e9e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: com.nobnak.water-simulation::Nobnak.WaterSimulation.WaterSampleUI
-  sampleTitle: 03 FFT Ocean Surface - Horizon Ocean
-  whatToObserve: "\u9060\u65B9\u306E\u5D50\u304B\u3089\u5C4A\u304F\u9577\u6CE2\u9577\u306E\u3046\u306D\u308A\uFF08Swell\uFF09\u3068\u3001\u5C40\u6240\u7684\u306A\u98A8\u6CE2\uFF08Wind
-    sea\uFF09\u306E\u5171\u5B58\u3002\u30C1\u30E7\u30C3\u30D4\u30FC\u6CE2\u306B\u3088\u308B\u5C16\u3063\u305F\u6CE2\u982D\uFF08Trochoidal
-    wave\uFF09\u3068\u30E4\u30B3\u30D3\u30A2\u30F3\u306B\u3088\u308B\u767D\u6CE2\uFF08Foam\uFF09\u3002"
-  whatCanBeControlled: "\u6D77\u6CC1\u30D7\u30EA\u30BB\u30C3\u30C8\uFF08\u7A4F\u3084\u304B/\u3046\u306D\u308A/\u8352\u308C\u305F\u6D77\uFF09\u3001\u3046\u306D\u308A\u5F37\u5EA6\u30FB\u65B9\u5411\u3001\u98A8\u901F\u30FB\u98A8\u5411\u3001\u30C1\u30E7\u30C3\u30D4\u30FC\u4FC2\u6570\u3001Foam\u306E\u30C8\u30B0\u30EB\uFF08\u6CE1\u3092\u7121\u52B9\u306B\u3057\u3066\u6CE2\u5F62\u306E\u307F\u3092\u8A55\u4FA1\u53EF\u80FD\uFF09\u3002"
-  scopeAndLimitations: "\u7D71\u8A08\u7684\u5468\u6CE2\u6570\u9818\u57DF\u30E2\u30C7\u30EB\u306E\u305F\u3081\u3001\u6D77\u5CB8\u7DDA\u3084\u969C\u5BB3\u7269\u3068\u306E\u53CD\u5C04\u30FB\u56DE\u6298\u3068\u3044\u3063\u305F\u5C40\u6240\u7684\u306A\u5883\u754C\u76F8\u4E92\u4F5C\u7528\u306F\u76F4\u63A5\u6271\u3048\u307E\u305B\u3093\u3002"
-  simulation: {fileID: 61633434}
-  waterRenderer: {fileID: 61633433}
-  cameraController: {fileID: 541544626}
-  showInfoPanel: 1
-  showControls: 1
---- !u!4 &1108254116
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1108254114}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &2124377002
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2124377004}
-  - component: {fileID: 2124377003}
+  - component: {fileID: 1296079083}
+  - component: {fileID: 1296079082}
   m_Layer: 0
   m_Name: Directional Light
   m_TagString: Untagged
@@ -699,13 +705,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!108 &2124377003
+--- !u!108 &1296079082
 Light:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2124377002}
+  m_GameObject: {fileID: 1296079081}
   m_Enabled: 1
   serializedVersion: 12
   m_Type: 1
@@ -764,13 +770,13 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
---- !u!4 &2124377004
+--- !u!4 &1296079083
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2124377002}
+  m_GameObject: {fileID: 1296079081}
   serializedVersion: 2
   m_LocalRotation: {x: 0.40821794, y: -0.23456973, z: 0.10938166, w: 0.8754261}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -783,7 +789,7 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 2124377004}
-  - {fileID: 541544629}
-  - {fileID: 61633437}
-  - {fileID: 1108254116}
+  - {fileID: 1296079083}
+  - {fileID: 433918936}
+  - {fileID: 255952205}
+  - {fileID: 595765053}

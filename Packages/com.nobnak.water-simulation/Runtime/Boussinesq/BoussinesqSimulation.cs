@@ -5,7 +5,9 @@ namespace Nobnak.WaterSimulation {
     /// <summary>
     /// Boussinesq water wave simulation.
     /// Incorporates frequency dispersion and bathymetric refraction, shoaling, and energy convergence.
-    /// Based on Peregrine (1967) weakly nonlinear weakly dispersive Boussinesq equations.
+    /// Based on standard Peregrine (1967) weakly nonlinear weakly dispersive Boussinesq equations
+    /// solved via 1D Tridiagonal Parallel Cyclic Reduction (PCR) + cross-derivative iterations in both
+    /// Predictor and Corrector stages for 2nd-order temporal accuracy.
     /// </summary>
     [ExecuteAlways]
     public class BoussinesqSimulation : WaterSimulationBase {
@@ -32,9 +34,13 @@ namespace Nobnak.WaterSimulation {
 
         #region serialized fields
         [Header("Boussinesq Physics")]
-        [Tooltip("Dispersion factor alpha (1.0 = full Boussinesq dispersion, 0.0 = non-dispersive shallow water).")]
+        [Tooltip("Dispersion factor alpha (1.0 = standard Peregrine 1/3 Boussinesq dispersion, 0.0 = non-dispersive shallow water).")]
         [Range(0f, 1.2f)]
         [SerializeField] private float dispersionAlpha = 1.0f;
+
+        [Tooltip("Number of alternating X/Z tridiagonal PCR sweeps per stage (1 sweep direct ADI).")]
+        [Range(1, 4)]
+        [SerializeField] private int dispersionSweeps = 1;
 
         [Tooltip("Bed friction / bottom drag coefficient.")]
         [Range(0f, 0.1f)]
@@ -77,6 +83,7 @@ namespace Nobnak.WaterSimulation {
         private RenderTexture stateTexB;
         private RenderTexture predTex;
         private RenderTexture forceTex;
+        private RenderTexture forcePredTex;
         private RenderTexture accelTexA;
         private RenderTexture accelTexB;
         private bool pingPong;
@@ -87,7 +94,9 @@ namespace Nobnak.WaterSimulation {
         private int kernelInit;
         private int kernelPredict;
         private int kernelCorrect;
-        private int kernelJacobiStep;
+        private int kernelTridiagonalX;
+        private int kernelTridiagonalZ;
+        private int kernelApplyPredictedDispersion;
         private int kernelApplyDispersion;
         private int kernelImpulse;
         private int kernelNormal;
@@ -99,9 +108,20 @@ namespace Nobnak.WaterSimulation {
             set => dispersionAlpha = math.clamp(value, 0f, 1.5f);
         }
 
+        public int DispersionSweeps {
+            get => dispersionSweeps;
+            set => dispersionSweeps = math.clamp(value, 1, 6);
+        }
+
+        public float BedFriction {
+            get => bedFriction;
+            set => bedFriction = math.max(0f, value);
+        }
+
         public BathymetryType Bathymetry {
             get => bathymetryMode;
             set {
+                if (bathymetryMode == value) return;
                 bathymetryMode = value;
                 UpdateBathymetryTexture();
             }
@@ -165,7 +185,10 @@ namespace Nobnak.WaterSimulation {
             Vector2 center = (impulseShape == ImpulseShapeType.PlanarSoliton)
                 ? new Vector2(0.5f, math.max(0.10f, wavemakerLocationNorm))
                 : sourceCenter;
-            TriggerImpulseOnTarget(CurrentStateTex, center, wavemakerAmplitude * 1.5f, sourceRadius, impulseShape);
+            float amp = (impulseShape == ImpulseShapeType.PlanarSoliton)
+                ? wavemakerAmplitude * 1.5f
+                : wavemakerAmplitude;
+            TriggerImpulseOnTarget(CurrentStateTex, center, amp, sourceRadius, impulseShape);
             ComputeNormalAndPackOutput();
         }
 
@@ -193,7 +216,7 @@ namespace Nobnak.WaterSimulation {
 
             boussinesqShader.SetTexture(kernelImpulse, PropBathymetryTex, bathymetryTex);
             boussinesqShader.SetTexture(kernelImpulse, PropStateOut, targetTex);
-            DispatchCompute(kernelImpulse);
+            DispatchCompute2D(kernelImpulse);
         }
         #endregion
 
@@ -207,13 +230,15 @@ namespace Nobnak.WaterSimulation {
         protected override void InitializeTextures() {
             ReleaseTextures();
 
-            int w = resolution.x;
-            int h = resolution.y;
+            int w = math.min(resolution.x, MaxTridiagonalN);
+            int h = math.min(resolution.y, MaxTridiagonalN);
+            resolution = new Vector2Int(w, h);
 
             stateTexA = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
             stateTexB = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
             predTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
             forceTex = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
+            forcePredTex = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
             accelTexA = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
             accelTexB = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
             normalTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
@@ -228,7 +253,9 @@ namespace Nobnak.WaterSimulation {
             kernelInit = boussinesqShader.FindKernel("CSInit");
             kernelPredict = boussinesqShader.FindKernel("CSPredict");
             kernelCorrect = boussinesqShader.FindKernel("CSCorrect");
-            kernelJacobiStep = boussinesqShader.FindKernel("CSJacobiStep");
+            kernelTridiagonalX = boussinesqShader.FindKernel("CSTridiagonalX");
+            kernelTridiagonalZ = boussinesqShader.FindKernel("CSTridiagonalZ");
+            kernelApplyPredictedDispersion = boussinesqShader.FindKernel("CSApplyPredictedDispersion");
             kernelApplyDispersion = boussinesqShader.FindKernel("CSApplyDispersion");
             kernelImpulse = boussinesqShader.FindKernel("CSAddImpulse");
             kernelNormal = boussinesqShader.FindKernel("CSComputeNormal");
@@ -239,6 +266,7 @@ namespace Nobnak.WaterSimulation {
             ReleaseTexture(ref stateTexB);
             ReleaseTexture(ref predTex);
             ReleaseTexture(ref forceTex);
+            ReleaseTexture(ref forcePredTex);
             ReleaseTexture(ref accelTexA);
             ReleaseTexture(ref accelTexB);
             ReleaseTexture(ref normalTex);
@@ -253,6 +281,7 @@ namespace Nobnak.WaterSimulation {
             pulseTimer = 0f;
             movingPhase = 0f;
             pingPong = false;
+            lastDispatchCount = 0;
 
             boussinesqShader.SetInt(PropWidth, resolution.x);
             boussinesqShader.SetInt(PropHeight, resolution.y);
@@ -261,22 +290,23 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetTexture(kernelInit, PropNormalTex, normalTex);
             boussinesqShader.SetTexture(kernelInit, PropWaterDataTex, waterDataTex);
             boussinesqShader.SetTexture(kernelInit, PropForceTex, forceTex);
+            boussinesqShader.SetTexture(kernelInit, PropForcePredTex, forcePredTex);
             boussinesqShader.SetTexture(kernelInit, PropAccelPing, accelTexA);
             boussinesqShader.SetTexture(kernelInit, PropAccelPong, accelTexB);
-            DispatchCompute(kernelInit);
+            DispatchCompute2D(kernelInit);
 
             boussinesqShader.SetTexture(kernelInit, PropStateOut, stateTexB);
-            DispatchCompute(kernelInit);
+            DispatchCompute2D(kernelInit);
 
             boussinesqShader.SetTexture(kernelInit, PropStateOut, predTex);
-            DispatchCompute(kernelInit);
+            DispatchCompute2D(kernelInit);
 
             UpdateBathymetryTexture();
 
             if (initialCondition == InitialConditionType.GaussianPulse) {
                 if (bathymetryMode == BathymetryType.Flat && math.abs(deepWaterDepth - 5.0f) < 0.1f) {
-                    // Scene 04 comparison compatibility: centered circular Gaussian pulse
-                    TriggerGaussianPulse(new Vector2(0.5f, 0.5f), wavemakerAmplitude * 1.5f, 0.05f);
+                    // Scene 04 comparison compatibility: centered circular C^2 pulse with exact wavemakerAmplitude
+                    TriggerImpulseOnTarget(CurrentStateTex, sourceCenter, wavemakerAmplitude, sourceRadius, ImpulseShapeType.CircularPulse);
                 } else {
                     TriggerImpulse();
                 }
@@ -290,10 +320,19 @@ namespace Nobnak.WaterSimulation {
             if (boussinesqShader == null || stateTexA == null) return;
 
             float dx = areaSize.x / resolution.x;
-            // CFL stability check based on maximum wave speed c = sqrt(g * h_max)
-            float maxC = math.sqrt(Gravity * deepWaterDepth);
-            float maxDt = (dx / maxC) * 0.45f;
+            float dz = areaSize.y / resolution.y;
+            float minGrid = math.min(dx, dz);
+
+            // Nonlinear CFL stability check including wave amplitude and orbital particle velocity
+            float ampBound = math.max(0.1f, wavemakerAmplitude * 1.5f);
+            float hMax = math.max(0.5f, deepWaterDepth + ampBound);
+            float cMax = math.sqrt(Gravity * hMax);
+            float uBound = cMax * (ampBound / math.max(0.5f, shallowWaterDepth));
+            float maxWaveSpeed = (cMax + uBound) * math.SQRT2;
+            float maxDt = (minGrid / maxWaveSpeed) * 0.55f;
+
             int subSteps = math.max(1, (int)math.ceil(dt / maxDt));
+            lastSubStepCount = subSteps;
             float subDt = dt / subSteps;
 
             for (int s = 0; s < subSteps; s++) {
@@ -311,6 +350,7 @@ namespace Nobnak.WaterSimulation {
             RenderTexture next    = NextStateTex;
 
             float dx = areaSize.x / resolution.x;
+            float dz = areaSize.y / resolution.y;
             int wavemakerY = (int)(resolution.y * wavemakerLocationNorm);
             float activeAmp = (initialCondition == InitialConditionType.ContinuousWavemaker) ? wavemakerAmplitude : 0f;
 
@@ -318,6 +358,7 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetInt(PropHeight, resolution.y);
             boussinesqShader.SetFloat(PropDeltaTime, subDt);
             boussinesqShader.SetFloat(PropGridSpacing, dx);
+            boussinesqShader.SetFloat(PropGridSpacingZ, dz);
             boussinesqShader.SetFloat(PropGravity, Gravity);
             boussinesqShader.SetFloat(PropDispersionAlpha, dispersionAlpha);
             boussinesqShader.SetFloat(PropBedFriction, bedFriction);
@@ -330,44 +371,43 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetFloat(PropWavemakerPhase, wavemakerPhase);
             boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
 
-            // 1. Predictor step (Forward/Backward differences -> predTex)
+            // 1. Predictor step (Forward/Backward differences -> forceTex & predTex)
             boussinesqShader.SetTexture(kernelPredict, PropStateIn, current);
             boussinesqShader.SetTexture(kernelPredict, PropStatePred, predTex);
             boussinesqShader.SetTexture(kernelPredict, PropBathymetryTex, bathymetryTex);
             boussinesqShader.SetTexture(kernelPredict, PropForceTex, forceTex);
-            DispatchCompute(kernelPredict);
+            boussinesqShader.SetTexture(kernelPredict, PropAccelPing, accelTexA);
+            DispatchCompute2D(kernelPredict);
 
-            // 2. Corrector step (Opposite differences on predTex + average -> next)
+            // 1b. Predictor Peregrine dispersion solve a^(1) = L^{-1}(f^n) -> u*, w*
+            if (dispersionAlpha > 0.001f) {
+                SolvePeregrineDispersion();
+
+                boussinesqShader.SetTexture(kernelApplyPredictedDispersion, PropStatePred, predTex);
+                boussinesqShader.SetTexture(kernelApplyPredictedDispersion, PropAccelPing, accelTexA);
+                boussinesqShader.SetTexture(kernelApplyPredictedDispersion, PropForcePredTex, forcePredTex);
+                DispatchCompute2D(kernelApplyPredictedDispersion);
+            }
+
+            // 2. Corrector step (Opposite differences on predTex -> forceTex & next)
             boussinesqShader.SetTexture(kernelCorrect, PropStateIn, current);
             boussinesqShader.SetTexture(kernelCorrect, PropStatePred, predTex);
             boussinesqShader.SetTexture(kernelCorrect, PropStateOut, next);
             boussinesqShader.SetTexture(kernelCorrect, PropBathymetryTex, bathymetryTex);
             boussinesqShader.SetTexture(kernelCorrect, PropForceTex, forceTex);
+            boussinesqShader.SetTexture(kernelCorrect, PropForcePredTex, forcePredTex);
             boussinesqShader.SetTexture(kernelCorrect, PropAccelPing, accelTexA);
-            DispatchCompute(kernelCorrect);
+            DispatchCompute2D(kernelCorrect);
 
-            // 3. Warm-started Pade (2,2) Helmholtz dispersion inversion (if enabled)
+            // 3. Corrector Peregrine dispersion solve a^(2) = L^{-1}(f*) -> u^{n+1} = u^n + 0.5*dt*(a^(1) + a^(2))
             if (dispersionAlpha > 0.001f) {
-                RenderTexture jSrc = accelTexA;
-                RenderTexture jDst = accelTexB;
-                for (int iter = 0; iter < 6; iter++) {
-                    boussinesqShader.SetTexture(kernelJacobiStep, PropBathymetryTex, bathymetryTex);
-                    boussinesqShader.SetTexture(kernelJacobiStep, PropForceTex, forceTex);
-                    boussinesqShader.SetTexture(kernelJacobiStep, PropAccelPing, jSrc);
-                    boussinesqShader.SetTexture(kernelJacobiStep, PropAccelPong, jDst);
-                    DispatchCompute(kernelJacobiStep);
+                SolvePeregrineDispersion();
 
-                    var tmp = jSrc;
-                    jSrc = jDst;
-                    jDst = tmp;
-                }
-
-                // 4. Apply Pade (2,2) resolvent-split acceleration to velocities
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropStateOut, next);
-                boussinesqShader.SetTexture(kernelApplyDispersion, PropForceTex, forceTex);
-                boussinesqShader.SetTexture(kernelApplyDispersion, PropAccelPing, jSrc);
+                boussinesqShader.SetTexture(kernelApplyDispersion, PropForcePredTex, forcePredTex);
+                boussinesqShader.SetTexture(kernelApplyDispersion, PropAccelPing, accelTexA);
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropBathymetryTex, bathymetryTex);
-                DispatchCompute(kernelApplyDispersion);
+                DispatchCompute2D(kernelApplyDispersion);
             }
 
             if (initialCondition == InitialConditionType.ContinuousWavemaker) {
@@ -377,6 +417,25 @@ namespace Nobnak.WaterSimulation {
             }
 
             pingPong = !pingPong;
+        }
+
+        private void SolvePeregrineDispersion() {
+            int rowsZ = math.max(1, resolution.y);
+            int colsX = math.max(1, resolution.x);
+
+            // Pass 1: CSTridiagonalX along rows (solves (I - beta_x d_x^2) a* = f)
+            boussinesqShader.SetTexture(kernelTridiagonalX, PropBathymetryTex, bathymetryTex);
+            boussinesqShader.SetTexture(kernelTridiagonalX, PropForceTex, forceTex);
+            boussinesqShader.SetTexture(kernelTridiagonalX, PropAccelPong, accelTexB);
+            boussinesqShader.Dispatch(kernelTridiagonalX, rowsZ, 1, 1);
+            lastDispatchCount++;
+
+            // Pass 2: CSTridiagonalZ along columns (solves (I - beta_z d_z^2) a = a*)
+            boussinesqShader.SetTexture(kernelTridiagonalZ, PropBathymetryTex, bathymetryTex);
+            boussinesqShader.SetTexture(kernelTridiagonalZ, PropAccelPong, accelTexB);
+            boussinesqShader.SetTexture(kernelTridiagonalZ, PropAccelPing, accelTexA);
+            boussinesqShader.Dispatch(kernelTridiagonalZ, colsX, 1, 1);
+            lastDispatchCount++;
         }
 
         private void ApplySourceExcitation(RenderTexture target, float subDt) {
@@ -442,20 +501,23 @@ namespace Nobnak.WaterSimulation {
         private void ComputeNormalAndPackOutput() {
             RenderTexture current = CurrentStateTex;
             float dx = areaSize.x / resolution.x;
+            float dz = areaSize.y / resolution.y;
 
             boussinesqShader.SetInt(PropWidth, resolution.x);
             boussinesqShader.SetInt(PropHeight, resolution.y);
             boussinesqShader.SetFloat(PropGridSpacing, dx);
+            boussinesqShader.SetFloat(PropGridSpacingZ, dz);
             boussinesqShader.SetTexture(kernelNormal, PropStateOut, current);
             boussinesqShader.SetTexture(kernelNormal, PropNormalTex, normalTex);
             boussinesqShader.SetTexture(kernelNormal, PropWaterDataTex, waterDataTex);
-            DispatchCompute(kernelNormal);
+            DispatchCompute2D(kernelNormal);
         }
 
-        private void DispatchCompute(int kernel) {
-            int gx = math.max(1, resolution.x / 8);
-            int gy = math.max(1, resolution.y / 8);
+        private void DispatchCompute2D(int kernel) {
+            int gx = math.max(1, (resolution.x + 7) / 8);
+            int gy = math.max(1, (resolution.y + 7) / 8);
             boussinesqShader.Dispatch(kernel, gx, gy, 1);
+            lastDispatchCount++;
         }
 
         public void UpdateBathymetryTexture() {
@@ -476,15 +538,12 @@ namespace Nobnak.WaterSimulation {
                     } else if (bathymetryMode == BathymetryType.LinearSlope) {
                         depth = math.lerp(deepWaterDepth, shallowWaterDepth, ny);
                     } else if (bathymetryMode == BathymetryType.ShoalAndCape) {
-                        // Base slope from deep (ny = 0) to shallow (ny = 1)
                         float baseSlope = math.lerp(deepWaterDepth, shallowWaterDepth * 1.5f, ny);
 
-                        // Diagonal shallow shoal: extends diagonally across middle
                         float shoalLine = math.abs((nx - 0.35f) - (ny - 0.45f) * 0.7f);
                         float shoalFactor = math.exp(-shoalLine * shoalLine / 0.02f);
                         float shoalDepth = shallowWaterDepth;
 
-                        // Cape / Headland: jutting peninsula protruding from right shore (nx = 0.75, ny = 0.6)
                         float2 capeCenter = new float2(0.72f, 0.62f);
                         float distToCape = math.distance(new float2(nx, ny), capeCenter);
                         float capeFactor = math.exp(-distToCape * distToCape / 0.015f);
@@ -507,14 +566,19 @@ namespace Nobnak.WaterSimulation {
             tempTex.Apply(false);
             Graphics.Blit(tempTex, bathymetryTex);
             DestroyImmediate(tempTex);
+
+            bathymetryVersion++;
         }
         #endregion
 
         #region constants / static
+        private const int MaxTridiagonalN = 512;
+
         private static readonly int PropWidth = Shader.PropertyToID("_Width");
         private static readonly int PropHeight = Shader.PropertyToID("_Height");
         private static readonly int PropDeltaTime = Shader.PropertyToID("_DeltaTime");
         private static readonly int PropGridSpacing = Shader.PropertyToID("_GridSpacing");
+        private static readonly int PropGridSpacingZ = Shader.PropertyToID("_GridSpacingZ");
         private static readonly int PropGravity = Shader.PropertyToID("_Gravity");
         private static readonly int PropDispersionAlpha = Shader.PropertyToID("_DispersionAlpha");
         private static readonly int PropBedFriction = Shader.PropertyToID("_BedFriction");
@@ -536,6 +600,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropNormalTex = Shader.PropertyToID("_NormalTex");
         private static readonly int PropWaterDataTex = Shader.PropertyToID("_WaterDataTex");
         private static readonly int PropForceTex = Shader.PropertyToID("_ForceTex");
+        private static readonly int PropForcePredTex = Shader.PropertyToID("_ForcePredTex");
         private static readonly int PropAccelPing = Shader.PropertyToID("_AccelPing");
         private static readonly int PropAccelPong = Shader.PropertyToID("_AccelPong");
         #endregion

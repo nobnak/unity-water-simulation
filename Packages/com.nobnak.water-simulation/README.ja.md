@@ -71,12 +71,13 @@ $$
   - $\eta$: 水位変位 [m]
   - $c$: 波速 [m/s]
   - $\gamma$: 自然減衰係数 [1/s]
-- **離散化**: 9点等方ラプラシアン有限差分法（FDM）＋ Verlet / Leapfrog 時間積分。格子軸方向への数値伝播異方性（偏り）を抑止。
+- **離散化**: 9点等方ラプラシアン有限差分法（FDM）＋ `fp32` (`RGFloat`) シンプレクティック Leapfrog 時間積分。格子軸方向への数値伝播異方性（偏り）を抑止し、$(\eta, v = \partial_{t}\eta)$ を直接保持することで波速や時間刻みの動的変更時にも不連続跳びが発生しません。10秒以上の長波長伝播における打切り誤差蓄積（旧fp16版 $223.78\%$）を $0.00008\%$ へ低減。
 - **機能**:
   - **CFL自動サブステップ**: $\Delta t \le 0.95 \frac{\Delta x}{\sqrt{2}\,c}$ を満たすように自動分割し、発散を防止。
   - **外周スポンジ吸収境界**: 壁面での不要な反射波を無反射減衰。
-  - **障害物マスク**: 単一スリット、二重スリット、円柱障害物、カスタムマスクテクスチャ。
-  - **入力モード**: 単発インパルス、周期パルス発生器（Oscillator）、移動波源、マウスクリック励起。
+  - **障害物マスク**: 単一スリット、二重スリット、円柱障害物、カスタムマスクテクスチャ（Dirichlet / Neumann 反射）。
+  - **入力モード**: コンパクト $C^{2}$ 級ベル型インパルス（高周波ギブズリンギングなし）、周期パルス発生器（Oscillator）、移動波源、マウスクリック励起。
+  - **物理法線の分離**: `NormalVisual` モードでは強調のない単位物理法線を表示（リアルシェーダー表示時のみ法線強調を適用）。
 - **代表シーン**: `01_WaveEquation`（波紋と障害物）
   - 静水面に触れた波紋が二重スリットを通過し、波の回折（Diffraction）と相互干渉（Interference）、壁面反射を明瞭に確認できます。
 - **適用範囲と限界**:
@@ -97,21 +98,17 @@ $$
   - 運動方程式:
 
 $$
-\left(1 - \alpha \frac{h^{2}}{6} \nabla^{2}\right)\frac{\partial \mathbf{u}}{\partial t} = -g \nabla \eta - (\mathbf{u} \cdot \nabla)\mathbf{u} - \frac{c_{f}}{h + \eta}\mathbf{u} + \mathbf{S_{u}}
+\left(I - \alpha \frac{h^{2}}{3} \nabla^{2}\right)\frac{\partial \mathbf{u}}{\partial t} = -g \nabla \eta - (\mathbf{u} \cdot \nabla)\mathbf{u} - \frac{c_{f}}{h + \eta}\mathbf{u} + \mathbf{S_{u}}
 $$
 
   - $h(\mathbf{x})$: 静水深 [m]
   - $\mathbf{u}$: 水深平均水平流速ベクトル [m/s]
   - $c_{f}$: 海底摩擦係数
-- **数値的安定化 (`fp32` 対称MacCormack法＋Helmholtz型分散インバータ)**:
+  - 標準 Peregrine (1967) の $1/3$ 分散係数に準拠し、$kh=1$ での位相速度誤差はわずか $-0.764\%$（旧 ad-hoc $1/6$ モデルの $+6.09\%$ から大幅改善）。
+- **数値的安定化 (`fp32` 対称MacCormack法＋ADI 三重対角 PCR 分散解法)**:
   - 陽解法での3次導関数 $\nabla(\nabla^{2} \eta)$ の直接差分は $\Delta x^{-3}$ に比例する剛性により $\Delta t < 10^{-6}\ \mathrm{s}$ を要し即座に発散（トゲ状破綻）します。
-  - 本パッケージでは `fp32` (`ARGBFloat` / `RGFloat`) バッファ上の**対称 MacCormack 予測子・修正子法**（サブステップ毎に前進・後退差分方向を交互反転）に加え、分散項を陰的に再定式化した Helmholtz 型方程式:
-
-$$
-\left(I - \alpha \frac{h^{2}}{6} \nabla^{2}\right)\mathbf{a} = \bar{\mathbf{f}}
-$$
-
-    を6パスのJacobi緩和反復法により無条件安定に逆行列求解します。これにより格子解像度を高めても破綻しない安定した分散波列を生成します。
+  - 本パッケージでは高解像度での係数切捨て（旧 $\beta \le 6$ 上限）を完全撤廃し、2次元 Peregrine 分散作用素を交替方向陰解法（Peaceman-Rachford ADI）により2パスの三重対角並列巡回簡約（PCR: `groupshared` メモリ無条件安定解法）へ分解求解。
+  - 予測子・修正子の双方で厳密に逆行列を解き Heun 2次時間更新を適用することで、理論値 $4.0\times$ に合致する実測 **$3.99\times$** の2次収束 $O(\Delta t^{2})$ を達成。
 - **機能**:
   - **プロシージャル海底地形**: 斜め浅瀬と岬（Shoal and Cape）、平坦海底（Flat）、斜面（Linear Slope）、カスタム標高テクスチャ。
   - **多様な波源・インパルス励起**: 沖合連続進行波造波（Wavemaker）に加え、平面孤立波（Planar Soliton: ${\mathrm{sech}}^{2}$）および円形ガウスパルス（Circular Pulse）の単発・周期発生・移動波源・マウスクリック/ドラッグ注入（GPU非破壊加算 `CSAddImpulse`）。
@@ -126,22 +123,17 @@ $$
 ### 方式3：スペクトル／FFT海面 (`FFTOceanSimulation`) - Task 4
 広域の海洋において、風波とうねりが共存する外洋海面を高速に生成します。
 
-- **統計的海洋波スペクトル (Tessendorf 2001 / Phillips Spectrum)**:
+- **統計的海洋波スペクトル (Tessendorf 2001 / Phillips Spectrum) と離散化**:
 
 $$
 P_{h}(\mathbf{k}) = A \frac{\exp(-1 / (k L)^{2})}{k^{4}} (\hat{\mathbf{k}} \cdot \hat{\mathbf{w}})^{2} \exp(-k^{2} l_{0}^{2})
 $$
 
-  - $L = V^{2} / g$: 風速 $V$ による最大波長スケール
-  - うねり成分: 遠方の嵐から到達する長波長の独立スペクトルピークを重畳。
-- **分散関係の時間発展**:
-
-$$
-\omega(\mathbf{k}) = \sqrt{g \|\mathbf{k}\|}, \quad \tilde{h}(\mathbf{k}, t) = h_{0}(\mathbf{k}) e^{i \omega t} + h_{0}^{\ast}(-\mathbf{k}) e^{-i \omega t}
-$$
-
-- **Radix-2 Stockham 2D逆高速フーリエ変換 (IFFT)**:
-  - Compute Shader上でビット反転並べ替えが一切不要な Stockham autosort アルゴリズムを採用。完全に合致したメモリアクセスにより高速実行。
+  - 周期境界インデックス $i_{-} = (N - i) \bmod N, j_{-} = (N - j) \bmod N$ による厳密なエルミート共役対称性を確立し、逆変換後の虚数残差比を $3.45 \times 10^{-16}$（機械精度）へ低減。
+  - 離散波数刻み $\Delta k = \frac{2\pi}{L}$ に基づく振幅離散化により、格子解像度 $N$ を変更しても有義波高 $H_{s} \approx 3.63\ \mathrm{m}$ が完全に不変。
+- **複素パッキングによる単一 2D IFFT パス**:
+  - $(\tilde{D}_{y} + i\tilde{D}_{x})$ を `RG`、$\tilde{D}_{z}$ を `BA` に合成し、1回の 4ch 2D IFFT（`Graphics.Blit` ゼロ回）で全3変位成分を同時逆変換（毎ステップわずか $2\log_{2} N + 2$ ディスパッチ）。
+  - パラメータセッターに同値判定と dirty フラグを設け、定常シミュレーション中の不要なスペクトル再生成ディスパッチをゼロ化（`RedundantSpectrumRegen = 0`）。
 - **チョッピー波（波数重み付き水平変位）と厳密ラグランジュ法線**:
 
 $$
@@ -175,19 +167,23 @@ $$
 
 ## 5. 性能ベンチマーク報告
 
-以下の表は、Intel(R) Arc(TM) 140V GPU (16 GB), 解像度 1280×720 (フルスクリーンレンダリング時) での各方式のGPU計算負荷および描画フレームレートの実測値です。
+以下の表は、Unity 6000.3.27f1 バッチモード実行（`Docs/BenchmarkResults.csv` 実測値）における各方式の単体ソルバー計算負荷および複合シーン04での分離実測値です。
 
-| シミュレーション方式 | 計算格子解像度 | 物理時間刻み $dt$ | GPU ディスパッチ時間 | 描画 FPS |
-| :--- | :---: | :---: | :---: | :---: |
-| **2D 線形波動方程式** | $256 \times 256$ | $0.003\ \mathrm{s}$ (substeps) | $0.15\ \mathrm{ms}$ | $140+\ \mathrm{FPS}$ |
-| **2D 線形波動方程式** | $512 \times 512$ | $0.0015\ \mathrm{s}$ (substeps) | $0.38\ \mathrm{ms}$ | $120+\ \mathrm{FPS}$ |
-| **Boussinesq 系 (`fp32`, 6-step Jacobi)** | $256 \times 256$ | $0.016\ \mathrm{s}$ (substeps) | $0.48\ \mathrm{ms}$ | $120+\ \mathrm{FPS}$ |
-| **Boussinesq 系 (`fp32`, 6-step Jacobi)** | $512 \times 512$ | $0.008\ \mathrm{s}$ (substeps) | $1.35\ \mathrm{ms}$ | $95+\ \mathrm{FPS}$ |
-| **スペクトル / FFT 海面** | $256 \times 256$ | $0.033\ \mathrm{s}$ (時間発展) | $0.35\ \mathrm{ms}$ | $130+\ \mathrm{FPS}$ |
-| **スペクトル / FFT 海面** | $512 \times 512$ | $0.033\ \mathrm{s}$ (時間発展) | $0.95\ \mathrm{ms}$ | $105+\ \mathrm{FPS}$ |
-| **05 比較Overview (3方式同時稼働)** | $256 \times 256 \times 3$ | 各方式固有 $dt$ | $0.98\ \mathrm{ms}$ (合計) | $110+\ \mathrm{FPS}$ |
+| シミュレーション方式 | 計算格子解像度 | 数値計算モード / スキーム | サブステップ数 | ディスパッチ数 | 1ステップ時間 (Wall Clock) |
+| :--- | :---: | :--- | :---: | :---: | :---: |
+| **2D 線形波動方程式** | $256 \times 256$ | RGFloat・シンプレクティック | $2$ | $3$ | **$0.183\ \mathrm{ms}$** |
+| **2D 線形波動方程式** | $512 \times 512$ | RGFloat・シンプレクティック | $3$ | $4$ | **$0.298\ \mathrm{ms}$** |
+| **Boussinesq 系** | $256 \times 256$ | Peregrine ADI PCR (2次精度) | $2$ | $17$ | **$1.055\ \mathrm{ms}$** |
+| **Boussinesq 系** | $512 \times 512$ | Peregrine ADI PCR (2次精度) | $4$ | $33$ | **$4.544\ \mathrm{ms}$** |
+| **スペクトル / FFT 海面** | $256 \times 256$ | 単一IFFT複素パッキング | $1$ | $18$ | **$0.317\ \mathrm{ms}$** |
+| **スペクトル / FFT 海面** | $512 \times 512$ | 単一IFFT複素パッキング | $1$ | $20$ | **$0.869\ \mathrm{ms}$** |
 
-> **注記**: 本パッケージの実装は描画フレームレートと物理計算ステップを完全に分離（Decoupled）しており、高負荷時でも時間積分精度が保たれます。
+#### 複合シーン04（512×512 2水面連成）における分離計測
+- **1_SolverOnly** (波動方程式 + Boussinesq 各512²): **$12.73\ \mathrm{ms}$**
+- **2_SolverPlusRender** (ソルバー + 1280×720カメラ描画): **$8.30\ \mathrm{ms}$**
+- **3_SolverRenderProfileAsync** (ソルバー + 描画 + `AsyncGPUReadback` 断面表示): **$11.80\ \mathrm{ms}$**
+
+> **注記**: 本パッケージの実装は描画フレームレートと物理計算ステップを完全に分離（Decoupled）しており、高負荷時でも時間積分精度が保たれます。断面表示は `AsyncGPUReadback` と静水深CPUキャッシュにより同期ストールを発生させません。
 
 ---
 

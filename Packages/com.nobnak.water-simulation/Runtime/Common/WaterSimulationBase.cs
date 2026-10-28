@@ -34,6 +34,11 @@ namespace Nobnak.WaterSimulation {
         protected RenderTexture waterDataTex;
         protected RenderTexture normalTex;
         protected RenderTexture bathymetryTex;
+        protected int bathymetryVersion;
+        protected int stepCount;
+        protected int lastSubStepCount = 1;
+        protected int lastDispatchCount;
+        protected double lastStepCpuTimeMs;
         private float accumulator;
         #endregion
 
@@ -45,6 +50,11 @@ namespace Nobnak.WaterSimulation {
         public RenderTexture WaterDataTexture => waterDataTex;
         public RenderTexture NormalTexture => normalTex;
         public virtual RenderTexture BathymetryTexture => bathymetryTex;
+        public int BathymetryVersion => bathymetryVersion;
+        public int StepCount => stepCount;
+        public int LastSubStepCount => lastSubStepCount;
+        public int LastDispatchCount => lastDispatchCount;
+        public double LastStepCpuTimeMs => lastStepCpuTimeMs;
         public bool IsRunning => isRunning;
         public float TimeScale {
             get => timeScale;
@@ -94,12 +104,18 @@ namespace Nobnak.WaterSimulation {
 
         public void Step(float dt) {
             if (dt <= 0f) return;
+            long startTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            lastDispatchCount = 0;
             OnStepSimulation(dt);
             simulationTime += dt;
+            stepCount++;
+            long elapsedTicks = System.Diagnostics.Stopwatch.GetTimestamp() - startTicks;
+            lastStepCpuTimeMs = (double)elapsedTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
         }
 
         public void ResetSimulation() {
             simulationTime = 0f;
+            stepCount = 0;
             accumulator = 0f;
             OnResetSimulation();
         }

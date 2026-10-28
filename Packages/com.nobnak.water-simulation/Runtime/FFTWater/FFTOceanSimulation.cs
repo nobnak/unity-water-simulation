@@ -4,7 +4,8 @@ using UnityEngine;
 namespace Nobnak.WaterSimulation {
     /// <summary>
     /// Cascaded statistical FFT Ocean surface simulation.
-    /// Uses Tessendorf (2001) spectral model with customizable swell, wind, choppiness, and foam.
+    /// Uses Tessendorf (2001) spectral model with resolution-independent amplitude discretization,
+    /// conjugate-symmetric wavenumber pairing, and single-2D-IFFT complex packing.
     /// </summary>
     [ExecuteAlways]
     public class FFTOceanSimulation : WaterSimulationBase {
@@ -47,10 +48,13 @@ namespace Nobnak.WaterSimulation {
 
         #region private fields
         private RenderTexture initialSpectrumTex;
-        private RenderTexture spectrumDyTex;
-        private RenderTexture spectrumDxDzTex;
+        private RenderTexture spectrumPackedTex;
         private RenderTexture pingPongTexA;
         private RenderTexture pingPongTexB;
+
+        private bool spectrumDirty = true;
+        private bool pausedStepDirty;
+        private int spectrumRegenerationCount;
 
         private int kernelSpectrum;
         private int kernelEvolution;
@@ -63,6 +67,7 @@ namespace Nobnak.WaterSimulation {
         public SeaStatePreset SeaState {
             get => seaState;
             set {
+                if (seaState == value) return;
                 seaState = value;
                 ApplySeaStatePreset(value);
             }
@@ -71,50 +76,65 @@ namespace Nobnak.WaterSimulation {
         public float WindSpeed {
             get => windSpeed;
             set {
-                windSpeed = math.max(0.1f, value);
-                RegenerateInitialSpectrum();
+                float clamped = math.max(0.1f, value);
+                if (math.abs(windSpeed - clamped) < 1e-4f) return;
+                windSpeed = clamped;
+                seaState = SeaStatePreset.Custom;
+                MarkSpectrumDirty();
             }
         }
 
         public float WindDirectionDegrees {
             get => windDirectionDegrees;
             set {
+                if (math.abs(windDirectionDegrees - value) < 1e-4f) return;
                 windDirectionDegrees = value;
-                RegenerateInitialSpectrum();
+                seaState = SeaStatePreset.Custom;
+                MarkSpectrumDirty();
             }
         }
 
         public float SwellStrength {
             get => swellStrength;
             set {
-                swellStrength = math.max(0f, value);
-                RegenerateInitialSpectrum();
+                float clamped = math.max(0f, value);
+                if (math.abs(swellStrength - clamped) < 1e-4f) return;
+                swellStrength = clamped;
+                seaState = SeaStatePreset.Custom;
+                MarkSpectrumDirty();
             }
         }
 
         public float SwellDirectionDegrees {
             get => swellDirectionDegrees;
             set {
+                if (math.abs(swellDirectionDegrees - value) < 1e-4f) return;
                 swellDirectionDegrees = value;
-                RegenerateInitialSpectrum();
+                seaState = SeaStatePreset.Custom;
+                MarkSpectrumDirty();
             }
         }
 
         public float Choppiness {
             get => choppiness;
             set {
-                choppiness = math.clamp(value, 0f, 3.0f);
-                if (!isRunning) OnStepSimulation(0f);
+                float clamped = math.clamp(value, 0f, 3.0f);
+                if (math.abs(choppiness - clamped) < 1e-4f) return;
+                choppiness = clamped;
+                if (!isRunning) pausedStepDirty = true;
             }
         }
 
         public bool EnableFoam {
             get => enableFoam;
             set {
+                if (enableFoam == value) return;
                 enableFoam = value;
-                if (!isRunning) OnStepSimulation(0f);
+                if (!isRunning) pausedStepDirty = true;
             }
         }
+
+        public int SpectrumRegenerationCount => spectrumRegenerationCount;
         #endregion
 
         #region Unity lifecycle
@@ -122,6 +142,13 @@ namespace Nobnak.WaterSimulation {
             ResolveComputeShader();
             ApplySeaStatePreset(seaState);
             base.OnEnable();
+        }
+
+        private void LateUpdate() {
+            if (!isRunning && (spectrumDirty || pausedStepDirty)) {
+                pausedStepDirty = false;
+                OnStepSimulation(0f);
+            }
         }
         #endregion
 
@@ -151,7 +178,7 @@ namespace Nobnak.WaterSimulation {
                     swellDirectionDegrees = 90.0f;
                     break;
             }
-            RegenerateInitialSpectrum();
+            MarkSpectrumDirty();
         }
         #endregion
 
@@ -162,26 +189,32 @@ namespace Nobnak.WaterSimulation {
             }
         }
 
+        private void MarkSpectrumDirty() {
+            spectrumDirty = true;
+            if (!isRunning) pausedStepDirty = true;
+        }
+
         protected override void InitializeTextures() {
             ReleaseTextures();
 
             int n = resolution.x; // Must be power of two
             if (!Mathf.IsPowerOfTwo(n)) {
                 n = Mathf.ClosestPowerOfTwo(n);
-                resolution = new Vector2Int(n, n);
             }
+            resolution = new Vector2Int(n, n);
 
-            initialSpectrumTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat);
-            spectrumDyTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat);
-            spectrumDxDzTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat);
-            pingPongTexA = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat);
-            pingPongTexB = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat);
+            initialSpectrumTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat, FilterMode.Point);
+            spectrumPackedTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat, FilterMode.Point);
+            pingPongTexA = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat, FilterMode.Point);
+            pingPongTexB = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat, FilterMode.Point);
 
             waterDataTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBHalf);
             normalTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBHalf);
 
             CacheKernels();
-            RegenerateInitialSpectrum();
+            spectrumRegenerationCount = 0;
+            spectrumDirty = true;
+            FlushInitialSpectrumIfDirty();
         }
 
         private void CacheKernels() {
@@ -195,8 +228,7 @@ namespace Nobnak.WaterSimulation {
 
         protected override void ReleaseTextures() {
             ReleaseTexture(ref initialSpectrumTex);
-            ReleaseTexture(ref spectrumDyTex);
-            ReleaseTexture(ref spectrumDxDzTex);
+            ReleaseTexture(ref spectrumPackedTex);
             ReleaseTexture(ref pingPongTexA);
             ReleaseTexture(ref pingPongTexB);
             ReleaseTexture(ref waterDataTex);
@@ -205,12 +237,15 @@ namespace Nobnak.WaterSimulation {
 
         protected override void OnResetSimulation() {
             simulationTime = 0f;
-            RegenerateInitialSpectrum();
-            OnStepSimulation(0.001f);
+            spectrumDirty = true;
+            pausedStepDirty = false;
+            lastDispatchCount = 0;
+            OnStepSimulation(0f);
         }
 
-        private void RegenerateInitialSpectrum() {
-            if (fftShader == null || initialSpectrumTex == null) return;
+        private void FlushInitialSpectrumIfDirty() {
+            if (!spectrumDirty || fftShader == null || initialSpectrumTex == null) return;
+            spectrumDirty = false;
 
             int n = resolution.x;
             float radW = windDirectionDegrees * Mathf.Deg2Rad;
@@ -227,16 +262,17 @@ namespace Nobnak.WaterSimulation {
             fftShader.SetVector(PropSwellDir, new Vector4(swellDir.x, swellDir.y, 0, 0));
 
             fftShader.SetTexture(kernelSpectrum, PropInitialSpectrumRW, initialSpectrumTex);
-            int gx = math.max(1, n / 8);
+            int gx = math.max(1, (n + 7) / 8);
             fftShader.Dispatch(kernelSpectrum, gx, gx, 1);
-
-            if (!isRunning) {
-                OnStepSimulation(0f);
-            }
+            lastDispatchCount++;
+            spectrumRegenerationCount++;
         }
 
         protected override void OnStepSimulation(float dt) {
             if (fftShader == null || initialSpectrumTex == null) return;
+
+            lastSubStepCount = 1;
+            FlushInitialSpectrumIfDirty();
 
             int n = resolution.x;
             float radW = windDirectionDegrees * Mathf.Deg2Rad;
@@ -255,65 +291,62 @@ namespace Nobnak.WaterSimulation {
             fftShader.SetFloat(PropFoamThreshold, foamThreshold);
             fftShader.SetInt(PropEnableFoam, enableFoam ? 1 : 0);
 
-            // 1. Time evolution
+            int gx = math.max(1, (n + 7) / 8);
+
+            // 1. Time evolution & complex packing (RG: Dy + i*Dx, BA: Dz)
             fftShader.SetTexture(kernelEvolution, PropInitialSpectrum, initialSpectrumTex);
-            fftShader.SetTexture(kernelEvolution, PropSpectrumDy, spectrumDyTex);
-            fftShader.SetTexture(kernelEvolution, PropSpectrumDxDz, spectrumDxDzTex);
-            int gx = math.max(1, n / 8);
+            fftShader.SetTexture(kernelEvolution, PropSpectrumPacked, spectrumPackedTex);
             fftShader.Dispatch(kernelEvolution, gx, gx, 1);
+            lastDispatchCount++;
 
-            // 2. Perform 2D IFFT for Height (Dy)
-            Perform2DIFFT(spectrumDyTex);
+            // 2. Perform a single 2D IFFT for all 3 real fields (Dy, Dx, Dz) without Graphics.Blit
+            Perform2DIFFT(spectrumPackedTex);
 
-            // 3. Perform 2D IFFT for Choppy Displacements (Dx, Dz)
-            Perform2DIFFT(spectrumDxDzTex);
-
-            // 4. Pack displacement and compute normal + foam
-            fftShader.SetTexture(kernelPack, PropSpectrumDy, spectrumDyTex);
-            fftShader.SetTexture(kernelPack, PropSpectrumDxDz, spectrumDxDzTex);
+            // 3. Unpack displacement and compute normal + Jacobian foam
+            fftShader.SetTexture(kernelPack, PropSpectrumPacked, spectrumPackedTex);
             fftShader.SetTexture(kernelPack, PropWaterDataTex, waterDataTex);
             fftShader.SetTexture(kernelPack, PropNormalTex, normalTex);
             fftShader.Dispatch(kernelPack, gx, gx, 1);
+            lastDispatchCount++;
         }
 
         private void Perform2DIFFT(RenderTexture spectrumTarget) {
             int n = resolution.x;
-            int numStages = (int)math.log2(n);
-            int gx = math.max(1, n / 8);
-
-            Graphics.Blit(spectrumTarget, pingPongTexA);
+            int numStages = (int)math.round(math.log2(n));
+            int gx = math.max(1, (n + 7) / 8);
 
             RenderTexture src = pingPongTexA;
             RenderTexture dst = pingPongTexB;
 
-            // Horizontal FFT passes
+            // Horizontal FFT passes (stage 0 reads directly from spectrumTarget)
             for (int stage = 0; stage < numStages; stage++) {
                 int step = 1 << stage;
+                RenderTexture inTex = (stage == 0) ? spectrumTarget : src;
                 fftShader.SetInt(PropStepSize, step);
-                fftShader.SetTexture(kernelFFTHorizontal, PropInputPing, src);
+                fftShader.SetTexture(kernelFFTHorizontal, PropInputPing, inTex);
                 fftShader.SetTexture(kernelFFTHorizontal, PropOutputPong, dst);
                 fftShader.Dispatch(kernelFFTHorizontal, gx, gx, 1);
+                lastDispatchCount++;
 
-                // Swap ping-pong
                 var temp = src;
                 src = dst;
                 dst = temp;
             }
 
-            // Vertical FFT passes
+            // Vertical FFT passes (final stage writes directly back to spectrumTarget)
             for (int stage = 0; stage < numStages; stage++) {
                 int step = 1 << stage;
+                RenderTexture outTex = (stage == numStages - 1) ? spectrumTarget : dst;
                 fftShader.SetInt(PropStepSize, step);
                 fftShader.SetTexture(kernelFFTVertical, PropInputPing, src);
-                fftShader.SetTexture(kernelFFTVertical, PropOutputPong, dst);
+                fftShader.SetTexture(kernelFFTVertical, PropOutputPong, outTex);
                 fftShader.Dispatch(kernelFFTVertical, gx, gx, 1);
+                lastDispatchCount++;
 
                 var temp = src;
                 src = dst;
                 dst = temp;
             }
-
-            Graphics.Blit(src, spectrumTarget);
         }
         #endregion
 
@@ -331,8 +364,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropStepSize = Shader.PropertyToID("_StepSize");
         private static readonly int PropInitialSpectrum = Shader.PropertyToID("_InitialSpectrum");
         private static readonly int PropInitialSpectrumRW = Shader.PropertyToID("_InitialSpectrumRW");
-        private static readonly int PropSpectrumDy = Shader.PropertyToID("_SpectrumDy");
-        private static readonly int PropSpectrumDxDz = Shader.PropertyToID("_SpectrumDxDz");
+        private static readonly int PropSpectrumPacked = Shader.PropertyToID("_SpectrumPacked");
         private static readonly int PropInputPing = Shader.PropertyToID("_InputPing");
         private static readonly int PropOutputPong = Shader.PropertyToID("_OutputPong");
         private static readonly int PropWaterDataTex = Shader.PropertyToID("_WaterDataTex");

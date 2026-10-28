@@ -197,12 +197,12 @@ namespace Nobnak.WaterSimulation.Editor {
             soL.FindProperty("waveShader").objectReferenceValue = computeWave;
             soL.FindProperty("areaSize").vector2Value = new Vector2(50f, 50f);
             soL.FindProperty("resolution").vector2IntValue = new Vector2Int(512, 512);
-            soL.FindProperty("waveSpeed").floatValue = 7.0f; // c = sqrt(g * 5) ~ 7.0 m/s
-            soL.FindProperty("damping").floatValue = 0.01f;
+            soL.FindProperty("waveSpeed").floatValue = Mathf.Sqrt(9.81f * 5.0f); // Exact c = sqrt(g * 5m) = 7.00357 m/s
+            soL.FindProperty("damping").floatValue = 0.0f; // Zero artificial damping for strict dispersion comparison
             soL.FindProperty("obstaclePattern").enumValueIndex = (int)WaveEquationSimulation.ObstaclePattern.None;
             soL.FindProperty("sourceMode").enumValueIndex = (int)WaveEquationSimulation.InputMode.SingleImpulse;
             soL.FindProperty("sourceCenter").vector2Value = new Vector2(0.5f, 0.5f);
-            soL.FindProperty("sourceAmplitude").floatValue = 1.5f;
+            soL.FindProperty("sourceAmplitude").floatValue = 0.1f; // Linear small-amplitude regime (A/h = 0.02)
             soL.FindProperty("sourceRadius").floatValue = 0.05f;
             soL.ApplyModifiedProperties();
             leftRenderer.WaterMaterial = CreateWaterMaterial();
@@ -221,29 +221,34 @@ namespace Nobnak.WaterSimulation.Editor {
             soR.FindProperty("areaSize").vector2Value = new Vector2(50f, 50f);
             soR.FindProperty("resolution").vector2IntValue = new Vector2Int(512, 512);
             soR.FindProperty("dispersionAlpha").floatValue = 1.0f;
+            soR.FindProperty("bedFriction").floatValue = 0.0f; // Zero friction to match undamped WaveEquation
             soR.FindProperty("bathymetryMode").enumValueIndex = (int)BoussinesqSimulation.BathymetryType.Flat;
             soR.FindProperty("deepWaterDepth").floatValue = 5.0f;
+            soR.FindProperty("shallowWaterDepth").floatValue = 5.0f;
             soR.FindProperty("initialCondition").enumValueIndex = (int)BoussinesqSimulation.InitialConditionType.GaussianPulse;
             soR.FindProperty("impulseShape").enumValueIndex = (int)BoussinesqSimulation.ImpulseShapeType.CircularPulse;
             soR.FindProperty("sourceCenter").vector2Value = new Vector2(0.5f, 0.5f);
             soR.FindProperty("sourceRadius").floatValue = 0.05f;
-            soR.FindProperty("wavemakerAmplitude").floatValue = 1.0f; // 1.0 * 1.5 = 1.5m peak pulse
+            soR.FindProperty("wavemakerAmplitude").floatValue = 0.1f; // Exact 0.1m peak pulse matching Left_WaveEquation
             soR.ApplyModifiedProperties();
             rightRenderer.WaterMaterial = CreateWaterMaterial();
 
             // Profile Viewers
             var profL = new GameObject("ProfileViewer_WaveEq").AddComponent<WaterProfileViewer>();
             profL.Configure(leftSim, WaterProfileViewer.ProfileAxis.XAxis, 0.5f);
+            profL.VerticalScale = 8.0f;
             profL.transform.position = leftGO.transform.position + new Vector3(0f, 4f, 0f);
 
             var profR = new GameObject("ProfileViewer_Boussinesq").AddComponent<WaterProfileViewer>();
             profR.Configure(rightSim, WaterProfileViewer.ProfileAxis.XAxis, 0.5f);
+            profR.VerticalScale = 8.0f;
             profR.transform.position = rightGO.transform.position + new Vector3(0f, 4f, 0f);
 
             // Comparison Controller
             var compGO = new GameObject("ComparisonController");
             var comp = compGO.AddComponent<WaterComparisonController>();
             var soC = new SerializedObject(comp);
+            soC.FindProperty("profileVerticalScale").floatValue = 8.0f;
             var simArr = soC.FindProperty("simulations");
             simArr.arraySize = 2;
             simArr.GetArrayElementAtIndex(0).objectReferenceValue = leftSim;

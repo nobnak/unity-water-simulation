@@ -4,26 +4,25 @@
 #pragma kernel CSFFTVertical
 #pragma kernel CSPackOceanData
 
-Texture2D<float4> _InitialSpectrum; // RG: h0(k), BA: h0*(-k)
+Texture2D<float4> _InitialSpectrum;   // RG: h0(k), BA: h0*(-k)
 RWTexture2D<float4> _InitialSpectrumRW;
 
-RWTexture2D<float4> _SpectrumDy;    // Complex height spectrum
-RWTexture2D<float4> _SpectrumDxDz;  // Complex horizontal displacement spectrum
+RWTexture2D<float4> _SpectrumPacked;  // RG: Dy + i*Dx, BA: Dz (single packed complex buffer)
 
 Texture2D<float4> _InputPing;
 RWTexture2D<float4> _OutputPong;
 
-RWTexture2D<float4> _WaterDataTex;  // RGB: displacement (x, y, z), A: foam
-RWTexture2D<float4> _NormalTex;     // RGB: normal, A: foam
+RWTexture2D<float4> _WaterDataTex;    // RGB: displacement (x, y, z), A: foam
+RWTexture2D<float4> _NormalTex;       // RGB: normal, A: crestPinch
 
 cbuffer OceanParams {
-    int _N;                  // Resolution (e.g. 256 or 512)
-    float _LengthScale1;     // Domain size scale 1 [m] (e.g. 200m)
+    int _N;                  // Resolution (power of two, e.g. 256 or 512)
+    float _LengthScale1;     // Domain size L [m] (e.g. 200m)
     float _Time;             // Current simulation time [s]
     float _WindSpeed;        // [m/s]
-    float2 _WindDir;         // Normalized
-    float _SwellStrength;    // Amplitude of swell [m]
-    float2 _SwellDir;        // Normalized
+    float2 _WindDir;         // Normalized wind direction
+    float _SwellStrength;    // Characteristic swell height [m]
+    float2 _SwellDir;        // Normalized swell direction
     float _Choppiness;       // Horizontal displacement scale lambda
     float _FoamThreshold;    // Jacobian foam threshold
     int _EnableFoam;         // 1 = foam enabled, 0 = disabled
@@ -36,7 +35,7 @@ cbuffer FFTStepParams {
 #define PI 3.14159265359
 #define G 9.81
 
-// Simple hash / PRNG for Gaussian random numbers
+// Hash / PRNG for Gaussian random numbers
 float Hash(uint s) {
     s = s ^ 2747636419u;
     s = s * 2654435769u;
@@ -55,75 +54,100 @@ float2 BoxMuller(uint seed) {
     return float2(r * cos(theta), r * sin(theta));
 }
 
-// Phillips spectrum with directional spreading and swell
+// Continuous directional energy density S(k) [m^4] (resolution-independent)
+// Multiplied by dkx*dky = (2*PI/L)^2 in CSGenerateSpectrum so wave height is invariant to grid resolution N.
 float Phillips(float2 k, float lengthScale) {
     float kLen = length(k);
     if (kLen < 1e-4) return 0.0;
 
-    float L = (_WindSpeed * _WindSpeed) / G; // Largest possible wave
+    float L = (_WindSpeed * _WindSpeed) / G; // Largest wave scale V^2 / g
     float kL = kLen * L;
     float k2 = kLen * kLen;
 
     float2 kDir = k / kLen;
     float kDotW = dot(kDir, _WindDir);
-    float directional = (kDotW > 0.0) ? pow(kDotW, 2.0) : 0.05;
+    float directional = (kDotW > 0.0) ? (kDotW * kDotW) : 0.05;
 
-    // Phillips formula with amplitude constant A = 0.8 for meter-scale ocean waves
-    float A = 0.8;
+    // Phillips constant A_p calibrated for continuous spectral density S(k) d^2k
+    float A = 0.012;
     float phillips = A * exp(-1.0 / max(1e-4, kL * kL)) / (k2 * k2);
 
-    // Small wave damping
+    // Capillary / short-wave damping
     float l = 0.05;
     float damping = exp(-k2 * l * l);
 
-    // Swell component: Gaussian peak at swell frequency and direction
+    // Narrow-band swell component normalized so 2D integral over k-space scales with (_SwellStrength)^2
     float swell = 0.0;
     if (_SwellStrength > 0.01) {
-        float swellWavelength = max(8.0, _LengthScale1 * 0.28); // ~3-4 wavelengths across domain
+        float swellWavelength = max(8.0, lengthScale * 0.28); // ~3.5 wavelengths across domain
         float kSwell = 2.0 * PI / swellWavelength;
+        float sigmaK = max(0.015, 0.22 * kSwell);
         float dK = kLen - kSwell;
         float kDotS = dot(kDir, _SwellDir);
-        float swellDir = (kDotS > 0.0) ? pow(kDotS, 4.0) : 0.0;
-        swell = _SwellStrength * 0.45 * exp(-dK * dK * (swellWavelength * swellWavelength * 0.06)) * swellDir;
+        float swellDir = (kDotS > 0.0) ? pow(kDotS, 6.0) : 0.0;
+        // 2D polar integral of radial Gaussian * cos^6(theta) is ~(5*PI/16) * sqrt(2*PI) * sigmaK * kSwell
+        float norm2D = max(1e-5, 2.46 * sigmaK * kSwell);
+        float swellVariance = 0.08 * _SwellStrength * _SwellStrength;
+        swell = (swellVariance / norm2D) * exp(-0.5 * (dK * dK) / (sigmaK * sigmaK)) * swellDir;
     }
 
-    return (phillips * directional * damping + swell);
+    return phillips * directional * damping + swell;
 }
 
 [numthreads(8, 8, 1)]
 void CSGenerateSpectrum(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_N || id.y >= (uint)_N) return;
 
-    int halfN = int(uint(_N) >> 1);
+    uint n = (uint)_N;
+    int halfN = int(n >> 1);
     int kx = int(id.x) - halfN;
     int ky = int(id.y) - halfN;
 
-    float deltaK = 2.0 * PI / _LengthScale1;
+    // Zero out DC mode (kx=0, ky=0) and asymmetric Nyquist boundary (id.x==0 or id.y==0)
+    // so that every active mode k in {-halfN+1 .. halfN-1}^2 has an exact partner -k in the grid.
+    if ((kx == 0 && ky == 0) || id.x == 0u || id.y == 0u) {
+        _InitialSpectrumRW[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    float deltaK = 2.0 * PI / max(1e-3, _LengthScale1);
     float2 k = float2(kx, ky) * deltaK;
-    uint seed = id.y * _N + id.x;
-    float2 gauss = BoxMuller(seed);
 
-    float p = Phillips(k, _LengthScale1);
-    float h0 = sqrt(max(0.0, p) * 0.5) * gauss.x;
-    float h0i = sqrt(max(0.0, p) * 0.5) * gauss.y;
+    // Independent Gaussian draws for +k (at id) and -k (at idNeg = (N - id) % N)
+    uint seedPos = id.y * n + id.x;
+    uint2 idNeg = uint2((n - id.x) % n, (n - id.y) % n);
+    uint seedNeg = idNeg.y * n + idNeg.x;
 
-    float2 kNeg = -k;
-    float pNeg = Phillips(kNeg, _LengthScale1);
-    float h0Neg = sqrt(max(0.0, pNeg) * 0.5) * gauss.x;
-    float h0NegI = -sqrt(max(0.0, pNeg) * 0.5) * gauss.y;
+    float2 gaussPos = BoxMuller(seedPos);
+    float2 gaussNeg = BoxMuller(seedNeg);
 
-    _InitialSpectrumRW[id.xy] = float4(h0, h0i, h0Neg, h0NegI);
+    // Discrete spectral amplitude includes deltaK = sqrt(dkx * dky) for N-independence
+    float ampPos = sqrt(max(0.0, Phillips(k, _LengthScale1)) * 0.5) * deltaK;
+    float ampNeg = sqrt(max(0.0, Phillips(-k, _LengthScale1)) * 0.5) * deltaK;
+
+    float2 h0Pos = ampPos * gaussPos;
+    // Conjugate of h0(-k): Re is +gaussNeg.x, Im is -gaussNeg.y
+    float2 h0ConjNeg = float2(ampNeg * gaussNeg.x, -ampNeg * gaussNeg.y);
+
+    _InitialSpectrumRW[id.xy] = float4(h0Pos, h0ConjNeg);
 }
 
 [numthreads(8, 8, 1)]
 void CSTimeEvolution(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_N || id.y >= (uint)_N) return;
 
-    int halfN = int(uint(_N) >> 1);
+    uint n = (uint)_N;
+    int halfN = int(n >> 1);
     int kx = int(id.x) - halfN;
     int ky = int(id.y) - halfN;
 
-    float2 k = 2.0 * PI * float2(kx, ky) / _LengthScale1;
+    if ((kx == 0 && ky == 0) || id.x == 0u || id.y == 0u) {
+        _SpectrumPacked[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    float deltaK = 2.0 * PI / max(1e-3, _LengthScale1);
+    float2 k = float2(kx, ky) * deltaK;
     float kLen = length(k);
     float omega = sqrt(G * max(1e-4, kLen));
 
@@ -135,6 +159,7 @@ void CSTimeEvolution(uint3 id : SV_DispatchThreadID) {
     float sinOmegaT = sin(omega * _Time);
 
     // h(k, t) = h0(k) * e^(i*wt) + h0*(-k) * e^(-i*wt)
+    // Since h0ConjNegK = conj(h0(-k)), h(k, t) satisfies exact Hermitian symmetry: h(-k, t) = conj(h(k, t))
     float2 term1 = float2(
         h0k.x * cosOmegaT - h0k.y * sinOmegaT,
         h0k.x * sinOmegaT + h0k.y * cosOmegaT
@@ -146,18 +171,22 @@ void CSTimeEvolution(uint3 id : SV_DispatchThreadID) {
 
     float2 h = term1 + term2;
 
-    // Height spectrum Dy
-    _SpectrumDy[id.xy] = float4(h.x, h.y, 0.0, 0.0);
-
     // Wavenumber-balanced choppy displacement spectrum (+i * (k / |k|) * h for +i IFFT convention):
-    // Converges horizontal particles toward wave crests (J < 1 at crests, J > 1 in troughs)
+    // Since kUnit(-k) = -kUnit(k) and i * (-1) * conj(h) = conj(i * h), dx and dz are also Hermitian symmetric!
     float kRef = 0.42;
     float choppyWeight = 2.1 / (1.0 + (kLen / kRef));
     float2 kUnit = (kLen > 1e-5) ? (k / kLen) * choppyWeight : float2(0.0, 0.0);
     float2 dx = float2(-kUnit.x * h.y, kUnit.x * h.x);
     float2 dz = float2(-kUnit.y * h.y, kUnit.y * h.x);
 
-    _SpectrumDxDz[id.xy] = float4(dx.x, dx.y, dz.x, dz.y);
+    // Pack two Hermitian-symmetric spectra into one complex float2:
+    // Z1 = h + i * dx = (h.x - dx.y, h.y + dx.x)
+    // After unnormalized 2D IFFT (+i*k*x), Re(Z1) = Dy and Im(Z1) = Dx!
+    // Z2 = dz = (dz.x, dz.y), so Re(Z2) = Dz and Im(Z2) = 0 (residual).
+    float2 z1 = float2(h.x - dx.y, h.y + dx.x);
+    float2 z2 = dz;
+
+    _SpectrumPacked[id.xy] = float4(z1, z2);
 }
 
 // Stockham autosort 1D IFFT along X
@@ -229,13 +258,15 @@ void CSPackOceanData(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_N || id.y >= (uint)_N) return;
     int2 pos = int2(id.xy);
 
-    // Centering sign (-1)^(x+y) and 1/N normalization
+    // Centering sign (-1)^(x+y) for shifted wavenumber index (kx = id.x - N/2, ky = id.y - N/2)
+    // No 1/N factor here: deltaK = 2*PI/L is already multiplied into CSGenerateSpectrum,
+    // so the unnormalized IFFT sum directly yields physical meters independent of resolution N.
     float sign = ((pos.x + pos.y) & 1) ? -1.0 : 1.0;
-    float norm = 1.0 / float(_N);
 
-    float dy = _SpectrumDy[pos].x * sign * norm;
-    float dx = _SpectrumDxDz[pos].x * sign * _Choppiness * norm;
-    float dz = _SpectrumDxDz[pos].z * sign * _Choppiness * norm;
+    float4 packedC = _SpectrumPacked[pos] * sign;
+    float dy = packedC.x;
+    float dx = packedC.y * _Choppiness;
+    float dz = packedC.z * _Choppiness;
 
     // Finite differences for Jacobian and normal
     uint mask = uint(_N - 1);
@@ -249,15 +280,20 @@ void CSPackOceanData(uint3 id : SV_DispatchThreadID) {
     float signD = ((pos.x + d) & 1) ? -1.0 : 1.0;
     float signU = ((pos.x + u) & 1) ? -1.0 : 1.0;
 
+    float4 packedL = _SpectrumPacked[int2(l, pos.y)] * signL;
+    float4 packedR = _SpectrumPacked[int2(r, pos.y)] * signR;
+    float4 packedD = _SpectrumPacked[int2(pos.x, d)] * signD;
+    float4 packedU = _SpectrumPacked[int2(pos.x, u)] * signU;
+
     float gridDist = 2.0 * (_LengthScale1 / float(_N));
 
-    float dy_dx = (_SpectrumDy[int2(r, pos.y)].x * signR - _SpectrumDy[int2(l, pos.y)].x * signL) * norm / gridDist;
-    float dy_dz = (_SpectrumDy[int2(pos.x, u)].x * signU - _SpectrumDy[int2(pos.x, d)].x * signD) * norm / gridDist;
+    float dy_dx = (packedR.x - packedL.x) / gridDist;
+    float dy_dz = (packedU.x - packedD.x) / gridDist;
 
-    float dx_dx = (_SpectrumDxDz[int2(r, pos.y)].x * signR - _SpectrumDxDz[int2(l, pos.y)].x * signL) * _Choppiness * norm / gridDist;
-    float dz_dz = (_SpectrumDxDz[int2(pos.x, u)].z * signU - _SpectrumDxDz[int2(pos.x, d)].z * signD) * _Choppiness * norm / gridDist;
-    float dx_dz = (_SpectrumDxDz[int2(pos.x, u)].x * signU - _SpectrumDxDz[int2(pos.x, d)].x * signD) * _Choppiness * norm / gridDist;
-    float dz_dx = (_SpectrumDxDz[int2(r, pos.y)].z * signR - _SpectrumDxDz[int2(l, pos.y)].z * signL) * _Choppiness * norm / gridDist;
+    float dx_dx = (packedR.y - packedL.y) * _Choppiness / gridDist;
+    float dz_dz = (packedU.z - packedD.z) * _Choppiness / gridDist;
+    float dx_dz = (packedU.y - packedD.y) * _Choppiness / gridDist;
+    float dz_dx = (packedR.z - packedL.z) * _Choppiness / gridDist;
 
     // Jacobian J = (1 + lambda * dx/dx)(1 + lambda * dz/dz) - lambda^2 * (dx/dz * dz/dx)
     float J = (1.0 + dx_dx) * (1.0 + dz_dz) - (dx_dz * dz_dx);

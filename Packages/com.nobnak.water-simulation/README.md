@@ -74,12 +74,13 @@ $$
   - $\eta$: Surface elevation [m]
   - $c$: Wave phase speed [m/s]
   - $\gamma$: Damping rate [1/s]
-- **Numerical Scheme**: 9-point isotropic Laplacian FDM + Verlet / Leapfrog time-stepping to eliminate grid-axial propagation anisotropy.
+- **Numerical Scheme**: 9-point isotropic Laplacian FDM + `fp32` (`RGFloat`) symplectic Leapfrog time-stepping. Preserves physical velocity $v = \partial_{t}\eta$ explicitly across variable $\Delta t$ and wave speed $c$ without artificial time-step discontinuities. The fp32 upgrade reduces 10-second cumulative truncation drift for long waves from $223.78\%$ down to $0.00008\%$.
 - **Key Features**:
   - **CFL Auto-Substepping**: Automatically subdivides time steps to satisfy $\Delta t \le 0.95 \frac{\Delta x}{\sqrt{2}\,c}$, ensuring unconditional numerical stability.
   - **Sponge Absorbing Perimeter**: Suppresses boundary reflections smoothly.
-  - **Obstacle Masks**: Single slit, double slit, circular pillars, or custom obstacle mask texture.
-  - **Excitation Modes**: Single impulse, periodic pulse oscillator, moving wave source, interactive mouse clicking.
+  - **Obstacle Masks**: Single slit, double slit, circular pillars, or custom obstacle mask texture (Dirichlet or Neumann reflection).
+  - **Excitation Modes**: Compact $C^{2}$ polynomial bell impulse (eliminating high-frequency Gibbs ringing), periodic pulse oscillator, moving wave source, interactive mouse clicking.
+  - **Physical Normal Decoupling**: Displays true unit physical normals in `NormalVisual` mode, applying visual normal exaggeration only within the realistic shading pass.
 - **Representative Scene**: `01_WaveEquation` (Ripples and Obstacles)
   - Demonstrates circular ripples passing through a double-slit barrier with clear diffraction, interference fringes, and wall reflection.
 - **Scope & Limitations**:
@@ -100,21 +101,17 @@ $$
   - Momentum:
 
 $$
-\left(1 - \alpha \frac{h^{2}}{6} \nabla^{2}\right)\frac{\partial \mathbf{u}}{\partial t} = -g \nabla \eta - (\mathbf{u} \cdot \nabla)\mathbf{u} - \frac{c_{f}}{h + \eta}\mathbf{u} + \mathbf{S_{u}}
+\left(I - \alpha \frac{h^{2}}{3} \nabla^{2}\right)\frac{\partial \mathbf{u}}{\partial t} = -g \nabla \eta - (\mathbf{u} \cdot \nabla)\mathbf{u} - \frac{c_{f}}{h + \eta}\mathbf{u} + \mathbf{S_{u}}
 $$
 
   - $h(\mathbf{x})$: Still water depth [m]
   - $\mathbf{u}$: Depth-averaged horizontal velocity vector [m/s]
   - $c_{f}$: Seabed friction coefficient
-- **Numerical Stabilization (`fp32` Symmetric MacCormack + Helmholtz Dispersion Inverter)**:
+  - Standard Peregrine (1967) $1/3$ dispersion coefficient with phase velocity error at $kh=1$ of only $-0.764\%$ (substantially improved from $+6.09\%$ with the previous ad-hoc $1/6$ model).
+- **Numerical Stabilization (`fp32` Symmetric MacCormack + ADI Tridiagonal PCR Dispersion Solver)**:
   - Explicit evaluation of the 3rd-order spatial derivative $\nabla(\nabla^{2} \eta)$ suffers from severe stiffness ($\propto \Delta x^{-3}$), requiring $\Delta t < 10^{-6}\ \mathrm{s}$ and causing explosive checkerboard spikes.
-  - This package combines **`fp32` (`ARGBFloat` / `RGFloat`) Symmetric MacCormack Predictor-Corrector** (alternating forward/backward spatial difference direction every substep) with an implicit Helmholtz formulation of the dispersive operator:
-
-$$
-\left(I - \alpha \frac{h^{2}}{6} \nabla^{2}\right)\mathbf{a} = \bar{\mathbf{f}}
-$$
-
-    inverted via 6-pass Jacobi relaxation, yielding unconditionally stable frequency-dispersive wave trains across any grid resolution.
+  - The previous artificial clamp $\beta \le 6$ (which discarded up to $99.4\%$ of physical dispersion on refined grids) is removed. The 2D Peregrine dispersion operator is factored into an unconditionally stable Alternating Direction Implicit (Peaceman-Rachford ADI) system solved directly in `groupshared` memory via Parallel Cyclic Reduction (PCR).
+  - Dispersion is solved symmetrically on both predictor and corrector stages, applying a Heun 2nd-order velocity update with verified $O(\Delta t^{2})$ convergence ($3.99\times$ error reduction per halving of $\Delta t$).
 - **Key Features**:
   - **Procedural Bathymetry**: Shoal and Cape, Flat bed, Linear Slope, or custom bathymetry texture.
   - **Rich Wave Excitation & Soliton Modes**: Offshore progressive wavemaker plus planar solitary waves (Planar Soliton: ${\mathrm{sech}}^{2}$) and circular Gaussian pulses (Circular Pulse) across single-shot, periodic, moving source, and interactive mouse click/drag modes via non-destructive GPU injection (`CSAddImpulse`).
@@ -129,22 +126,17 @@ $$
 ### Method 3: Spectral / FFT Ocean Surface (`FFTOceanSimulation`) - Task 4
 Deep-ocean statistical spectral model for vast open-water expanses where wind waves and distant swell coexist.
 
-- **Statistical Ocean Wave Spectrum (Tessendorf 2001 / Phillips Spectrum)**:
+- **Statistical Ocean Wave Spectrum (Tessendorf 2001 / Phillips Spectrum) & Normalization**:
 
 $$
 P_{h}(\mathbf{k}) = A \frac{\exp(-1 / (k L)^{2})}{k^{4}} (\hat{\mathbf{k}} \cdot \hat{\mathbf{w}})^{2} \exp(-k^{2} l_{0}^{2})
 $$
 
-  - $L = V^{2} / g$: Maximum wave scale determined by wind speed $V$
-  - Swell component: Superimposes an independent directional Gaussian swell peak representing waves arriving from distant storms.
-- **Dispersion Time Evolution**:
-
-$$
-\omega(\mathbf{k}) = \sqrt{g \|\mathbf{k}\|}, \quad \tilde{h}(\mathbf{k}, t) = h_{0}(\mathbf{k}) e^{i \omega t} + h_{0}^{\ast}(-\mathbf{k}) e^{-i \omega t}
-$$
-
-- **Radix-2 Stockham Autosort 2D IFFT**:
-  - Compute Shader implementation requiring zero bit-reversal permutations, executing with coalesced memory access.
+  - Exact Hermitian conjugate symmetry enforced via periodic negative-wavenumber mapping $i_{-} = (N - i) \bmod N, j_{-} = (N - j) \bmod N$, dropping imaginary post-IFFT residual to $3.45 \times 10^{-16}$ (machine precision).
+  - Discrete amplitude scaling by $\Delta k = \frac{2\pi}{L}$ guarantees resolution-independent significant wave height ($H_{s} \approx 3.63\ \mathrm{m}$ across $N = 64, 128, 256, 512$).
+- **Complex-Packed Single 2D IFFT Pass**:
+  - Packs $(\tilde{D}_{y} + i\tilde{D}_{x})$ into `RG` and $\tilde{D}_{z}$ into `BA`, evaluating all 3 displacement fields in a single 4-channel 2D IFFT with zero `Graphics.Blit` passes ($2\log_{2} N + 2$ dispatches per step).
+  - Setter equality checks and dirty flags eliminate redundant spectrum regeneration during steady simulation (`RedundantSpectrumRegen = 0`).
 - **Wavenumber-Weighted Choppy Waves and Exact Lagrangian Normals**:
 
 $$
@@ -178,19 +170,23 @@ Five sample scenes are included in the package:
 
 ## 5. Performance Benchmarks
 
-Measured on Intel(R) Arc(TM) 140V GPU (16 GB VRAM), Windows 11, Unity 6 (6000.3.27f1), URP 17.3.0 at 1280×720 fullscreen rendering resolution:
+Measured on Intel(R) Arc(TM) 140V GPU (16 GB VRAM), Windows 11, Unity 6 (6000.3.27f1) batchmode execution (from `Docs/BenchmarkResults.csv`):
 
-| Simulation Method | Grid Resolution | Physical Step $dt$ | GPU Dispatch Time | Render Framerate |
-| :--- | :---: | :---: | :---: | :---: |
-| **2D Linear Wave Equation** | $256 \times 256$ | $0.003\ \mathrm{s}$ (substeps) | $0.15\ \mathrm{ms}$ | $140+\ \mathrm{FPS}$ |
-| **2D Linear Wave Equation** | $512 \times 512$ | $0.0015\ \mathrm{s}$ (substeps) | $0.38\ \mathrm{ms}$ | $120+\ \mathrm{FPS}$ |
-| **Boussinesq System (`fp32`, 6-step Jacobi)** | $256 \times 256$ | $0.016\ \mathrm{s}$ (substeps) | $0.48\ \mathrm{ms}$ | $120+\ \mathrm{FPS}$ |
-| **Boussinesq System (`fp32`, 6-step Jacobi)** | $512 \times 512$ | $0.008\ \mathrm{s}$ (substeps) | $1.35\ \mathrm{ms}$ | $95+\ \mathrm{FPS}$ |
-| **Spectral / FFT Ocean** | $256 \times 256$ | $0.033\ \mathrm{s}$ (time evolution) | $0.35\ \mathrm{ms}$ | $130+\ \mathrm{FPS}$ |
-| **Spectral / FFT Ocean** | $512 \times 512$ | $0.033\ \mathrm{s}$ (time evolution) | $0.95\ \mathrm{ms}$ | $105+\ \mathrm{FPS}$ |
-| **05 Overview (All 3 Active)** | $256 \times 256 \times 3$ | Method-specific $dt$ | $0.98\ \mathrm{ms}$ (Total) | $110+\ \mathrm{FPS}$ |
+| Simulation Method | Grid Resolution | Numerical Mode / Scheme | Substeps | Dispatches | Wall Time per Step |
+| :--- | :---: | :--- | :---: | :---: | :---: |
+| **2D Linear Wave Equation** | $256 \times 256$ | RGFloat Symplectic | $2$ | $3$ | **$0.183\ \mathrm{ms}$** |
+| **2D Linear Wave Equation** | $512 \times 512$ | RGFloat Symplectic | $3$ | $4$ | **$0.298\ \mathrm{ms}$** |
+| **Boussinesq System** | $256 \times 256$ | Peregrine ADI PCR (2nd-order) | $2$ | $17$ | **$1.055\ \mathrm{ms}$** |
+| **Boussinesq System** | $512 \times 512$ | Peregrine ADI PCR (2nd-order) | $4$ | $33$ | **$4.544\ \mathrm{ms}$** |
+| **Spectral / FFT Ocean** | $256 \times 256$ | Single-Pass Packed IFFT | $1$ | $18$ | **$0.317\ \mathrm{ms}$** |
+| **Spectral / FFT Ocean** | $512 \times 512$ | Single-Pass Packed IFFT | $1$ | $20$ | **$0.869\ \mathrm{ms}$** |
 
-> **Note**: Simulation time stepping is decoupled from rendering framerate so integration accuracy is preserved even under heavy rendering load.
+#### Composite Scene 04 Breakdown (512×512 Dual Simulation)
+- **1_SolverOnly** (WaveEq + Boussinesq each 512²): **$12.73\ \mathrm{ms}$**
+- **2_SolverPlusRender** (Solvers + 1280×720 camera rendering): **$8.30\ \mathrm{ms}$**
+- **3_SolverRenderProfileAsync** (Solvers + Render + `AsyncGPUReadback` Profile): **$11.80\ \mathrm{ms}$**
+
+> **Note**: Simulation time stepping is decoupled from rendering framerate so integration accuracy is preserved even under heavy rendering load. Cross-section profile display uses `AsyncGPUReadback` and cached static bathymetry to eliminate CPU-GPU pipeline bubbles.
 
 ---
 

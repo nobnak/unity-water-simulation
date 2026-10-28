@@ -19,7 +19,7 @@ namespace Nobnak.WaterSimulation {
         [Range(0f, 3f)]
         [SerializeField] private float synchronizedTimeScale = 1.0f;
         [SerializeField] private WaterRenderer.VisualMode synchronizedVisualMode = WaterRenderer.VisualMode.Realistic;
-        [Range(0.2f, 5f)]
+        [Range(0.2f, 12f)]
         [SerializeField] private float profileVerticalScale = 1.0f;
 
         [Header("UI Overlay")]
@@ -166,8 +166,8 @@ namespace Nobnak.WaterSimulation {
 
             if (hasProfiles) {
                 GUILayout.Space(4);
-                GUILayout.Label($"Profile Scale (断面高さ強調): {profileVerticalScale:F2}x");
-                profileVerticalScale = GUILayout.HorizontalSlider(profileVerticalScale, 0.2f, 4.0f);
+                GUILayout.Label($"Profile Scale (断面高さ強調): {profileVerticalScale:F1}x");
+                profileVerticalScale = GUILayout.HorizontalSlider(profileVerticalScale, 0.2f, 12.0f);
             }
 
             GUILayout.Space(6);

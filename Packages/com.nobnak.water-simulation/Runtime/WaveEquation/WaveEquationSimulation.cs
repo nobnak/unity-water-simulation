@@ -5,6 +5,7 @@ namespace Nobnak.WaterSimulation {
     /// <summary>
     /// 2D Linear Wave Equation simulation.
     /// Fast and responsive ripple simulation with obstacle reflection, diffraction, and interference.
+    /// Stores (eta, velocity) in fp32x2 (RGFloat) with symplectic Leapfrog time integration.
     /// </summary>
     [ExecuteAlways]
     public class WaveEquationSimulation : WaterSimulationBase {
@@ -46,6 +47,8 @@ namespace Nobnak.WaterSimulation {
 
         [Header("Obstacles & Slits")]
         [SerializeField] private ObstaclePattern obstaclePattern = ObstaclePattern.DoubleSlit;
+        [Tooltip("Use Neumann free-end reflection (zero normal gradient) at obstacles instead of Dirichlet fixed-end.")]
+        [SerializeField] private bool obstacleNeumannReflection = true;
         [SerializeField] private Texture2D customObstacleTexture;
 
         [Header("Wave Source / Excitation")]
@@ -103,9 +106,15 @@ namespace Nobnak.WaterSimulation {
         public ObstaclePattern Pattern {
             get => obstaclePattern;
             set {
+                if (obstaclePattern == value) return;
                 obstaclePattern = value;
                 UpdateObstacleTexture();
             }
+        }
+
+        public bool ObstacleNeumannReflection {
+            get => obstacleNeumannReflection;
+            set => obstacleNeumannReflection = value;
         }
         #endregion
 
@@ -125,6 +134,7 @@ namespace Nobnak.WaterSimulation {
         #region public interface
         public void TriggerImpulse(Vector2 uvPosition, float amplitude, float radius) {
             TriggerImpulseOnTarget(CurrentStateTex, uvPosition, amplitude, radius);
+            ComputeNormalAndPackOutput();
         }
 
         public void TriggerImpulse() {
@@ -132,13 +142,14 @@ namespace Nobnak.WaterSimulation {
         }
 
         public void TriggerImpulseOnTarget(RenderTexture targetTex, Vector2 uvPosition, float amplitude, float radius) {
-            if (waveShader == null || targetTex == null) return;
+            if (waveShader == null || targetTex == null || obstacleTex == null) return;
 
             waveShader.SetInt(PropWidth, resolution.x);
             waveShader.SetInt(PropHeight, resolution.y);
             waveShader.SetVector(PropInputCenter, new Vector4(uvPosition.x, uvPosition.y, 0, 0));
             waveShader.SetFloat(PropInputRadius, radius);
             waveShader.SetFloat(PropInputStrength, amplitude);
+            waveShader.SetTexture(kernelImpulse, PropObstacleTex, obstacleTex);
             waveShader.SetTexture(kernelImpulse, PropNextState, targetTex);
 
             DispatchCompute(kernelImpulse);
@@ -162,11 +173,12 @@ namespace Nobnak.WaterSimulation {
             int w = resolution.x;
             int h = resolution.y;
 
-            stateTexA = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
-            stateTexB = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
+            // RGFloat (fp32x2, 8 B/pixel): R = eta [m], G = vertical velocity v [m/s]
+            stateTexA = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
+            stateTexB = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
             normalTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
             waterDataTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBHalf);
-            obstacleTex = CreateSimulationTexture(w, h, RenderTextureFormat.R8);
+            obstacleTex = CreateSimulationTexture(w, h, RenderTextureFormat.R8, FilterMode.Point);
 
             CacheKernels();
         }
@@ -193,6 +205,7 @@ namespace Nobnak.WaterSimulation {
             movingPhase = 0f;
             pulseTimer = 0f;
             pingPong = false;
+            lastDispatchCount = 0;
 
             waveShader.SetInt(PropWidth, resolution.x);
             waveShader.SetInt(PropHeight, resolution.y);
@@ -209,7 +222,7 @@ namespace Nobnak.WaterSimulation {
             UpdateObstacleTexture();
 
             if (sourceMode == InputMode.SingleImpulse || sourceMode == InputMode.ContinuousOscillator) {
-                TriggerImpulse(sourceCenter, sourceAmplitude, sourceRadius);
+                TriggerImpulseOnTarget(CurrentStateTex, sourceCenter, sourceAmplitude, sourceRadius);
             }
             ComputeNormalAndPackOutput();
         }
@@ -218,9 +231,13 @@ namespace Nobnak.WaterSimulation {
             if (waveShader == null || stateTexA == null) return;
 
             float dx = areaSize.x / resolution.x;
-            // CFL stability check: dt <= dx / (sqrt(2) * c)
-            float maxDt = (dx / (math.SQRT2 * waveSpeed)) * 0.95f;
+            float dz = areaSize.y / resolution.y;
+            float minGrid = math.min(dx, dz);
+
+            // CFL stability check for 9-point Laplacian: dt <= min(dx,dz) * sqrt(3/8) / c (~0.612 * dx / c)
+            float maxDt = (minGrid / (math.SQRT2 * waveSpeed)) * 0.85f;
             int subSteps = math.max(1, (int)math.ceil(dt / maxDt));
+            lastSubStepCount = subSteps;
             float subDt = dt / subSteps;
 
             for (int s = 0; s < subSteps; s++) {
@@ -238,16 +255,19 @@ namespace Nobnak.WaterSimulation {
             RenderTexture next    = NextStateTex;
 
             float dx = areaSize.x / resolution.x;
+            float dz = areaSize.y / resolution.y;
 
             waveShader.SetInt(PropWidth, resolution.x);
             waveShader.SetInt(PropHeight, resolution.y);
             waveShader.SetFloat(PropDeltaTime, subDt);
             waveShader.SetFloat(PropGridSpacing, dx);
+            waveShader.SetFloat(PropGridSpacingZ, dz);
             waveShader.SetFloat(PropWaveSpeed, waveSpeed);
             waveShader.SetFloat(PropDamping, damping);
             waveShader.SetFloat(PropSpongeWidth, spongeWidth);
             waveShader.SetFloat(PropSpongeStrength, spongeStrength);
             waveShader.SetInt(PropIsSpongeEnabled, enableSpongeBoundary ? 1 : 0);
+            waveShader.SetInt(PropObstacleNeumann, obstacleNeumannReflection ? 1 : 0);
 
             waveShader.SetTexture(kernelStep, PropCurrentState, current);
             waveShader.SetTexture(kernelStep, PropNextState, next);
@@ -271,7 +291,6 @@ namespace Nobnak.WaterSimulation {
                 }
             } else if (sourceMode == InputMode.MovingSource) {
                 movingPhase += movingSourceSpeed * subDt;
-                // Move along an oval or figure-8 path
                 float mx = 0.5f + 0.3f * math.cos(movingPhase);
                 float mz = 0.5f + 0.2f * math.sin(movingPhase * 2f);
                 pulseTimer += subDt;
@@ -285,10 +304,12 @@ namespace Nobnak.WaterSimulation {
         private void ComputeNormalAndPackOutput() {
             RenderTexture current = CurrentStateTex;
             float dx = areaSize.x / resolution.x;
+            float dz = areaSize.y / resolution.y;
 
             waveShader.SetInt(PropWidth, resolution.x);
             waveShader.SetInt(PropHeight, resolution.y);
             waveShader.SetFloat(PropGridSpacing, dx);
+            waveShader.SetFloat(PropGridSpacingZ, dz);
             waveShader.SetTexture(kernelNormal, PropNextState, current);
             waveShader.SetTexture(kernelNormal, PropNormalTex, normalTex);
             waveShader.SetTexture(kernelNormal, PropWaterDataTex, waterDataTex);
@@ -296,9 +317,10 @@ namespace Nobnak.WaterSimulation {
         }
 
         private void DispatchCompute(int kernel) {
-            int gx = math.max(1, resolution.x / 8);
-            int gy = math.max(1, resolution.y / 8);
+            int gx = math.max(1, (resolution.x + 7) / 8);
+            int gy = math.max(1, (resolution.y + 7) / 8);
             waveShader.Dispatch(kernel, gx, gy, 1);
+            lastDispatchCount++;
         }
 
         private void UpdateObstacleTexture() {
@@ -306,12 +328,16 @@ namespace Nobnak.WaterSimulation {
 
             int w = resolution.x;
             int h = resolution.y;
-            var pixels = new Color[w * h];
 
+            if (obstaclePattern == ObstaclePattern.CustomTexture && customObstacleTexture != null) {
+                Graphics.Blit(customObstacleTexture, obstacleTex);
+                return;
+            }
+
+            var pixels = new Color[w * h];
             for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.black;
 
             if (obstaclePattern == ObstaclePattern.SingleSlit || obstaclePattern == ObstaclePattern.DoubleSlit) {
-                // Wall across middle Z (y in texture)
                 int wallY = (int)(h * 0.5f);
                 int wallThick = math.max(2, h / 64);
                 int slitHalfWidth = math.max(2, w / 40);
@@ -331,12 +357,11 @@ namespace Nobnak.WaterSimulation {
                         if (obstaclePattern == ObstaclePattern.DoubleSlit && math.abs(x - slit2) <= slitHalfWidth) isSlit = true;
 
                         if (!isSlit) {
-                            pixels[y * w + x] = Color.white; // 1 = obstacle
+                            pixels[y * w + x] = Color.white;
                         }
                     }
                 }
             } else if (obstaclePattern == ObstaclePattern.ObstaclePillars) {
-                // Pillars / breakwater blocks
                 float2 c1 = new float2(w * 0.4f, h * 0.5f);
                 float2 c2 = new float2(w * 0.6f, h * 0.5f);
                 float r = w * 0.06f;
@@ -401,11 +426,13 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropHeight = Shader.PropertyToID("_Height");
         private static readonly int PropDeltaTime = Shader.PropertyToID("_DeltaTime");
         private static readonly int PropGridSpacing = Shader.PropertyToID("_GridSpacing");
+        private static readonly int PropGridSpacingZ = Shader.PropertyToID("_GridSpacingZ");
         private static readonly int PropWaveSpeed = Shader.PropertyToID("_WaveSpeed");
         private static readonly int PropDamping = Shader.PropertyToID("_Damping");
         private static readonly int PropSpongeWidth = Shader.PropertyToID("_SpongeWidth");
         private static readonly int PropSpongeStrength = Shader.PropertyToID("_SpongeStrength");
         private static readonly int PropIsSpongeEnabled = Shader.PropertyToID("_IsSpongeEnabled");
+        private static readonly int PropObstacleNeumann = Shader.PropertyToID("_ObstacleNeumann");
         private static readonly int PropInputCenter = Shader.PropertyToID("_InputCenter");
         private static readonly int PropInputRadius = Shader.PropertyToID("_InputRadius");
         private static readonly int PropInputStrength = Shader.PropertyToID("_InputStrength");

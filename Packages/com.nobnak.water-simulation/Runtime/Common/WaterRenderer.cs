@@ -31,6 +31,8 @@ namespace Nobnak.WaterSimulation {
         [SerializeField] private Material waterMaterial;
         [SerializeField] private float heightMapRange = 2.0f;
         [SerializeField] private float displacementScale = 1.0f;
+        [Range(0.5f, 4.0f)]
+        [SerializeField] private float normalExaggeration = 2.0f;
         #endregion
 
         #region private fields
@@ -56,6 +58,14 @@ namespace Nobnak.WaterSimulation {
             get => visualizationMode;
             set {
                 visualizationMode = value;
+                UpdateMaterialProperties();
+            }
+        }
+
+        public float NormalExaggeration {
+            get => normalExaggeration;
+            set {
+                normalExaggeration = math.clamp(value, 0.5f, 4.0f);
                 UpdateMaterialProperties();
             }
         }
@@ -137,6 +147,7 @@ namespace Nobnak.WaterSimulation {
             propBlock.SetFloat(PropVisualMode, (float)visualizationMode);
             propBlock.SetFloat(PropHeightMapRange, heightMapRange);
             propBlock.SetFloat(PropDisplacementScale, displacementScale);
+            propBlock.SetFloat(PropNormalExaggeration, normalExaggeration);
 
             meshRenderer.SetPropertyBlock(propBlock);
         }
@@ -234,6 +245,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropVisualMode = Shader.PropertyToID("_VisualMode");
         private static readonly int PropHeightMapRange = Shader.PropertyToID("_HeightMapRange");
         private static readonly int PropDisplacementScale = Shader.PropertyToID("_DisplacementScale");
+        private static readonly int PropNormalExaggeration = Shader.PropertyToID("_NormalExaggeration");
         #endregion
     }
 }

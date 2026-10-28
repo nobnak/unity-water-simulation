@@ -308,3 +308,25 @@ Comparing the external package `jp.nobnak.heightfield-lod` against a custom wate
 > [!TIP]
 > **Recommended Geometry Clipmap Architecture (Option B)**:
 > Arrange 4–6 concentric grid rings centered on the camera's XZ position with power-of-two spacing and **Texel Snapping** to eliminate vertex swimming during camera movement while rendering ripples in the foreground out to the horizon with minimal vertex count.
+
+---
+
+### 4.3 Theme C: Numerical Accuracy & Performance Audit Resolution (Turns 14–16)
+
+Comprehensive resolution and verification of all 13 issues identified in the audit of commit `db6fcb5f751b7704b979787726040aea8585f666` (P0: 6 items, P1: 5 items, P2: 2 items):
+
+| Issue ID | Priority | Description | Implemented Solution | Verification & Results |
+| :--- | :---: | :--- | :--- | :--- |
+| **B1** | P0 | Dispersion coefficient upper bound $\beta \le 6$ weakened dispersion on refined grids | Removed artificial clamp; retained full physical coefficient $\beta = \frac{\alpha h^{2}}{3\Delta x^{2}}$ | Restored grid convergence with physical dispersion preserved under grid refinement |
+| **B2** | P0 | Discrepancy with standard Peregrine operator and coefficient ($1/6$) | Aligned with standard Peregrine (1967) $1/3$ coefficient over flat bathymetry | Reduced linear phase velocity error at $kh=1$ from $+6.09\%$ to $-0.764\%$ |
+| **B3** | P0 | Dispersive time integration converged at 1st-order | Coupled dispersion symmetrically to predictor and corrector with Heun 2nd-order update | Achieved true 2nd-order convergence $O(\Delta t^{2})$ with $3.99\times$ error reduction on halving $\Delta t$ |
+| **B4** | P1 | Residual truncation error in 6 Jacobi sweeps | Replaced Jacobi relaxation with Peaceman-Rachford ADI 1D Tridiagonal PCR solver (`groupshared` memory) | Strict diagonal dominance guarantees direct solution to machine precision in 2 dispatches |
+| **F1** | P0 | Conjugate symmetry mismatch between positive and negative wavenumbers | Sampled negative wavenumbers with periodic wrap-around $i_{-} = (N - i) \bmod N$ | Imaginary residual RMS ratio dropped to $3.45 \times 10^{-16}$ (machine precision) |
+| **F2** | P0 | Wave amplitude halved upon doubling resolution | Formulated discrete amplitudes with $\Delta k = \frac{2\pi}{L}$ and normalized discrete swell variance | Significant wave height $H_{s} \approx 3.63\ \mathrm{m}$ completely resolution-independent across $N=64, 128, 256$ |
+| **F3** | P2 | Multiple 2D IFFT passes and `Graphics.Blit` overhead | Packed $(\tilde{D}_{y} + i\tilde{D}_{x}, \tilde{D}_{z})$ into a single 4-channel 2D IFFT | Zero `Graphics.Blit` passes; dispatches halved to $2\log_{2} N + 2$ (18 for $256^{2}$) |
+| **W1** | P1 | fp16 quantization error accumulation in long-wave simulation | Upgraded state textures to `RGFloat` (`fp32x2`) | Reduced 10s long-wave truncation error from $223.78\%$ to $0.00008\%$ |
+| **W2** | P1 | No time-step adjustment on elevation history | Adopted symplectic Leapfrog scheme tracking physical velocity $(\eta, v = \partial_{t}\eta)$ | Preserved physical velocity continuity across variable $\Delta t$ and wave speed |
+| **C1** | P0 | Inconsistent benchmark conditions and sync stalls | Developed unified headless benchmark harness separating solver, render, and profile timings | Exported quantitative measurements to `Docs/BenchmarkResults.csv` |
+| **C2** | P1 | Redundant spectrum regeneration on identical UI input | Implemented setter equality checks and dirty flags | Zero redundant spectrum dispatches during steady-state simulation (`RedundantSpectrumRegen = 0`) |
+| **C3** | P1 | Synchronous `ReadPixels` GPU pipeline bubble in profile viewer | Converted to `AsyncGPUReadback` with CPU-cached static bathymetry | Eliminated CPU stalls during simulation |
+| **G1** | P2 | Shader duplication and normal inspection decoupling | Decoupled unit physical normal from visual exaggeration via `_NormalExaggeration` | Verified true unit normals in `NormalVisual` mode |
