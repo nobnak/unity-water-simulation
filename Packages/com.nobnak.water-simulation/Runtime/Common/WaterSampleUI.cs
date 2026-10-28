@@ -316,9 +316,15 @@ namespace Nobnak.WaterSimulation {
 
                 if (boussSim.IsDepthTooDeepForShallowWater) {
                     GUILayout.Label("<color=#ffaa40><size=10>⚠️ 水深が領域長の5%を超過（深水波領域）。群速度が低下し停留します。</size></color>");
+                    if (GUILayout.Button("Auto-Clamp Depth (水深を安全域に自動調整)")) {
+                        boussSim.ClampDepthToSafeLimit();
+                    }
                 }
                 if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.ContinuousWavemaker && boussSim.IsFrequencyAboveCutoff) {
                     GUILayout.Label($"<color=#ffaa40><size=10>⚠️ 周波数が遮断限界({boussSim.CutoffFrequency:F2}Hz)付近。波が沖へ進行できず停留・発振します。</size></color>");
+                    if (GUILayout.Button("Auto-Clamp Freq (周波数を安全域に自動調整)")) {
+                        boussSim.ClampFrequencyToSafeLimit();
+                    }
                 }
             } else if (simulation is FFTOceanSimulation fftSim) {
                 GUILayout.Space(4);

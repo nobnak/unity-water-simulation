@@ -203,6 +203,18 @@ namespace Nobnak.WaterSimulation {
         #endregion
 
         #region public interface
+        public void ClampDepthToSafeLimit() {
+            float maxSafeDepth = math.min(areaSize.x, areaSize.y) * 0.04f;
+            DeepWaterDepth = math.max(0.5f, maxSafeDepth);
+            if (shallowWaterDepth > deepWaterDepth * 0.5f) {
+                ShallowWaterDepth = deepWaterDepth * 0.25f;
+            }
+        }
+
+        public void ClampFrequencyToSafeLimit() {
+            WavemakerFrequency = CutoffFrequency * 0.6f;
+        }
+
         public void SetBathymetryType(BathymetryType type) {
             Bathymetry = type;
         }

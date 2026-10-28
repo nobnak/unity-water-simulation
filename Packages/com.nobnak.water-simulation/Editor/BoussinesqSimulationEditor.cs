@@ -16,6 +16,13 @@ namespace Nobnak.WaterSimulation.Editor {
                     $"Peregrine Boussinesq equations require shallow water (h / L <= 0.03 - 0.05, max ~{maxRecommendedDepth:F1} m) " +
                     "to prevent frequency saturation and wave trapping.",
                     MessageType.Warning);
+
+                if (GUILayout.Button("Auto-Clamp Depth to Safe Limit (水深を安全域に自動調整)")) {
+                    Undo.RecordObject(sim, "Auto-Clamp Boussinesq Water Depth");
+                    sim.ClampDepthToSafeLimit();
+                    EditorUtility.SetDirty(sim);
+                }
+                EditorGUILayout.Space(2);
             }
 
             if (sim.IsFrequencyAboveCutoff) {
@@ -25,6 +32,13 @@ namespace Nobnak.WaterSimulation.Editor {
                     $"({sim.CutoffFrequency:F2} Hz for depth {sim.DeepWaterDepth:F1} m).\n" +
                     "Frequencies above cutoff become evanescent (k^2 < 0) and cannot propagate into the pool, causing local oscillations.",
                     MessageType.Warning);
+
+                if (GUILayout.Button("Auto-Clamp Frequency to Safe Limit (周波数を安全域に自動調整)")) {
+                    Undo.RecordObject(sim, "Auto-Clamp Boussinesq Wave Frequency");
+                    sim.ClampFrequencyToSafeLimit();
+                    EditorUtility.SetDirty(sim);
+                }
+                EditorGUILayout.Space(2);
             }
 
             base.OnInspectorGUI();
