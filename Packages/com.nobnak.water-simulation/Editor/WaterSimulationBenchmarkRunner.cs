@@ -127,9 +127,44 @@ namespace Nobnak.WaterSimulation.Editor {
                     Object.DestroyImmediate(go);
                 }
 
-                // 2. Boussinesq Solver-Only (alpha = 1.0, Peregrine Tridiagonal PCR)
+                // 2a. Boussinesq Solver-Only (alpha = 1.0, 1 sweep ADI Peregrine Tridiagonal PCR)
                 {
-                    var go = new GameObject("Bench_Boussinesq");
+                    var go = new GameObject("Bench_Boussinesq_ADI");
+                    var sim = go.AddComponent<BoussinesqSimulation>();
+                    var so = new SerializedObject(sim);
+                    so.FindProperty("areaSize").vector2Value = new Vector2(100f, 100f);
+                    so.FindProperty("resolution").vector2IntValue = new Vector2Int(res, res);
+                    so.FindProperty("dispersionAlpha").floatValue = 1.0f;
+                    so.FindProperty("dispersionSweeps").intValue = 1;
+                    so.FindProperty("deepWaterDepth").floatValue = 3.5f;
+                    so.FindProperty("shallowWaterDepth").floatValue = 0.8f;
+                    so.FindProperty("autoPlay").boolValue = false;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+
+                    sim.enabled = false;
+                    sim.enabled = true;
+                    sim.ResetSimulation();
+
+                    for (int i = 0; i < warmupSteps; i++) sim.Step(dt);
+                    ForceGpuSync(sim.WaterDataTexture);
+
+                    var sw = Stopwatch.StartNew();
+                    for (int i = 0; i < measureSteps; i++) sim.Step(dt);
+                    ForceGpuSync(sim.WaterDataTexture);
+                    sw.Stop();
+
+                    double totalMs = sw.Elapsed.TotalMilliseconds;
+                    double avgMs = totalMs / measureSteps;
+                    sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                        "SolverOnly,Boussinesq,{0}x{0},Peregrine_ADI_1Sweep,{1},{2},{3},{4:F3},{5:F4},alpha=1_sweeps=1_h=3.5m",
+                        res, measureSteps, sim.LastSubStepCount, sim.LastDispatchCount, totalMs, avgMs));
+
+                    Object.DestroyImmediate(go);
+                }
+
+                // 2b. Boussinesq Solver-Only (alpha = 1.0, 2 sweeps Defect-Corrected Peregrine)
+                {
+                    var go = new GameObject("Bench_Boussinesq_DefectCorrected");
                     var sim = go.AddComponent<BoussinesqSimulation>();
                     var so = new SerializedObject(sim);
                     so.FindProperty("areaSize").vector2Value = new Vector2(100f, 100f);
@@ -156,7 +191,7 @@ namespace Nobnak.WaterSimulation.Editor {
                     double totalMs = sw.Elapsed.TotalMilliseconds;
                     double avgMs = totalMs / measureSteps;
                     sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                        "SolverOnly,Boussinesq,{0}x{0},Peregrine_TridiagPCR,{1},{2},{3},{4:F3},{5:F4},alpha=1_sweeps=2_h=3.5m",
+                        "SolverOnly,Boussinesq,{0}x{0},Peregrine_DefectCorrected_2Sweeps,{1},{2},{3},{4:F3},{5:F4},alpha=1_sweeps=2_h=3.5m",
                         res, measureSteps, sim.LastSubStepCount, sim.LastDispatchCount, totalMs, avgMs));
 
                     Object.DestroyImmediate(go);
@@ -266,11 +301,12 @@ namespace Nobnak.WaterSimulation.Editor {
                     steps, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds / steps));
             }
 
-            // Mode C: Solver + Render + ProfileViewer (AsyncGPUReadback + Cached Bathymetry)
+            // Mode C: Solver + Render + ProfileViewer (AsyncGPUReadback with AllowAsyncInEditMode)
             {
                 foreach (var p in profiles) {
                     p.enabled = true;
                     p.ForceSynchronousReadback = false;
+                    p.AllowAsyncInEditMode = true;
                 }
                 foreach (var s in sims) s.ResetSimulation();
                 if (cam != null) cam.Render();
@@ -287,8 +323,36 @@ namespace Nobnak.WaterSimulation.Editor {
                 ForceGpuSync(camRT);
                 sw.Stop();
 
+                bool wasSync = profiles.Length > 0 && profiles[0].LastReadbackWasSync;
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                    "Scene04_Separation,WaveEq+Boussinesq,512x512,3_SolverRenderProfileAsync,{0},1,0,{1:F3},{2:F4},AsyncReadback_CachedBathy",
+                    "Scene04_Separation,WaveEq+Boussinesq,512x512,3_SolverRenderProfileAsync,{0},1,0,{1:F3},{2:F4},ReadbackPath={3}",
+                    steps, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds / steps,
+                    wasSync ? "SynchronousFallback" : "AsyncGPUReadback"));
+            }
+
+            // Mode D: Solver + Render + ProfileViewer (Synchronous CPU Stalling Readback)
+            {
+                foreach (var p in profiles) {
+                    p.enabled = true;
+                    p.ForceSynchronousReadback = true;
+                    p.AllowAsyncInEditMode = false;
+                }
+                foreach (var s in sims) s.ResetSimulation();
+                if (cam != null) cam.Render();
+                ForceGpuSync(camRT);
+
+                var sw = Stopwatch.StartNew();
+                for (int i = 0; i < steps; i++) {
+                    foreach (var s in sims) s.Step(dt);
+                    foreach (var r in renderers) r.UpdateMaterialProperties();
+                    foreach (var p in profiles) p.SendMessage("LateUpdate", SendMessageOptions.DontRequireReceiver);
+                    if (cam != null) cam.Render();
+                }
+                ForceGpuSync(camRT);
+                sw.Stop();
+
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                    "Scene04_Separation,WaveEq+Boussinesq,512x512,4_SolverRenderProfileSync,{0},1,0,{1:F3},{2:F4},ReadbackPath=Synchronous_ForcedStall",
                     steps, sw.Elapsed.TotalMilliseconds, sw.Elapsed.TotalMilliseconds / steps));
             }
 

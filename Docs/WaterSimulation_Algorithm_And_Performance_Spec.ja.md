@@ -159,14 +159,20 @@ $$
 - $c_{f}$: 海底摩擦係数 (`_BedFriction`)
 - $S_{\eta},\ \mathbf{S_{u}} = (0, S_{w})^{\mathrm{T}}$: 内部造波ソース項
 
-### 3.1.1 物理的適用範囲と Froude 相似則（スケーリング設計基準）
-Peregrine Boussinesq 方程式は浅水長波長条件（$\mu = h/L \ll 1$）を前提とするモデルであり、短波長極限（$kh \to \infty$）において周波数が上限遮断周波数 $\omega_{\mathrm{cutoff}} = \sqrt{3g/h}$ に漸近し、群速度 $c_{g} = \frac{\sqrt{gh}}{(1 + \frac{1}{3}h^{2}k^{2})^{3/2}} \to 0$ となる物理的性質を持つ。
-そのため、領域サイズ $L_{\mathrm{domain}}$ を変更する際は、重力相似則（Froude 相似則）に基づき以下の設計基準を満たす必要がある：
+### 3.1.1 物理的適用範囲と相対水深 $kh$ 診断基準
+Peregrine Boussinesq 方程式は浅水〜中間水深波条件（$\mu = h/\lambda \le 0.16$、$kh \le 1.0$）を前提とする多項式分散モデルである。短波長極限（$kh \to \infty$）において周波数が上限遮断周波数 $\omega_{\mathrm{cutoff}} = \sqrt{3g/h}$（$f_{\mathrm{cutoff}} = \frac{1}{2\pi}\sqrt{3g/h}$）に漸近し、群速度 $c_{g} = \frac{\sqrt{gh}}{(1 + \frac{1}{3}h^{2}k^{2})^{3/2}} \to 0$ となる物理的性質を持つ。
+浅水性の物理的判定基準は領域長 $L$ ではなく、対象波の波長 $\lambda$ に対する水深比（相対水深 $kh = 2\pi h / \lambda$）によって一意に診断される：
 
-1. **水深比率基準**: 沖合最大水深 $h_{\mathrm{deep}} \le 0.03 \sim 0.05 \times \min(L_{x}, L_{z})$
-   （水深が領域長の 5% を超過すると波が深水波領域 $kh \gg 1$ となり、群速度がゼロに近づき波頭が停留・発振する）
-2. **遮断周波数基準**: 造波周波数 $f_{\mathrm{wavemaker}} < \frac{1}{2\pi}\sqrt{\frac{3g}{h_{\mathrm{deep}}}}$
-   （遮断周波数を超過すると $k^{2} < 0$ となり波がエバネッセント化し沖へ伝播できなくなる。インスペクターの `BoussinesqSimulationEditor` および `WaterSampleUI` にてリアルタイム警告表示を実施）
+1. **浅水波領域 ($kh < 0.31$, $h/\lambda < 0.05$)**:
+   Airy / NLSW 非分散長波極限。分散効果は微小であり、位相速度 $c \approx \sqrt{gh}$ で伝播する。
+2. **中間水深波領域 ($0.31 \le kh \le 1.0$, $h/\lambda \le 0.16$)**:
+   Peregrine (1967) 1/3 多項式分散モデルの妥当領域。微小振幅波に対する位相速度誤差は $< 2\%$（$kh=1.0$ で $-0.76\%$）であり、周波数分散・ソリトン伝播・浅水変形を高精度に再現する。
+3. **深水波領域 ($1.0 < kh \le 1.5$)**:
+   多項式分散近似の適用限界を超え、Airy 分散との乖離が増大（誤差 $> 2\%$〜$10\%$）。Boussinesq モデルの精度が低下する領域であり、インスペクターおよび UI にて黄色警告を表示。
+4. **遮断・エバネッセント限界 ($kh > 1.5$, $f \ge 0.85 f_{\mathrm{cutoff}}$)**:
+   Peregrine 特異点 $kh = \sqrt{3} \approx 1.732$（$k^{2} < 0$）に接近し、群速度が急減して波が沖へ進行できず局所停留・発振する。
+5. **パラメータ調整ガイド機能 (`AdjustParametersForBoussinesqRegime`)**:
+   波長 $\lambda$ または周波数 $f$ に基づき、中間水深妥当域（$kh \le 1.0$、目標 $kh \approx 0.8$）に収まる推奨水深を算出し自動調整する。本機能は多項式分散モデルの物理的適用範囲内にパラメータを誘導する工学的ガイドであり、砕波や急峻度破綻等の非線形現象に対する無条件の安定保証ではない。
 
 ### 3.2 内部テクスチャ構成
 微小時間刻み（$\Delta t \approx 0.004 \sim 0.01\ \mathrm{s}$）での量子化誤差を防ぐため、状態・外力・加速度バッファには **`fp32` (`ARGBFloat` / `RGFloat`)** を使用する。
@@ -214,59 +220,82 @@ $$
 
    修正外力 $\mathbf{f^{\ast}} = (f_{x}^{\ast}, f_{z}^{\ast})$ を `_ForceTex` に格納する。
 
-#### (3) ADI 三重対角並列巡回簡約 (PCR) 分散ソルバー (`CSTridiagonalX`, `CSTridiagonalZ`)
-旧実装で高解像度時に物理分散係数を最大 $99.4\%$ 切捨てていた人工上限 $\beta \le 6$ を完全撤廃し、2次元 Peregrine 分散作用素を無条件安定な交替方向陰解法（Peaceman-Rachford ADI）に分解して直接求解する：
+#### (3) ADI 三重対角並列巡回簡約 (PCR) 分散ソルバー & 欠損補正 (`CSTridiagonalX`, `CSTridiagonalZ`, `CSDefectCorrection`)
+旧実装で高解像度時に物理分散係数を最大 $99.4\%$ 切捨てていた人工上限 $\beta \le 6$ を完全撤廃し、2次元 Peregrine 分散作用素 $(I - \frac{h^{2}}{3}\nabla^{2})\mathbf{a} = \mathbf{f}$ を方向分離交替方向陰解法（Peaceman-Rachford ADI）により求解する：
 
 $$
 \left(I - \beta_{x}\partial_{x}^{2}\right)\left(I - \beta_{z}\partial_{z}^{2}\right)\mathbf{a} = \mathbf{f}, \quad \beta_{x} = \frac{\alpha h^{2}}{3\Delta x^{2}}, \quad \beta_{z} = \frac{\alpha h^{2}}{3\Delta z^{2}}
 $$
 
-- **Pass 1 (`CSTridiagonalX`)**: 各行（$Z = j$）について、X方向の三重対角線形方程式 $(I - \beta_{x}\partial_{x}^{2})\mathbf{a}^{\ast} = \mathbf{f}$ を行単位のスレッドグループ（`groupshared` メモリ）内で並列巡回簡約（PCR: 9ステップで $N \le 512$ に対応）により直接解き、中間加速度 $\mathbf{a}^{\ast}$ を `_AccelPong` に書き出す。
-  主対角成分 $b_{i} = 1 + \frac{2\alpha h^{2}}{3\Delta x^{2}}$、非対角成分 $a_{i} = c_{i} = -\frac{\alpha h^{2}}{3\Delta x^{2}}$ であるため、厳密な対角優位性 $b_{i} > |a_{i}| + |c_{i}|$ が任意の水深 $h$ および格子幅 $\Delta x$ において無条件に成立し、数値的特異点や発散は数学的に生じない。
-- **Pass 2 (`CSTridiagonalZ`)**: 各列（$X = i$）について、Z方向の三重対角方程式 $(I - \beta_{z}\partial_{z}^{2})\mathbf{a} = \mathbf{a}^{\ast}$ を列単位の PCR で解き、最終加速度 $\mathbf{a}$ を `_AccelPing` に書き出す。
+- **方向分離 ADI 近似の連続極限と等方性特性**:
+  連続 Fourier 空間における ADI 因数分解作用素のゲインは $G_{\mathrm{ADI}} = \frac{1}{(1 + \frac{1}{3}k_{x}^{2}h^{2})(1 + \frac{1}{3}k_{z}^{2}h^{2})}$ で与えられる。
+  - 格子軸方向（$0^{\circ}, 90^{\circ}$、すなわち $k_{x}=0$ または $k_{z}=0$）: 交差項がゼロとなり、標準 Peregrine 連成ゲイン $G_{\mathrm{Peregrine}} = \frac{1}{1 + \frac{1}{3}k^{2}h^{2}}$ と完全一致（位相速度誤差 $0.00\%$）。
+  - $45^{\circ}$ 斜め方向: 高次交差項 $\frac{1}{9}k_{x}^{2}k_{z}^{2}h^{4}$ に起因して、$kh = 1.0$ において位相速度が標準 Peregrine 比で約 **$-1.03\%$** 遅くなる方向バイアスが存在する。
+- **ADI 欠損補正 (Defect Correction: `CSDefectCorrection`)**:
+  `dispersionSweeps > 1`（設定範囲 1〜4、インスペクター指定）の場合、交差微分欠損 $\mathcal{R} = \beta_{x}\beta_{z}\partial_{x}^{2}\partial_{z}^{2}\mathbf{a}$ を `CSDefectCorrection` カーネルにより計算して外力右辺に加算し、PCR 求解を反復する。
+  1回の補正スイープ（`dispersionSweeps = 2`）により、$kh = 1.0$ における $45^{\circ}$ 方向位相速度誤差は $-1.03\%$ から **$-0.02\%$** へ $49$ 倍低減し、連成作用素の等方性を極めて高精度に再現する（スイープ 1 回の標準 ADI は高速リアルタイム向け、スイープ 2 回以上は高精度解析向けとして機能）。
+- **側壁境界条件の法線・接線完全分離**:
+  水路側壁（$x = 0, W-1$、`SideWallSponge = false`）において、法線加速度 $a_{x} = 0$（厳密ディリクレ境界条件）と接線加速度 $\partial_{x} a_{z} = 0$（ノイマン境界条件）を行ごとに独立して処理する。
+  `groupshared float2` による PCR ベクトル演算において、法線成分は境界行 $b_{x}=1, c_{x}=0, d_{x}=0$ の独立ディリクレ行として解かれるため、壁上の法線加速度は数値的に厳密な **$0.00000000$**（旧実装で残存していた約 $0.844$ の隣接セル結合を完全根絶）に拘束され、不透過固体壁条件が厳密に成立する。
 
-反復回数に依存する Jacobi 緩和法と異なり、各ステージわずか2ディスパッチ（$X$ パスと $Z$ パス）で機械精度まで厳密に逆行列を解くため、解像度を高めても分散強度が一切損なわれない。
-
-#### (4) 2次精度連成時間発展 (`CSApplyPredictedDispersion` & `CSApplyDispersion`)
-予測子・修正子と分散作用素を数学的に整合して連成させるため、両ステージで分散逆行列を求解し Heun 型の2次時間更新を適用する：
-1. **予測子ステージ (`CSApplyPredictedDispersion`)**:
-   外力 $\mathbf{f}^{n}$ に対する分散加速度 $\mathbf{a}^{(1)} = L^{-1}\mathbf{f}^{n}$ を求め、`_ForcePredTex` に保持するとともに予測速度を更新：
+#### (4) 時間発展法と数値収束特性 (`CSApplyPredictedDispersion` & `CSApplyDispersion`)
+- **Boussinesq 系**:
+  予測子・修正子と分散作用素を連成させるため、MacCormack 予測子外力 $\mathbf{f}^{n}$ と修正子外力 $\mathbf{f}^{\ast}$ の各段階で PCR 分散逆行列を求解し、Heun 型の2次時間更新を適用：
 
 $$
 \mathbf{u}^{\ast} = D_{\mathrm{sponge}} \cdot \left(\mathbf{u}^{n} + \Delta t\,\mathbf{a}^{(1)}\right)
 $$
-
-2. **修正子ステージ (`CSApplyDispersion`)**:
-   予測外力 $\mathbf{f}^{\ast}$ に対する分散加速度 $\mathbf{a}^{(2)} = L^{-1}\mathbf{f}^{\ast}$ を求め、予測・修正の両加速度を平均して次ステップの流速を確定：
-
 $$
 \mathbf{u}^{n+1} = D_{\mathrm{sponge}} \cdot \left(\mathbf{u}^{n} + \frac{1}{2}\Delta t\left(\mathbf{a}^{(1)} + \mathbf{a}^{(2)}\right)\right)
 $$
 
-時間刻み幅を半減させたときの誤差低減率は理論値 $4.0\times$ に対して実測 **$3.99\times$** を記録し、分散波の時間2次収束 $O(\Delta t^{2})$ が厳密に保証される。
+  ここで外周スポンジ減衰係数は $d_{\mathrm{border}} < W_{\mathrm{sponge}}$ において陰的分数式 $D_{\mathrm{sponge}} = \frac{1}{1 + 15\,\Delta t\, S_{\mathrm{sponge}} \left(1 - \frac{d_{\mathrm{border}}}{W_{\mathrm{sponge}}}\right)^{2}}$ で与えられる。
 
-ここで外周スポンジ減衰係数は $d_{\mathrm{border}} < W_{\mathrm{sponge}}$ において陰的分数式：
-
-$$
-D_{\mathrm{sponge}} = \frac{1}{1 + 15\,\Delta t\, S_{\mathrm{sponge}} \left(1 - \frac{d_{\mathrm{border}}}{W_{\mathrm{sponge}}}\right)^{2}}
-$$
-
-で与えられる。
-
-#### (4b) 4階バイハーモニック空間散逸フィルター (`CSFilterHighFrequency`)
-Peregrine 分散逆行列演算 $(I - \alpha \frac{h^2}{3}\nabla^2)^{-1}$ により高周波に対する復元加速度が $1/(1+4\beta) \approx 1/400$ に抑制される結果、MacCormack法本来の3次数値粘性が消失し、$2\Delta x$ ノコギリ型モードがグリッド上に残留する。これを解消するため、毎サブステップ終了時に各状態量 $S \in \{\eta, u, w\}$ に対し4階バイハーモニック微小散逸フィルターを適用する：
+- **波動方程式系 (`CSStep`)**:
+  物理流速 $v = \partial\eta/\partial t$ を `RGFloat` テクスチャに直接保持し、シンプレクティック Euler（Kick-Drift）時間積分を適用：
 
 $$
-D_{4, x} S = S_{i-2, j} - 4S_{i-1, j} + 6S_{i, j} - 4S_{i+1, j} + S_{i+2, j}
+v^{n+1} = \frac{v^{n}(1 - \frac{1}{2}\gamma\Delta t) + \Delta t\, c^{2}\nabla^{2}\eta^{n}}{1 + \frac{1}{2}\gamma\Delta t} \quad \text{[Kick]}
 $$
 $$
-D_{4, z} S = S_{i, j-2} - 4S_{i, j-1} + 6S_{i, j} - 4S_{i, j+1} + S_{i, j+2}
-$$
-$$
-S^{\mathrm{final}} = S - \kappa \left(D_{4, x} S + D_{4, z} S\right) \quad (\kappa = 0.025)
+\eta^{n+1} = \eta^{n} + \Delta t\, v^{n+1} \quad \text{[Drift]}
 $$
 
-2D最大固有値 32 に対し $\kappa = 0.025$ は $1 - 32\kappa = 0.20$ となり無条件収束かつ厳密に非振動的である。$2\Delta x$ ノコギリ型モードは10ステップで 99.4% 減衰する一方、物理長波（$kh \ll 1$）に対する減衰は $0.0001\%$ 以下に抑えられ、波形を崩さず平滑な水面を維持する。
+  シンプレクティック性によりハミルトン系の相空間面積（$\mathrm{d}\eta \wedge \mathrm{d}v$）が厳密に保存され、長時間のシミュレーションでも人工的な数値減衰を生じない。
+  同一時刻 $t_{n+1}$ で評価した物理状態対 $(\eta, v)$ の局所打切り誤差は半ステップ千鳥配置に起因して $O(\Delta t)$（実測収束率 $2.01\times$、1次収束）となり、千鳥格子での水位シーケンス単独では $O(\Delta t^{2})$ を維持する（再現検証コード: `Docs/NumericalVerificationSuite.py`）。
+
+#### (4b) 時間刻み不変・質量保存 4階バイハーモニック空間散逸フィルター (`CSFilterHighFrequency`)
+Peregrine 分散逆行列演算 $(I - \alpha \frac{h^2}{3}\nabla^2)^{-1}$ により高周波に対する復元加速度が $1/(1+4\beta) \approx 1/400$ に抑制される結果、MacCormack法本来の3次数値粘性が消失し、$2\Delta x$ ノコギリ型モードがグリッド上に残留する。これを解消するため、毎サブステップ終了時に各状態量 $S \in \{\eta, u, w\}$ に対し4階バイハーモニック散逸フィルターを適用する：
+
+1. **時間刻み幅 $\Delta t$ スケーリング（物理時間あたりの減衰不変性）**:
+   連続散逸方程式 $\partial S / \partial t = -\nu \nabla^{4} S$ の離散化に基づき、フィルター係数を時間刻み幅に比例させてスケーリング：
+
+$$
+\kappa(\Delta t) = 0.025 \cdot \mathrm{clamp}\left(\frac{\Delta t}{0.008}, 0.05, 2.0\right)
+$$
+
+   これにより、時間刻み幅 $\Delta t$ を変化させても物理時間 1秒あたりの減衰率が一定に保たれる（16セル波長において $\Delta t = 0.008, 0.004, 0.002\ \mathrm{s}$ いずれも 1秒後残存振幅 **$93.01\%$**、32セル波長で **$99.54\%$**）。時間刻み収束試験において減衰モデルが変動する問題を根絶した。
+
+2. **ゼロフラックス保守境界ステンシル（完全質量保存）**:
+   外周境界面におけるバイハーモニック流束 $J_{-1/2} = J_{W-1/2} = 0$ を厳密に満たすゼロフラックス有限体積ステンシルを採用：
+
+$$
+D_{4, x}[0] = 2S_{0} - 3S_{1} + S_{2}
+$$
+$$
+D_{4, x}[1] = -3S_{0} + 6S_{1} - 4S_{2} + S_{3}
+$$
+$$
+D_{4, x}[i] = S_{i-2} - 4S_{i-1} + 6S_{i} - 4S_{i+1} + S_{i+2} \quad (2 \le i \le W-3)
+$$
+$$
+D_{4, x}[W-2] = S_{W-4} - 4S_{W-3} + 6S_{W-2} - 3S_{W-1}
+$$
+$$
+D_{4, x}[W-1] = S_{W-3} - 3S_{W-2} + 2S_{W-1}
+$$
+
+   境界端点における単一インパルスおよび任意の一様・ランダム水面変位に対し、和 $\sum_{x=0}^{W-1} D_{4, x} S \equiv 0$、$\sum_{z=0}^{H-1} D_{4, z} S \equiv 0$ がマシンイプシロン精度（実測 $\le 1.95 \times 10^{-14}$）で厳密にゼロとなり、境界セルを含む全水量が完全に保存される。
 
 #### (5) 内部質量ソース造波 (`GetWavemakerSources`) と GPU ソリトン注入 (`CSAddImpulse`)
 - **Wei & Kirby (1999) 型内部質量ソース造波 (`GetWavemakerSources`)**:

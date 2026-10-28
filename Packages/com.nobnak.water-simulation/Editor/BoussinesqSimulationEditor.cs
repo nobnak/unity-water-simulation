@@ -7,21 +7,23 @@ namespace Nobnak.WaterSimulation.Editor {
         public override void OnInspectorGUI() {
             var sim = (BoussinesqSimulation)target;
 
-            if (sim.IsDepthTooDeepForShallowWater) {
-                float minDomain = Mathf.Min(sim.AreaSize.x, sim.AreaSize.y);
-                float maxRecommendedDepth = minDomain * 0.05f;
+            if (sim.IsIntermediateToDeepWater) {
                 EditorGUILayout.HelpBox(
-                    $"[Shallow Water Ratio Warning]\n" +
-                    $"Deep water depth ({sim.DeepWaterDepth:F1} m) exceeds 5% of domain size ({minDomain:F0} m, ratio {sim.DepthToDomainRatio * 100f:F1}%).\n" +
-                    $"Peregrine Boussinesq equations require shallow water (h / L <= 0.03 - 0.05, max ~{maxRecommendedDepth:F1} m) " +
-                    "to prevent frequency saturation and wave trapping.",
+                    $"[Relative Depth / Dispersion Warning]\n" +
+                    $"Relative depth kh = {sim.EstimatedKh:F2} (h/λ = {sim.EstimatedHOverLambda:F2}, depth {sim.DeepWaterDepth:F1}m, estimated λ = {sim.EstimatedWavelength:F1}m).\n" +
+                    "Water depth exceeds the optimal intermediate Boussinesq regime (kh <= 1.0, h/λ <= 0.16). " +
+                    "Peregrine polynomial dispersion loses accuracy in deep water (kh > 1.0, with cutoff at kh = 1.73).",
                     MessageType.Warning);
 
-                if (GUILayout.Button("Auto-Clamp Depth to Safe Limit (水深を安全域に自動調整)")) {
-                    Undo.RecordObject(sim, "Auto-Clamp Boussinesq Water Depth");
-                    sim.ClampDepthToSafeLimit();
+                if (GUILayout.Button("Adjust Parameters for Intermediate Regime (kh <= 1.0 に調整)")) {
+                    Undo.RecordObject(sim, "Adjust Boussinesq Parameters for Intermediate Regime");
+                    sim.AdjustParametersForBoussinesqRegime();
                     EditorUtility.SetDirty(sim);
                 }
+                EditorGUILayout.HelpBox(
+                    "Note: Parameter adjustment brings kh into the valid intermediate regime (kh <= 1.0) " +
+                    "as a physical guideline, rather than an unconditional safety guarantee against nonlinear steepness breaking.",
+                    MessageType.Info);
                 EditorGUILayout.Space(2);
             }
 

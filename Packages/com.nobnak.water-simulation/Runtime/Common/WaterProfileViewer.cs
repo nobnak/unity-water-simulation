@@ -44,6 +44,8 @@ namespace Nobnak.WaterSimulation {
 
         [Tooltip("Use synchronous readback only when AsyncGPUReadback is unsupported or forced for immediate single-frame capture.")]
         [SerializeField] private bool forceSynchronousReadback = false;
+        [Tooltip("Allow AsyncGPUReadback in Edit Mode / Headless tests (requires manual AsyncGPUReadback.WaitAllRequests() or engine update pump).")]
+        [SerializeField] private bool allowAsyncInEditMode = false;
 
         [Header("Renderers")]
         [SerializeField] private LineRenderer surfaceLine;
@@ -114,6 +116,13 @@ namespace Nobnak.WaterSimulation {
             get => forceSynchronousReadback;
             set => forceSynchronousReadback = value;
         }
+
+        public bool AllowAsyncInEditMode {
+            get => allowAsyncInEditMode;
+            set => allowAsyncInEditMode = value;
+        }
+
+        public bool LastReadbackWasSync { get; private set; }
 
         public int ReadbackSampleStep => readbackSampleStep;
         public float ReadbackSampleSimTime => readbackSampleSimTime;
@@ -292,7 +301,8 @@ namespace Nobnak.WaterSimulation {
             Vector2 scale = (sliceAxis == ProfileAxis.XAxis) ? new Vector2(1f, 0f) : new Vector2(0f, 1f);
             Vector2 offset = (sliceAxis == ProfileAxis.XAxis) ? new Vector2(0f, slicePosition) : new Vector2(slicePosition, 0f);
 
-            bool useSync = forceSynchronousReadback || !SystemInfo.supportsAsyncGPUReadback || !Application.isPlaying;
+            bool useSync = forceSynchronousReadback || !SystemInfo.supportsAsyncGPUReadback || (!Application.isPlaying && !allowAsyncInEditMode);
+            LastReadbackWasSync = useSync;
 
             // 1. Water surface readback (only when simulation stepped or forced)
             int currentStep = targetSimulation.StepCount;

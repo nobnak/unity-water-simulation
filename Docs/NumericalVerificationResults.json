@@ -1,0 +1,314 @@
+{
+  "boussinesq_dispersion": [
+    {
+      "kh": 0.5,
+      "angle_deg": 0,
+      "sweeps": 1,
+      "peregrine_gain": 0.9230769230769231,
+      "implemented_gain": 0.9230769230769231,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 0.5,
+      "angle_deg": 45,
+      "sweeps": 1,
+      "peregrine_gain": 0.9230769230769231,
+      "implemented_gain": 0.9216,
+      "phase_speed_error_pct": -0.0800320256256315
+    },
+    {
+      "kh": 0.5,
+      "angle_deg": 0,
+      "sweeps": 2,
+      "peregrine_gain": 0.9230769230769231,
+      "implemented_gain": 0.9230769230769231,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 0.5,
+      "angle_deg": 45,
+      "sweeps": 2,
+      "peregrine_gain": 0.9230769230769231,
+      "implemented_gain": 0.92307456,
+      "phase_speed_error_pct": -0.00012800008193369905
+    },
+    {
+      "kh": 0.5,
+      "angle_deg": 0,
+      "sweeps": 3,
+      "peregrine_gain": 0.9230769230769231,
+      "implemented_gain": 0.9230769230769231,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 0.5,
+      "angle_deg": 45,
+      "sweeps": 3,
+      "peregrine_gain": 0.9230769230769231,
+      "implemented_gain": 0.9230769192960001,
+      "phase_speed_error_pct": -2.0479999918165959e-07
+    },
+    {
+      "kh": 1.0,
+      "angle_deg": 0,
+      "sweeps": 1,
+      "peregrine_gain": 0.75,
+      "implemented_gain": 0.75,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 1.0,
+      "angle_deg": 45,
+      "sweeps": 1,
+      "peregrine_gain": 0.75,
+      "implemented_gain": 0.7346938775510203,
+      "phase_speed_error_pct": -1.0256681389212985
+    },
+    {
+      "kh": 1.0,
+      "angle_deg": 0,
+      "sweeps": 2,
+      "peregrine_gain": 0.75,
+      "implemented_gain": 0.75,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 1.0,
+      "angle_deg": 45,
+      "sweeps": 2,
+      "peregrine_gain": 0.75,
+      "implemented_gain": 0.7496876301541024,
+      "phase_speed_error_pct": -0.020826825176400998
+    },
+    {
+      "kh": 1.0,
+      "angle_deg": 0,
+      "sweeps": 3,
+      "peregrine_gain": 0.75,
+      "implemented_gain": 0.75,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 1.0,
+      "angle_deg": 45,
+      "sweeps": 3,
+      "peregrine_gain": 0.75,
+      "implemented_gain": 0.7499936251051857,
+      "phase_speed_error_pct": -0.0004249938907130435
+    },
+    {
+      "kh": 1.5,
+      "angle_deg": 0,
+      "sweeps": 1,
+      "peregrine_gain": 0.5714285714285714,
+      "implemented_gain": 0.5714285714285714,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 1.5,
+      "angle_deg": 45,
+      "sweeps": 1,
+      "peregrine_gain": 0.5714285714285714,
+      "implemented_gain": 0.5289256198347108,
+      "phase_speed_error_pct": -3.790861415833058
+    },
+    {
+      "kh": 1.5,
+      "angle_deg": 0,
+      "sweeps": 2,
+      "peregrine_gain": 0.5714285714285714,
+      "implemented_gain": 0.5714285714285714,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 1.5,
+      "angle_deg": 45,
+      "sweeps": 2,
+      "peregrine_gain": 0.5714285714285714,
+      "implemented_gain": 0.5682671948637388,
+      "phase_speed_error_pct": -0.277004105795986
+    },
+    {
+      "kh": 1.5,
+      "angle_deg": 0,
+      "sweeps": 3,
+      "peregrine_gain": 0.5714285714285714,
+      "implemented_gain": 0.5714285714285714,
+      "phase_speed_error_pct": 0.0
+    },
+    {
+      "kh": 1.5,
+      "angle_deg": 45,
+      "sweeps": 3,
+      "peregrine_gain": 0.5714285714285714,
+      "implemented_gain": 0.5711934277171377,
+      "phase_speed_error_pct": -0.02057719185456497
+    }
+  ],
+  "filter": {
+    "periodic_modes": [
+      {
+        "cells_per_wavelength": 8,
+        "dt": 0.008,
+        "steps_per_sec": 125,
+        "per_substep_gain": 0.9914213562373095,
+        "amplitude_after_1sec": 0.34063065335738185
+      },
+      {
+        "cells_per_wavelength": 8,
+        "dt": 0.004,
+        "steps_per_sec": 250,
+        "per_substep_gain": 0.9957106781186548,
+        "amplitude_after_1sec": 0.34142171900038726
+      },
+      {
+        "cells_per_wavelength": 8,
+        "dt": 0.002,
+        "steps_per_sec": 500,
+        "per_substep_gain": 0.9978553390593273,
+        "amplitude_after_1sec": 0.3418162354040133
+      },
+      {
+        "cells_per_wavelength": 16,
+        "dt": 0.008,
+        "steps_per_sec": 125,
+        "per_substep_gain": 0.99942056744293,
+        "amplitude_after_1sec": 0.9301121937933298
+      },
+      {
+        "cells_per_wavelength": 16,
+        "dt": 0.004,
+        "steps_per_sec": 250,
+        "per_substep_gain": 0.999710283721465,
+        "amplitude_after_1sec": 0.9301219581835178
+      },
+      {
+        "cells_per_wavelength": 16,
+        "dt": 0.002,
+        "steps_per_sec": 500,
+        "per_substep_gain": 0.9998551418607325,
+        "amplitude_after_1sec": 0.9301268390023554
+      },
+      {
+        "cells_per_wavelength": 32,
+        "dt": 0.008,
+        "steps_per_sec": 125,
+        "per_substep_gain": 0.9999630794550818,
+        "amplitude_after_1sec": 0.9953954801431272
+      },
+      {
+        "cells_per_wavelength": 32,
+        "dt": 0.004,
+        "steps_per_sec": 250,
+        "per_substep_gain": 0.9999815397275409,
+        "amplitude_after_1sec": 0.9953955225462591
+      },
+      {
+        "cells_per_wavelength": 32,
+        "dt": 0.002,
+        "steps_per_sec": 500,
+        "per_substep_gain": 0.9999907698637704,
+        "amplitude_after_1sec": 0.9953955437474342
+      },
+      {
+        "cells_per_wavelength": 64,
+        "dt": 0.008,
+        "steps_per_sec": 125,
+        "per_substep_gain": 0.9999976813142779,
+        "amplitude_after_1sec": 0.9997102059471298
+      },
+      {
+        "cells_per_wavelength": 64,
+        "dt": 0.004,
+        "steps_per_sec": 250,
+        "per_substep_gain": 0.999998840657139,
+        "amplitude_after_1sec": 0.999710206115091
+      },
+      {
+        "cells_per_wavelength": 64,
+        "dt": 0.002,
+        "steps_per_sec": 500,
+        "per_substep_gain": 0.9999994203285695,
+        "amplitude_after_1sec": 0.9997102061990715
+      }
+    ],
+    "impulse_mass_before": 1.0,
+    "impulse_mass_after": 1.0,
+    "impulse_d4_sum": 0.0,
+    "random_field_d4_sum": -1.9539925233402755e-14
+  },
+  "wave_time_convergence": [
+    {
+      "dt": 0.008,
+      "steps": 125,
+      "error_l2": 0.012526977874246045,
+      "error_reduction_ratio": 0.0,
+      "order_of_accuracy": 1.0
+    },
+    {
+      "dt": 0.004,
+      "steps": 250,
+      "error_l2": 0.00622816936582589,
+      "error_reduction_ratio": 2.0113418788804722,
+      "order_of_accuracy": 1.008158325325419
+    },
+    {
+      "dt": 0.002,
+      "steps": 500,
+      "error_l2": 0.003105497372354411,
+      "error_reduction_ratio": 2.0055303930603707,
+      "order_of_accuracy": 1.003983829819948
+    },
+    {
+      "dt": 0.001,
+      "steps": 1000,
+      "error_l2": 0.0015506321437713094,
+      "error_reduction_ratio": 2.002729909107583,
+      "order_of_accuracy": 1.0019678704442518
+    }
+  ],
+  "slip_boundary": {
+    "n": 32,
+    "beta": 10.0,
+    "normal_acceleration_at_wall": 0.0,
+    "intended_normal_acceleration": 0.0,
+    "normal_acceleration_interior": 0.09090909088950119,
+    "tangential_acceleration_at_wall": 0.13419913421539123,
+    "tangential_acceleration_interior": 0.09090909092616081
+  },
+  "relative_depth_regimes": [
+    {
+      "description": "Scene 02 Shallow/Intermediate (default)",
+      "depth_m": 3.5,
+      "frequency_hz": 0.15,
+      "cutoff_frequency_hz": 0.46151013257673995,
+      "wavelength_m": 39.064049969249226,
+      "kh": 0.5629510660681556,
+      "h_over_lambda": 0.08959644488359912,
+      "regime": "Intermediate (Peregrine Valid)",
+      "is_valid_intermediate": true
+    },
+    {
+      "description": "Scene 02 High Freq (near cutoff)",
+      "depth_m": 3.5,
+      "frequency_hz": 0.4,
+      "cutoff_frequency_hz": 0.46151013257673995,
+      "wavelength_m": 14.649018738468458,
+      "kh": 1.501202842848415,
+      "h_over_lambda": 0.238923853022931,
+      "regime": "Near Cutoff / Evanescent",
+      "is_valid_intermediate": false
+    },
+    {
+      "description": "Deep Water Domain (depth=15m)",
+      "depth_m": 15.0,
+      "frequency_hz": 0.25,
+      "cutoff_frequency_hz": 0.22293057344511247,
+      "wavelength_m": 48.52215988597375,
+      "kh": 1.942365711443482,
+      "h_over_lambda": 0.3091371042684362,
+      "regime": "Near Cutoff / Evanescent",
+      "is_valid_intermediate": false
+    }
+  ]
+}

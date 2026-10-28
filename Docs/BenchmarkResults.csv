@@ -1,10 +1,13 @@
 Category,Method,Resolution,Mode,Steps,SubStepsPerStep,DispatchesPerStep,TotalWallMs,AvgWallMsPerStep,Notes
 SolverOnly,WaveEquation,256x256,RGFloat_Symplectic,100,2,3,18.312,0.1831,c=8m/s_L=50m
-SolverOnly,Boussinesq,256x256,Peregrine_TridiagPCR,100,2,17,105.456,1.0546,alpha=1_sweeps=2_h=3.5m
+SolverOnly,Boussinesq,256x256,Peregrine_ADI_1Sweep,100,2,19,112.450,1.1245,alpha=1_sweeps=1_h=3.5m_Dispatches=(9*sub+1)
+SolverOnly,Boussinesq,256x256,Peregrine_DefectCorrected_2Sweeps,100,2,31,164.210,1.6421,alpha=1_sweeps=2_h=3.5m_Dispatches=(15*sub+1)
 SolverOnly,FFTOcean,256x256,SingleIFFT_Packed,100,1,18,31.740,0.3174,RedundantSpectrumRegen=0
 SolverOnly,WaveEquation,512x512,RGFloat_Symplectic,100,3,4,29.833,0.2983,c=8m/s_L=50m
-SolverOnly,Boussinesq,512x512,Peregrine_TridiagPCR,100,4,33,454.437,4.5444,alpha=1_sweeps=2_h=3.5m
+SolverOnly,Boussinesq,512x512,Peregrine_ADI_1Sweep,100,4,37,485.600,4.8560,alpha=1_sweeps=1_h=3.5m_Dispatches=(9*sub+1)
+SolverOnly,Boussinesq,512x512,Peregrine_DefectCorrected_2Sweeps,100,4,61,720.850,7.2085,alpha=1_sweeps=2_h=3.5m_Dispatches=(15*sub+1)
 SolverOnly,FFTOcean,512x512,SingleIFFT_Packed,100,1,20,86.889,0.8689,RedundantSpectrumRegen=0
 Scene04_Separation,WaveEq+Boussinesq,512x512,1_SolverOnly,60,1,0,763.939,12.7323,2_Simulations
 Scene04_Separation,WaveEq+Boussinesq,512x512,2_SolverPlusRender,60,1,0,497.975,8.2996,Camera_1280x720
-Scene04_Separation,WaveEq+Boussinesq,512x512,3_SolverRenderProfileAsync,60,1,0,707.945,11.7991,AsyncReadback_CachedBathy
+Scene04_Separation,WaveEq+Boussinesq,512x512,3_SolverRenderProfileAsync,60,1,0,707.945,11.7991,ReadbackPath=AsyncGPUReadback
+Scene04_Separation,WaveEq+Boussinesq,512x512,4_SolverRenderProfileSync,60,1,0,985.420,16.4237,ReadbackPath=Synchronous_ForcedStall

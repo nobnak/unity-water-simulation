@@ -318,10 +318,10 @@ namespace Nobnak.WaterSimulation {
                 boussSim.SideWallSponge = GUILayout.Toggle(boussSim.SideWallSponge, " Side Wall Sponge (側壁減衰)");
                 GUILayout.EndHorizontal();
 
-                if (boussSim.IsDepthTooDeepForShallowWater) {
-                    GUILayout.Label("<color=#ffaa40><size=10>⚠️ 水深が領域長の5%を超過（深水波領域）。群速度が低下し停留します。</size></color>");
-                    if (GUILayout.Button("Auto-Clamp Depth (水深を安全域に自動調整)")) {
-                        boussSim.ClampDepthToSafeLimit();
+                if (boussSim.IsIntermediateToDeepWater) {
+                    GUILayout.Label($"<color=#ffaa40><size=10>⚠️ 相対水深 kh = {boussSim.EstimatedKh:F2} (kh > 1.0)。浅水〜中間水深モデルの適用限界を超え分散精度が低下します。</size></color>");
+                    if (GUILayout.Button("パラメータを中間水深域(kh≦1.0)に調整")) {
+                        boussSim.AdjustParametersForBoussinesqRegime();
                     }
                 }
                 if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.ContinuousWavemaker && boussSim.IsFrequencyAboveCutoff) {

@@ -103,6 +103,7 @@ namespace Nobnak.WaterSimulation {
         private int kernelImpulse;
         private int kernelNormal;
         private int kernelFilter;
+        private int kernelDefectCorrection;
         #endregion
 
         #region properties
@@ -187,8 +188,43 @@ namespace Nobnak.WaterSimulation {
         }
 
         public float CutoffFrequency => (1.0f / (2.0f * math.PI)) * math.sqrt(3.0f * Gravity / math.max(0.1f, deepWaterDepth));
-        public float DepthToDomainRatio => deepWaterDepth / math.max(0.1f, math.min(areaSize.x, areaSize.y));
-        public bool IsDepthTooDeepForShallowWater => DepthToDomainRatio > 0.05f;
+
+        /// <summary>
+        /// Dominant physical wavelength [m] estimated from active source parameters.
+        /// </summary>
+        public float EstimatedWavelength {
+            get {
+                if (initialCondition == InitialConditionType.ContinuousWavemaker && wavemakerFrequency > 1e-4f) {
+                    float c0 = math.sqrt(Gravity * math.max(0.2f, deepWaterDepth));
+                    return c0 / wavemakerFrequency;
+                }
+                if (initialCondition == InitialConditionType.GaussianPulse || initialCondition == InitialConditionType.PeriodicPulses) {
+                    float minDim = math.min(areaSize.x, areaSize.y);
+                    return math.max(2.0f, 4.0f * sourceRadius * minDim);
+                }
+                if (initialCondition == InitialConditionType.MovingSource && pulseInterval > 1e-4f) {
+                    float c0 = math.sqrt(Gravity * math.max(0.2f, deepWaterDepth));
+                    return math.max(2.0f, c0 * pulseInterval);
+                }
+                return math.max(2.0f, math.min(areaSize.x, areaSize.y) * 0.25f);
+            }
+        }
+
+        /// <summary>
+        /// Relative water depth kh = 2*pi*h / lambda.
+        /// - Shallow water (NSW / Airy limit): kh < 0.31 (h/lambda < 0.05).
+        /// - Intermediate water (Peregrine Boussinesq valid): 0.31 <= kh <= 1.0 (phase speed error < 2%).
+        /// - Deep water / Boussinesq breakdown: kh > 1.0 (dispersion error grows; singular cutoff at kh = sqrt(3) ~ 1.732).
+        /// </summary>
+        public float EstimatedKh => (2.0f * math.PI * math.max(0.2f, deepWaterDepth)) / math.max(0.1f, EstimatedWavelength);
+        public float EstimatedHOverLambda => math.max(0.2f, deepWaterDepth) / math.max(0.1f, EstimatedWavelength);
+
+        public bool IsIntermediateToDeepWater => EstimatedKh > 1.0f;
+        public bool IsNearCutoff => (initialCondition == InitialConditionType.ContinuousWavemaker)
+            ? (wavemakerFrequency >= 0.85f * CutoffFrequency || EstimatedKh > 1.5f)
+            : (EstimatedKh > 1.5f);
+
+        public bool IsDepthTooDeepForShallowWater => IsIntermediateToDeepWater;
         public bool IsFrequencyAboveCutoff => wavemakerFrequency >= CutoffFrequency * 0.85f;
         #endregion
 
@@ -211,13 +247,24 @@ namespace Nobnak.WaterSimulation {
         #endregion
 
         #region public interface
-        public void ClampDepthToSafeLimit() {
-            float maxSafeDepth = math.min(areaSize.x, areaSize.y) * 0.04f;
-            DeepWaterDepth = math.max(0.5f, maxSafeDepth);
+        /// <summary>
+        /// Guides parameters into valid intermediate Boussinesq regime (kh <= 1.0, targeting kh ~ 0.8).
+        /// Note: guideline for physical model validity, not an absolute guarantee against nonlinear steepness breaking.
+        /// </summary>
+        public void AdjustParametersForBoussinesqRegime() {
+            if (initialCondition == InitialConditionType.ContinuousWavemaker && wavemakerFrequency > 1e-4f) {
+                float targetH = Gravity * math.pow(0.8f / (2.0f * math.PI * wavemakerFrequency), 2.0f);
+                DeepWaterDepth = math.clamp(targetH, 0.5f, 15.0f);
+            } else {
+                float targetH = (0.8f * EstimatedWavelength) / (2.0f * math.PI);
+                DeepWaterDepth = math.clamp(targetH, 0.5f, 15.0f);
+            }
             if (shallowWaterDepth > deepWaterDepth * 0.5f) {
                 ShallowWaterDepth = deepWaterDepth * 0.25f;
             }
         }
+
+        public void ClampDepthToSafeLimit() => AdjustParametersForBoussinesqRegime();
 
         public void ClampFrequencyToSafeLimit() {
             WavemakerFrequency = CutoffFrequency * 0.6f;
@@ -307,6 +354,7 @@ namespace Nobnak.WaterSimulation {
             kernelImpulse = boussinesqShader.FindKernel("CSAddImpulse");
             kernelNormal = boussinesqShader.FindKernel("CSComputeNormal");
             kernelFilter = boussinesqShader.FindKernel("CSFilterHighFrequency");
+            kernelDefectCorrection = boussinesqShader.FindKernel("CSDefectCorrection");
         }
 
         protected override void ReleaseTextures() {
@@ -483,19 +531,30 @@ namespace Nobnak.WaterSimulation {
             int rowsZ = math.max(1, resolution.y);
             int colsX = math.max(1, resolution.x);
 
-            // Pass 1: CSTridiagonalX along rows (solves (I - beta_x d_x^2) a* = f)
-            boussinesqShader.SetTexture(kernelTridiagonalX, PropBathymetryTex, bathymetryTex);
-            boussinesqShader.SetTexture(kernelTridiagonalX, PropForceTex, forceTex);
-            boussinesqShader.SetTexture(kernelTridiagonalX, PropAccelPong, accelTexB);
-            boussinesqShader.Dispatch(kernelTridiagonalX, rowsZ, 1, 1);
-            lastDispatchCount++;
+            int sweeps = math.clamp(dispersionSweeps, 1, 4);
+            for (int s = 0; s < sweeps; s++) {
+                if (s > 0) {
+                    // ADI Defect Correction: add cross-derivative defect betaX * betaZ * d_x^2 d_z^2 a to _ForceTex
+                    boussinesqShader.SetTexture(kernelDefectCorrection, PropAccelPing, accelTexA);
+                    boussinesqShader.SetTexture(kernelDefectCorrection, PropForceTex, forceTex);
+                    boussinesqShader.SetTexture(kernelDefectCorrection, PropBathymetryTex, bathymetryTex);
+                    DispatchCompute2D(kernelDefectCorrection);
+                }
 
-            // Pass 2: CSTridiagonalZ along columns (solves (I - beta_z d_z^2) a = a*)
-            boussinesqShader.SetTexture(kernelTridiagonalZ, PropBathymetryTex, bathymetryTex);
-            boussinesqShader.SetTexture(kernelTridiagonalZ, PropAccelPong, accelTexB);
-            boussinesqShader.SetTexture(kernelTridiagonalZ, PropAccelPing, accelTexA);
-            boussinesqShader.Dispatch(kernelTridiagonalZ, colsX, 1, 1);
-            lastDispatchCount++;
+                // Pass 1: CSTridiagonalX along rows (solves (I - beta_x d_x^2) a* = f)
+                boussinesqShader.SetTexture(kernelTridiagonalX, PropBathymetryTex, bathymetryTex);
+                boussinesqShader.SetTexture(kernelTridiagonalX, PropForceTex, forceTex);
+                boussinesqShader.SetTexture(kernelTridiagonalX, PropAccelPong, accelTexB);
+                boussinesqShader.Dispatch(kernelTridiagonalX, rowsZ, 1, 1);
+                lastDispatchCount++;
+
+                // Pass 2: CSTridiagonalZ along columns (solves (I - beta_z d_z^2) a = a*)
+                boussinesqShader.SetTexture(kernelTridiagonalZ, PropBathymetryTex, bathymetryTex);
+                boussinesqShader.SetTexture(kernelTridiagonalZ, PropAccelPong, accelTexB);
+                boussinesqShader.SetTexture(kernelTridiagonalZ, PropAccelPing, accelTexA);
+                boussinesqShader.Dispatch(kernelTridiagonalZ, colsX, 1, 1);
+                lastDispatchCount++;
+            }
         }
 
         private void ApplySourceExcitation(RenderTexture target, float subDt) {

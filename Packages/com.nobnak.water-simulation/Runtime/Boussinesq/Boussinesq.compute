@@ -8,6 +8,7 @@
 #pragma kernel CSAddImpulse
 #pragma kernel CSComputeNormal
 #pragma kernel CSFilterHighFrequency
+#pragma kernel CSDefectCorrection
 
 RWTexture2D<float4> _StateIn;     // R: eta (surface elevation [m]), G: u (vel X [m/s]), B: w (vel Z [m/s]), A: aux
 RWTexture2D<float4> _StatePred;   // Predicted state (MacCormack)
@@ -51,9 +52,9 @@ cbuffer ImpulseParams {
 
 #define MAX_TRIDIAG_N 512
 
-groupshared float gs_a[MAX_TRIDIAG_N];
-groupshared float gs_b[MAX_TRIDIAG_N];
-groupshared float gs_c[MAX_TRIDIAG_N];
+groupshared float2 gs_a[MAX_TRIDIAG_N];
+groupshared float2 gs_b[MAX_TRIDIAG_N];
+groupshared float2 gs_c[MAX_TRIDIAG_N];
 groupshared float2 gs_d[MAX_TRIDIAG_N];
 
 float GetDx() {
@@ -292,7 +293,7 @@ void CSCorrect(uint3 id : SV_DispatchThreadID) {
 }
 
 // 3a. ADI Tridiagonal Parallel Cyclic Reduction (PCR) along X for Peregrine momentum dispersion:
-// (I - beta_x d_x^2) a* = f
+// Solves (I - beta_x d_x^2) a* = f with decoupled normal (Dirichlet) and tangential (Neumann) boundary rows.
 [numthreads(MAX_TRIDIAG_N, 1, 1)]
 void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     uint i = gtid.x;
@@ -300,9 +301,9 @@ void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     uint W = (uint)_Width;
     uint H = (uint)_Height;
 
-    float a = 0.0;
-    float b = 1.0;
-    float c = 0.0;
+    float2 a = float2(0.0, 0.0);
+    float2 b = float2(1.0, 1.0);
+    float2 c = float2(0.0, 0.0);
     float2 d = float2(0.0, 0.0);
 
     if (i < W && j < H) {
@@ -313,22 +314,26 @@ void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
             if (_SideWallSponge > 0) {
                 d = float2(0.0, 0.0);
             } else {
-                // Slip flume wall: normal acceleration ax = 0, tangential az satisfies Neumann d(az)/dx = 0
+                // Slip flume wall:
+                // Normal component (x / ax): strict Dirichlet condition ax = 0 (row: 1 * ax = 0)
+                // Tangential component (y / az): strict Neumann condition d(az)/dx = 0
                 float hC  = SampleDepth(pos);
                 float dx  = GetDx();
                 float invDx2 = _DispersionAlpha / (dx * dx);
-
                 float beta = invDx2 * ((1.0 / 3.0) * hC * hC);
-                b = 1.0 + 2.0 * beta;
-                if (i == 0u) {
-                    c = -2.0 * beta;
-                    a = 0.0;
-                } else {
-                    a = -2.0 * beta;
-                    c = 0.0;
-                }
+
                 float2 fVal = _ForceTex[pos];
-                d = float2(0.0, fVal.y);
+                if (i == 0u) {
+                    a = float2(0.0, 0.0);
+                    b = float2(1.0, 1.0 + 2.0 * beta);
+                    c = float2(0.0, -2.0 * beta);
+                    d = float2(0.0, fVal.y);
+                } else {
+                    a = float2(0.0, -2.0 * beta);
+                    b = float2(1.0, 1.0 + 2.0 * beta);
+                    c = float2(0.0, 0.0);
+                    d = float2(0.0, fVal.y);
+                }
             }
         } else {
             float hC  = SampleDepth(pos);
@@ -338,9 +343,13 @@ void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
             float invDx2 = _DispersionAlpha / (dx * dx);
 
             // Peregrine 1/3 coefficient: in flat depth, a = c = -alpha * h^2 / (3 * dx^2), b = 1 + 2 * alpha * h^2 / (3 * dx^2)
-            a = -invDx2 * (0.5 * hC * hL - (hC * hC) / 6.0);
-            b = 1.0 + invDx2 * ((2.0 / 3.0) * hC * hC);
-            c = -invDx2 * (0.5 * hC * hR - (hC * hC) / 6.0);
+            float aVal = -invDx2 * (0.5 * hC * hL - (hC * hC) / 6.0);
+            float bVal = 1.0 + invDx2 * ((2.0 / 3.0) * hC * hC);
+            float cVal = -invDx2 * (0.5 * hC * hR - (hC * hC) / 6.0);
+
+            a = float2(aVal, aVal);
+            b = float2(bVal, bVal);
+            c = float2(cVal, cVal);
             d = _ForceTex[pos];
         }
     }
@@ -355,36 +364,36 @@ void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     [unroll]
     for (uint s = 0u; s < 9u; s++) {
         uint stride = 1u << s;
-        float aNew = a;
-        float bNew = b;
-        float cNew = c;
+        float2 aNew = a;
+        float2 bNew = b;
+        float2 cNew = c;
         float2 dNew = d;
 
         if (i < W) {
-            float k1 = 0.0;
-            float cL = 0.0;
+            float2 k1 = float2(0.0, 0.0);
+            float2 cL = float2(0.0, 0.0);
             float2 dL = float2(0.0, 0.0);
             if (i >= stride) {
                 uint idxL = i - stride;
-                k1 = a / gs_b[idxL];
+                k1 = a / max(1e-8, gs_b[idxL]);
                 cL = gs_c[idxL];
                 dL = gs_d[idxL];
                 aNew = -k1 * gs_a[idxL];
             } else {
-                aNew = 0.0;
+                aNew = float2(0.0, 0.0);
             }
 
-            float k2 = 0.0;
-            float aR = 0.0;
+            float2 k2 = float2(0.0, 0.0);
+            float2 aR = float2(0.0, 0.0);
             float2 dR = float2(0.0, 0.0);
             if (i + stride < W) {
                 uint idxR = i + stride;
-                k2 = c / gs_b[idxR];
+                k2 = c / max(1e-8, gs_b[idxR]);
                 aR = gs_a[idxR];
                 dR = gs_d[idxR];
                 cNew = -k2 * gs_c[idxR];
             } else {
-                cNew = 0.0;
+                cNew = float2(0.0, 0.0);
             }
 
             bNew = b - k1 * cL - k2 * aR;
@@ -406,12 +415,15 @@ void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     if (i < W && j < H) {
         int2 pos = int2(i, j);
         float2 aStar = d / max(1e-8, b);
+        if (_SideWallSponge == 0 && (i == 0u || i == W - 1u)) {
+            aStar.x = 0.0; // Strictly zero normal acceleration at solid lateral walls
+        }
         _AccelPong[pos] = aStar;
     }
 }
 
 // 3b. ADI Tridiagonal Parallel Cyclic Reduction (PCR) along Z for Peregrine momentum dispersion:
-// (I - beta_z d_z^2) a = a*
+// Solves (I - beta_z d_z^2) a = a* with decoupled normal (Dirichlet) and tangential (Neumann) boundary rows.
 [numthreads(MAX_TRIDIAG_N, 1, 1)]
 void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     uint j = gtid.x;
@@ -419,15 +431,34 @@ void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     uint W = (uint)_Width;
     uint H = (uint)_Height;
 
-    float a = 0.0;
-    float b = 1.0;
-    float c = 0.0;
+    float2 a = float2(0.0, 0.0);
+    float2 b = float2(1.0, 1.0);
+    float2 c = float2(0.0, 0.0);
     float2 d = float2(0.0, 0.0);
 
     if (i < W && j < H) {
         int2 pos = int2(i, j);
         if (j == 0u || j == H - 1u) {
-            d = float2(0.0, 0.0);
+            // Offshore / beach border:
+            // Normal component (y / az): strict Dirichlet condition az = 0
+            // Tangential component (x / ax): Neumann condition d(ax)/dz = 0
+            float hC  = SampleDepth(pos);
+            float dz  = GetDz();
+            float invDz2 = _DispersionAlpha / (dz * dz);
+            float beta = invDz2 * ((1.0 / 3.0) * hC * hC);
+
+            float2 fVal = _AccelPong[pos];
+            if (j == 0u) {
+                a = float2(0.0, 0.0);
+                b = float2(1.0 + 2.0 * beta, 1.0);
+                c = float2(-2.0 * beta, 0.0);
+                d = float2(fVal.x, 0.0);
+            } else {
+                a = float2(-2.0 * beta, 0.0);
+                b = float2(1.0 + 2.0 * beta, 1.0);
+                c = float2(0.0, 0.0);
+                d = float2(fVal.x, 0.0);
+            }
         } else if ((i == 0u || i == W - 1u) && _SideWallSponge > 0) {
             d = float2(0.0, 0.0);
         } else {
@@ -437,9 +468,13 @@ void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
             float dz  = GetDz();
             float invDz2 = _DispersionAlpha / (dz * dz);
 
-            a = -invDz2 * (0.5 * hC * hD - (hC * hC) / 6.0);
-            b = 1.0 + invDz2 * ((2.0 / 3.0) * hC * hC);
-            c = -invDz2 * (0.5 * hC * hU - (hC * hC) / 6.0);
+            float aVal = -invDz2 * (0.5 * hC * hD - (hC * hC) / 6.0);
+            float bVal = 1.0 + invDz2 * ((2.0 / 3.0) * hC * hC);
+            float cVal = -invDz2 * (0.5 * hC * hU - (hC * hC) / 6.0);
+
+            a = float2(aVal, aVal);
+            b = float2(bVal, bVal);
+            c = float2(cVal, cVal);
             d = _AccelPong[pos];
         }
     }
@@ -453,36 +488,36 @@ void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     [unroll]
     for (uint s = 0u; s < 9u; s++) {
         uint stride = 1u << s;
-        float aNew = a;
-        float bNew = b;
-        float cNew = c;
+        float2 aNew = a;
+        float2 bNew = b;
+        float2 cNew = c;
         float2 dNew = d;
 
         if (j < H) {
-            float k1 = 0.0;
-            float cL = 0.0;
+            float2 k1 = float2(0.0, 0.0);
+            float2 cL = float2(0.0, 0.0);
             float2 dL = float2(0.0, 0.0);
             if (j >= stride) {
                 uint idxL = j - stride;
-                k1 = a / gs_b[idxL];
+                k1 = a / max(1e-8, gs_b[idxL]);
                 cL = gs_c[idxL];
                 dL = gs_d[idxL];
                 aNew = -k1 * gs_a[idxL];
             } else {
-                aNew = 0.0;
+                aNew = float2(0.0, 0.0);
             }
 
-            float k2 = 0.0;
-            float aR = 0.0;
+            float2 k2 = float2(0.0, 0.0);
+            float2 aR = float2(0.0, 0.0);
             float2 dR = float2(0.0, 0.0);
             if (j + stride < H) {
                 uint idxR = j + stride;
-                k2 = c / gs_b[idxR];
+                k2 = c / max(1e-8, gs_b[idxR]);
                 aR = gs_a[idxR];
                 dR = gs_d[idxR];
                 cNew = -k2 * gs_c[idxR];
             } else {
-                cNew = 0.0;
+                cNew = float2(0.0, 0.0);
             }
 
             bNew = b - k1 * cL - k2 * aR;
@@ -504,6 +539,12 @@ void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     if (i < W && j < H) {
         int2 pos = int2(i, j);
         float2 aFinal = d / max(1e-8, b);
+        if (_SideWallSponge == 0 && (i == 0u || i == W - 1u)) {
+            aFinal.x = 0.0; // Strictly zero normal acceleration at solid lateral walls
+        }
+        if (j == 0u || j == H - 1u) {
+            aFinal.y = 0.0; // Strictly zero normal acceleration at offshore/beach borders
+        }
         _AccelPing[pos] = aFinal;
     }
 }
@@ -529,6 +570,13 @@ void CSApplyDispersion(uint3 id : SV_DispatchThreadID) {
     float damp = ComputeSpongeDamping(pos);
     uNext *= damp;
     wNext *= damp;
+
+    if (_SideWallSponge == 0 && (pos.x == 0 || pos.x == _Width - 1)) {
+        uNext = 0.0; // Impermeable solid wall condition: zero normal velocity
+    }
+    if (pos.y == 0 || pos.y == _Height - 1) {
+        wNext = 0.0; // Impermeable solid border condition: zero normal velocity
+    }
 
     uNext = clamp(uNext, -30.0, 30.0);
     wNext = clamp(wNext, -30.0, 30.0);
@@ -615,7 +663,7 @@ void CSComputeNormal(uint3 id : SV_DispatchThreadID) {
     _WaterDataTex[pos] = float4(0.0, hC, 0.0, foam);
 }
 
-// 7. 4th-order biharmonic spatial filter to eliminate undamped 2dx sawtooth modes
+// 7. 4th-order biharmonic spatial filter with exact mass conservation and dt-scaled damping
 [numthreads(8, 8, 1)]
 void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
@@ -628,23 +676,38 @@ void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
     int w = _Width;
     int h = _Height;
 
-    // 4th-order spatial difference along X:
-    float4 l2 = _StateIn[int2(max(0, x - 2), y)];
-    float4 l1 = _StateIn[int2(max(0, x - 1), y)];
-    float4 r1 = _StateIn[int2(min(w - 1, x + 1), y)];
-    float4 r2 = _StateIn[int2(min(w - 1, x + 2), y)];
-    float4 d4x = l2 - 4.0 * l1 + 6.0 * c - 4.0 * r1 + r2;
+    // Conservative zero-flux 4th-order spatial difference along X:
+    // Ensures sum_{x=0}^{W-1} d4x == 0 identically (exact machine-precision mass conservation)
+    float4 d4x;
+    if (x == 0) {
+        d4x = 2.0 * _StateIn[int2(0, y)] - 3.0 * _StateIn[int2(1, y)] + _StateIn[int2(2, y)];
+    } else if (x == 1) {
+        d4x = -3.0 * _StateIn[int2(0, y)] + 6.0 * _StateIn[int2(1, y)] - 4.0 * _StateIn[int2(2, y)] + _StateIn[int2(3, y)];
+    } else if (x == w - 2) {
+        d4x = _StateIn[int2(w - 4, y)] - 4.0 * _StateIn[int2(w - 3, y)] + 6.0 * _StateIn[int2(w - 2, y)] - 3.0 * _StateIn[int2(w - 1, y)];
+    } else if (x == w - 1) {
+        d4x = _StateIn[int2(w - 3, y)] - 3.0 * _StateIn[int2(w - 2, y)] + 2.0 * _StateIn[int2(w - 1, y)];
+    } else {
+        d4x = _StateIn[int2(x - 2, y)] - 4.0 * _StateIn[int2(x - 1, y)] + 6.0 * c - 4.0 * _StateIn[int2(x + 1, y)] + _StateIn[int2(x + 2, y)];
+    }
 
-    // 4th-order spatial difference along Z:
-    float4 b2 = _StateIn[int2(x, max(0, y - 2))];
-    float4 b1 = _StateIn[int2(x, max(0, y - 1))];
-    float4 t1 = _StateIn[int2(x, min(h - 1, y + 1))];
-    float4 t2 = _StateIn[int2(x, min(h - 1, y + 2))];
-    float4 d4z = b2 - 4.0 * b1 + 6.0 * c - 4.0 * t1 + t2;
+    // Conservative zero-flux 4th-order spatial difference along Z:
+    float4 d4z;
+    if (y == 0) {
+        d4z = 2.0 * _StateIn[int2(x, 0)] - 3.0 * _StateIn[int2(x, 1)] + _StateIn[int2(x, 2)];
+    } else if (y == 1) {
+        d4z = -3.0 * _StateIn[int2(x, 0)] + 6.0 * _StateIn[int2(x, 1)] - 4.0 * _StateIn[int2(x, 2)] + _StateIn[int2(x, 3)];
+    } else if (y == h - 2) {
+        d4z = _StateIn[int2(x, h - 4)] - 4.0 * _StateIn[int2(x, h - 3)] + 6.0 * _StateIn[int2(x, h - 2)] - 3.0 * _StateIn[int2(x, h - 1)];
+    } else if (y == h - 1) {
+        d4z = _StateIn[int2(x, h - 3)] - 3.0 * _StateIn[int2(x, h - 2)] + 2.0 * _StateIn[int2(x, h - 1)];
+    } else {
+        d4z = _StateIn[int2(x, y - 2)] - 4.0 * _StateIn[int2(x, y - 1)] + 6.0 * c - 4.0 * _StateIn[int2(x, y + 1)] + _StateIn[int2(x, y + 2)];
+    }
 
-    // In 2D, max eigenvalue of (d4x + d4z) is 32. Kappa = 0.025 gives 80% attenuation per step of 2dx sawtooth.
-    // Long waves (kh << 1) have (k dx)^4 ~ 10^-6, resulting in < 0.0001% damping.
-    float kappa = 0.025;
+    // Time-step scaling: kappa is proportional to _DeltaTime so physical dissipation per second
+    // is invariant to time step choice (eliminates dt-dependence in convergence analysis)
+    float kappa = 0.025 * clamp(_DeltaTime / 0.008, 0.05, 2.0);
     float4 filtered = c - kappa * (d4x + d4z);
 
     filtered.r = clamp(filtered.r, -15.0, 15.0);
@@ -653,4 +716,42 @@ void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
     filtered.a = 0.0;
 
     _StateOut[pos] = filtered;
+}
+
+// 8. ADI Defect correction for dispersionSweeps > 1:
+// Calculates cross-derivative defect (beta_x * beta_z * d_x^2 d_z^2 a) and adds it to _ForceTex
+[numthreads(8, 8, 1)]
+void CSDefectCorrection(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+
+    int l = max(0, pos.x - 1);
+    int r = min(_Width - 1, pos.x + 1);
+    int d = max(0, pos.y - 1);
+    int u = min(_Height - 1, pos.y + 1);
+
+    float2 aC  = _AccelPing[pos];
+    float2 aL  = _AccelPing[int2(l, pos.y)];
+    float2 aR  = _AccelPing[int2(r, pos.y)];
+    float2 aD  = _AccelPing[int2(pos.x, d)];
+    float2 aU  = _AccelPing[int2(pos.x, u)];
+    float2 aLD = _AccelPing[int2(l, d)];
+    float2 aRD = _AccelPing[int2(r, d)];
+    float2 aLU = _AccelPing[int2(l, u)];
+    float2 aRU = _AccelPing[int2(r, u)];
+
+    float dx = GetDx();
+    float dz = GetDz();
+    float hC = SampleDepth(pos);
+
+    float betaX = _DispersionAlpha * (hC * hC) / (3.0 * dx * dx);
+    float betaZ = _DispersionAlpha * (hC * hC) / (3.0 * dz * dz);
+
+    float2 d2zC = aU - 2.0 * aC + aD;
+    float2 d2zL = aLU - 2.0 * aL + aLD;
+    float2 d2zR = aRU - 2.0 * aR + aRD;
+    float2 crossD4 = d2zR - 2.0 * d2zC + d2zL;
+
+    float2 defect = betaX * betaZ * crossD4;
+    _ForceTex[pos] += defect;
 }

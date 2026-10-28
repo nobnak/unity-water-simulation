@@ -159,14 +159,20 @@ At $kh = 1$, the phase velocity error relative to the finite-depth linear disper
 - $c_{f}$: Seabed friction coefficient (`_BedFriction`)
 - $S_{\eta},\ \mathbf{S_{u}} = (0, S_{w})^{\mathrm{T}}$: Internal wavemaker mass and momentum source terms
 
-### 3.1.1 Physical Applicability Regime & Froude Scaling Rules
-The Peregrine Boussinesq equations assume shallow-water long-wave conditions ($\mu = h/L \ll 1$). In the short-wave limit ($kh \to \infty$), the frequency saturates at the cutoff frequency $\omega_{\mathrm{cutoff}} = \sqrt{3g/h}$, and the group velocity drops to zero: $c_{g} = \frac{\sqrt{gh}}{(1 + \frac{1}{3}h^{2}k^{2})^{3/2}} \to 0$.
-When modifying domain length $L_{\mathrm{domain}}$, parameters must scale according to Froude similarity rules:
+### 3.1.1 Physical Applicability Regime & Relative Depth $kh$ Diagnostics
+The Peregrine Boussinesq equations assume shallow-to-intermediate water conditions ($\mu = h/\lambda \le 0.16$, $kh \le 1.0$). In the short-wave limit ($kh \to \infty$), the frequency saturates at the cutoff frequency $\omega_{\mathrm{cutoff}} = \sqrt{3g/h}$ ($f_{\mathrm{cutoff}} = \frac{1}{2\pi}\sqrt{3g/h}$), and the group velocity drops to zero: $c_{g} = \frac{\sqrt{gh}}{(1 + \frac{1}{3}h^{2}k^{2})^{3/2}} \to 0$.
+The physical applicability of shallow-water dispersive models is diagnosed directly from the wavenumber-depth product (relative depth $kh = 2\pi h / \lambda$) rather than domain size:
 
-1. **Depth-to-Domain Ratio Rule**: Offshore maximum depth $h_{\mathrm{deep}} \le 0.03 - 0.05 \times \min(L_{x}, L_{z})$.
-   (Exceeding 5% places the wave in the deep-water regime $kh \gg 1$, where group velocity stalls and energy becomes trapped in local standing oscillations.)
-2. **Cutoff Frequency Rule**: Wavemaker frequency $f_{\mathrm{wavemaker}} < \frac{1}{2\pi}\sqrt{\frac{3g}{h_{\mathrm{deep}}}}$.
-   (Frequencies near or above cutoff yield $k^{2} < 0$, making waves evanescent and unable to propagate offshore. Monitored via Inspector `BoussinesqSimulationEditor` and `WaterSampleUI` HelpBoxes.)
+1. **Shallow-Water Limit ($kh < 0.31$, $h/\lambda < 0.05$)**:
+   Airy / NLSW non-dispersive shallow water limit. Dispersion is negligible; waves propagate at $c \approx \sqrt{gh}$.
+2. **Intermediate-Water Regime ($0.31 \le kh \le 1.0$, $h/\lambda \le 0.16$)**:
+   Optimal validity range for Peregrine (1967) 1/3 polynomial dispersion. Phase speed error against Airy linear wave theory is $< 2\%$ ($-0.76\%$ at $kh=1.0$), accurately capturing frequency dispersion, solitons, and shoaling.
+3. **Deep-Water Transition ($1.0 < kh \le 1.5$)**:
+   Exceeds polynomial approximation bounds; phase speed error increases ($> 2\%$ to $10\%$). Flagged with an Inspector/UI warning.
+4. **Cutoff / Evanescent Limit ($kh > 1.5$, $f \ge 0.85 f_{\mathrm{cutoff}}$)**:
+   Approaches Peregrine singularity $kh = \sqrt{3} \approx 1.732$ ($k^{2} < 0$), where group velocity vanishes, trapping wave energy into local standing oscillations.
+5. **Parameter Adjustment Guide (`AdjustParametersForBoussinesqRegime`)**:
+   Automatically calculates and applies depth adjustments targeting the valid intermediate regime ($kh \le 1.0$, target $kh \approx 0.8$). This provides an engineering parameter guideline for model validity rather than an unconditional stability guarantee against nonlinear wave breaking.
 
 ### 3.2 Internal Texture Layout
 To prevent floating-point quantization under small substep intervals ($\Delta t \approx 0.004 \sim 0.01\ \mathrm{s}$), **`fp32` (`ARGBFloat` / `RGFloat`)** buffers are used for state, force, and acceleration fields.
@@ -214,57 +220,82 @@ $$
 
    Corrector RHS force $\mathbf{f^{\ast}} = (f_{x}^{\ast}, f_{z}^{\ast})$ is stored into `_ForceTex`.
 
-#### (3) ADI Tridiagonal Parallel Cyclic Reduction (PCR) Solver (`CSTridiagonalX`, `CSTridiagonalZ`)
-The previous artificial coefficient clamp $\beta \le 6$ (which discarded up to $99.4\%$ of physical dispersion on refined grids) is removed. The 2D Peregrine dispersion operator is factored into an unconditionally stable Alternating Direction Implicit (Peaceman-Rachford ADI) system:
+#### (3) ADI Tridiagonal PCR Solver & Defect Correction (`CSTridiagonalX`, `CSTridiagonalZ`, `CSDefectCorrection`)
+The previous artificial clamp $\beta \le 6$ is removed. The 2D Peregrine dispersion operator $(I - \frac{h^{2}}{3}\nabla^{2})\mathbf{a} = \mathbf{f}$ is solved via direction-split Alternating Direction Implicit (Peaceman-Rachford ADI) reduction:
 
 $$
 \left(I - \beta_{x}\partial_{x}^{2}\right)\left(I - \beta_{z}\partial_{z}^{2}\right)\mathbf{a} = \mathbf{f}, \quad \beta_{x} = \frac{\alpha h^{2}}{3\Delta x^{2}}, \quad \beta_{z} = \frac{\alpha h^{2}}{3\Delta z^{2}}
 $$
 
-- **Pass 1 (`CSTridiagonalX`)**: For every row $Z = j$, the 1D tridiagonal system $(I - \beta_{x}\partial_{x}^{2})\mathbf{a}^{\ast} = \mathbf{f}$ is solved directly across row threads in `groupshared` memory using Parallel Cyclic Reduction (PCR: 9 reduction passes support $N \le 512$). Intermediate acceleration $\mathbf{a}^{\ast}$ is written to `_AccelPong`.
-  Strict diagonal dominance $b_{i} = 1 + \frac{2\alpha h^{2}}{3\Delta x^{2}} > |a_{i}| + |c_{i}| = \frac{2\alpha h^{2}}{3\Delta x^{2}}$ holds unconditionally for all $\alpha \ge 0, h > 0$.
-- **Pass 2 (`CSTridiagonalZ`)**: For every column $X = i$, the system $(I - \beta_{z}\partial_{z}^{2})\mathbf{a} = \mathbf{a}^{\ast}$ is solved directly via PCR along columns, writing finalized acceleration $\mathbf{a}$ to `_AccelPing`.
+- **Continuum Symbol & Directional Properties**:
+  In Fourier space, the ADI factored operator exhibits gain $G_{\mathrm{ADI}} = \frac{1}{(1 + \frac{1}{3}k_{x}^{2}h^{2})(1 + \frac{1}{3}k_{z}^{2}h^{2})}$.
+  - Grid Axes ($0^{\circ}, 90^{\circ}$, $k_{x}=0$ or $k_{z}=0$): Cross-terms vanish, matching standard Peregrine coupled gain $G_{\mathrm{Peregrine}} = \frac{1}{1 + \frac{1}{3}k^{2}h^{2}}$ exactly ($0.00\%$ error).
+  - $45^{\circ}$ Diagonal: Cross-term $\frac{1}{9}k_{x}^{2}k_{z}^{2}h^{4}$ introduces a phase speed bias of **$-1.03\%$** at $kh=1.0$.
+- **ADI Defect Correction (`CSDefectCorrection`)**:
+  When `dispersionSweeps > 1` (clamped 1..4), cross-derivative defect $\mathcal{R} = \beta_{x}\beta_{z}\partial_{x}^{2}\partial_{z}^{2}\mathbf{a}$ is calculated by `CSDefectCorrection` and added to RHS forces.
+  One defect correction sweep (`dispersionSweeps = 2`) reduces the $45^{\circ}$ phase speed error from $-1.03\%$ to **$-0.02\%$** ($49\times$ error reduction), recovering near-perfect isotropy.
+- **Decoupled Normal/Tangential Sidewall Boundary Conditions**:
+  At solid lateral boundaries ($x = 0, W-1$, `SideWallSponge = false`), normal acceleration $a_{x} = 0$ (strict Dirichlet) and tangential acceleration $\partial_{x} a_{z} = 0$ (Neumann) are solved on separate matrix rows.
+  Vectorized PCR with `groupshared float2` solves normal components via independent Dirichlet rows ($b_{x}=1, c_{x}=0, d_{x}=0$), guaranteeing exactly **$0.00000000$** normal acceleration at the wall (eliminating the $\approx 0.844$ neighbor coupling of prior implementations).
 
-Unlike iterative Jacobi relaxation, the ADI PCR formulation solves the linear system to machine precision in exactly two compute dispatches per stage with zero grid-resolution degradation.
-
-#### (4) Second-Order Coupled Time Stepping (`CSApplyPredictedDispersion` & `CSApplyDispersion`)
-Dispersion is coupled symmetrically to both predictor and corrector stages, applying a 2nd-order Heun velocity update:
-1. **Predictor Stage (`CSApplyPredictedDispersion`)**:
-   Solves $\mathbf{a}^{(1)} = L^{-1}\mathbf{f}^{n}$, saves $\mathbf{a}^{(1)}$ in `_ForcePredTex`, and updates predicted velocity:
+#### (4) Time Stepping & Numerical Convergence Properties (`CSApplyPredictedDispersion` & `CSApplyDispersion`)
+- **Boussinesq System**:
+  Couples MacCormack predictor forces $\mathbf{f}^{n}$ and corrector forces $\mathbf{f}^{\ast}$ with PCR dispersion solves, applying a second-order Heun velocity update:
 
 $$
 \mathbf{u}^{\ast} = D_{\mathrm{sponge}} \cdot \left(\mathbf{u}^{n} + \Delta t\,\mathbf{a}^{(1)}\right)
 $$
-
-2. **Corrector Stage (`CSApplyDispersion`)**:
-   Solves $\mathbf{a}^{(2)} = L^{-1}\mathbf{f}^{\ast}$ and updates velocity using the average acceleration:
-
 $$
 \mathbf{u}^{n+1} = D_{\mathrm{sponge}} \cdot \left(\mathbf{u}^{n} + \frac{1}{2}\Delta t\left(\mathbf{a}^{(1)} + \mathbf{a}^{(2)}\right)\right)
 $$
 
-Halving $\Delta t$ yields an error reduction ratio of **$3.99\times$** (matching theoretical $4.0\times$), rigorously demonstrating second-order convergence $O(\Delta t^{2})$.
+  where $D_{\mathrm{sponge}} = \frac{1}{1 + 15\,\Delta t\, S_{\mathrm{sponge}} \left(1 - \frac{d_{\mathrm{border}}}{W_{\mathrm{sponge}}}\right)^{2}}$ is the implicit sponge factor.
 
-The implicit sponge damping factor for $d_{\mathrm{border}} < W_{\mathrm{sponge}}$ is:
-
-$$
-D_{\mathrm{sponge}} = \frac{1}{1 + 15\,\Delta t\, S_{\mathrm{sponge}} \left(1 - \frac{d_{\mathrm{border}}}{W_{\mathrm{sponge}}}\right)^{2}}
-$$
-
-#### (4b) 4th-Order Biharmonic Spatial Dissipation Filter (`CSFilterHighFrequency`)
-In Peregrine Boussinesq systems, the inverse Helmholtz solve $(I - \alpha \frac{h^2}{3}\nabla^2)^{-1}$ attenuates restoring accelerations at high wavenumbers by $1/(1+4\beta) \approx 1/400$. Consequently, natural Lax-Wendroff numerical dissipation is suppressed, allowing $2\Delta x$ sawtooth checkerboard modes to accumulate undamped on the grid. To eliminate these parasitic modes, a 4th-order biharmonic dissipation filter is applied to each state variable $S \in \{\eta, u, w\}$ at the end of each sub-step:
+- **Wave Equation System (`CSStep`)**:
+  Stores physical velocity $v = \partial\eta/\partial t$ in `RGFloat` format, integrated via the Symplectic Euler (Kick-Drift) method:
 
 $$
-D_{4, x} S = S_{i-2, j} - 4S_{i-1, j} + 6S_{i, j} - 4S_{i+1, j} + S_{i+2, j}
+v^{n+1} = \frac{v^{n}(1 - \frac{1}{2}\gamma\Delta t) + \Delta t\, c^{2}\nabla^{2}\eta^{n}}{1 + \frac{1}{2}\gamma\Delta t} \quad \text{[Kick]}
 $$
 $$
-D_{4, z} S = S_{i, j-2} - 4S_{i, j-1} + 6S_{i, j} - 4S_{i, j+1} + S_{i, j+2}
-$$
-$$
-S^{\mathrm{final}} = S - \kappa \left(D_{4, x} S + D_{4, z} S\right) \quad (\kappa = 0.025)
+\eta^{n+1} = \eta^{n} + \Delta t\, v^{n+1} \quad \text{[Drift]}
 $$
 
-With a maximum 2D discrete eigenvalue of 32, $\kappa = 0.025$ provides an amplification factor of $1 - 32\kappa = 0.20$, guaranteeing unconditional contractive convergence without oscillation. The $2\Delta x$ sawtooth mode is attenuated by $99.4\%$ within 10 sub-steps, while physical long waves ($kh \ll 1$) suffer less than $0.0001\%$ damping.
+  Symplectic preservation of phase space volume ($\mathrm{d}\eta \wedge \mathrm{d}v$) ensures zero numerical dissipation over long runs.
+  Due to half-step staggering, the simultaneous state pair $(\eta, v)$ evaluated at $t_{n+1}$ exhibits $O(\Delta t)$ truncation error (measured error reduction ratio $2.01\times$ per halving of $\Delta t$, 1st-order convergence), while the staggered elevation sequence maintains $O(\Delta t^{2})$ (reproducible test suite: `Docs/NumericalVerificationSuite.py`).
+
+#### (4b) $\Delta t$-Scaled Conservative 4th-Order Biharmonic Filter (`CSFilterHighFrequency`)
+Inverse Helmholtz dispersion suppresses natural numerical viscosity for modes near $2\Delta x$. To eliminate sawtooth oscillations without introducing time-step distortion or mass loss, a conservative biharmonic filter is applied:
+
+1. **Time-Step Invariant Dissipation Scaling**:
+   Filter dissipation scales linearly with $\Delta t$ to match physical continuum diffusion $\partial S / \partial t = -\nu \nabla^{4} S$:
+
+$$
+\kappa(\Delta t) = 0.025 \cdot \mathrm{clamp}\left(\frac{\Delta t}{0.008}, 0.05, 2.0\right)
+$$
+
+   1-second amplitude retention remains invariant across time steps: $93.01\%$ for 16-cell waves and $99.54\%$ for 32-cell waves across $\Delta t = 0.008, 0.004, 0.002\ \mathrm{s}$.
+
+2. **Conservative Zero-Flux Boundary Stencil (Exact Mass Conservation)**:
+   Enforces boundary fluxes $J_{-1/2} = J_{W-1/2} = 0$:
+
+$$
+D_{4, x}[0] = 2S_{0} - 3S_{1} + S_{2}
+$$
+$$
+D_{4, x}[1] = -3S_{0} + 6S_{1} - 4S_{2} + S_{3}
+$$
+$$
+D_{4, x}[i] = S_{i-2} - 4S_{i-1} + 6S_{i} - 4S_{i+1} + S_{i+2} \quad (2 \le i \le W-3)
+$$
+$$
+D_{4, x}[W-2] = S_{W-4} - 4S_{W-3} + 6S_{W-2} - 3S_{W-1}
+$$
+$$
+D_{4, x}[W-1] = S_{W-3} - 3S_{W-2} + 2S_{W-1}
+$$
+
+   For any surface elevation field, $\sum_{x=0}^{W-1} D_{4, x} S \equiv 0$ and $\sum_{z=0}^{H-1} D_{4, z} S \equiv 0$ hold to machine precision (measured $\le 1.95 \times 10^{-14}$), guaranteeing exact conservation of total water volume.
 
 #### (5) Internal Mass Source Wavemaker (`GetWavemakerSources`) and GPU Soliton Injection (`CSAddImpulse`)
 - **Wei & Kirby (1999) Internal Mass Source Wavemaker (`GetWavemakerSources`)**:
