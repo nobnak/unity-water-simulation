@@ -138,6 +138,12 @@ namespace Nobnak.WaterSimulation {
         #endregion
 
         #region Unity lifecycle
+#if UNITY_EDITOR
+        private void Reset() {
+            ResolveComputeShader();
+        }
+#endif
+
         protected override void OnEnable() {
             ResolveComputeShader();
             ApplySeaStatePreset(seaState);
@@ -185,7 +191,13 @@ namespace Nobnak.WaterSimulation {
         #region private methods
         private void ResolveComputeShader() {
             if (fftShader == null) {
-                fftShader = Resources.Load<ComputeShader>("FFTOcean");
+#if UNITY_EDITOR
+                fftShader = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>(
+                    "Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute");
+#endif
+                if (fftShader == null) {
+                    Debug.LogError("[FFTOceanSimulation] fftShader is not assigned. Please assign FFTOcean.compute in Inspector.", this);
+                }
             }
         }
 

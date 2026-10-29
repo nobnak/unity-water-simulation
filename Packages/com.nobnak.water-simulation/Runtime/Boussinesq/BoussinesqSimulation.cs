@@ -230,6 +230,12 @@ namespace Nobnak.WaterSimulation {
         #endregion
 
         #region Unity lifecycle
+#if UNITY_EDITOR
+        private void Reset() {
+            ResolveComputeShader();
+        }
+#endif
+
         protected virtual void OnValidate() {
             if (deepWaterDepth < shallowWaterDepth) shallowWaterDepth = deepWaterDepth;
             if (wavemakerFrequency <= 0f) wavemakerFrequency = 0.01f;
@@ -318,7 +324,13 @@ namespace Nobnak.WaterSimulation {
         #region private methods
         private void ResolveComputeShader() {
             if (boussinesqShader == null) {
-                boussinesqShader = Resources.Load<ComputeShader>("Boussinesq");
+#if UNITY_EDITOR
+                boussinesqShader = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>(
+                    "Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute");
+#endif
+                if (boussinesqShader == null) {
+                    Debug.LogError("[BoussinesqSimulation] boussinesqShader is not assigned. Please assign Boussinesq.compute in Inspector.", this);
+                }
             }
         }
 

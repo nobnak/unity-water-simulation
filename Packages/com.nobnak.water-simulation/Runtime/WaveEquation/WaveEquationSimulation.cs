@@ -119,6 +119,12 @@ namespace Nobnak.WaterSimulation {
         #endregion
 
         #region Unity lifecycle
+#if UNITY_EDITOR
+        private void Reset() {
+            ResolveComputeShader();
+        }
+#endif
+
         protected override void OnEnable() {
             ResolveComputeShader();
             base.OnEnable();
@@ -163,7 +169,13 @@ namespace Nobnak.WaterSimulation {
         #region private methods
         private void ResolveComputeShader() {
             if (waveShader == null) {
-                waveShader = Resources.Load<ComputeShader>("WaveEquation");
+#if UNITY_EDITOR
+                waveShader = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>(
+                    "Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute");
+#endif
+                if (waveShader == null) {
+                    Debug.LogError("[WaveEquationSimulation] waveShader is not assigned. Please assign WaveEquation.compute in Inspector.", this);
+                }
             }
         }
 

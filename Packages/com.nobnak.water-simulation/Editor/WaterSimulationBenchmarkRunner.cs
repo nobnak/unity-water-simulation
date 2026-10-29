@@ -57,9 +57,10 @@ namespace Nobnak.WaterSimulation.Editor {
         }
 
         private static void VerifyComputeShaderDispersionVsCpu() {
-            var shader = Resources.Load<ComputeShader>("Boussinesq");
+            var shader = AssetDatabase.LoadAssetAtPath<ComputeShader>(
+                "Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute");
             if (shader == null) {
-                Debug.LogWarning("[WaterSimulationBenchmark] Boussinesq.compute not found in Resources for verification.");
+                Debug.LogWarning("[WaterSimulationBenchmark] Boussinesq.compute not found for verification.");
                 return;
             }
 

@@ -11,7 +11,6 @@ namespace Nobnak.WaterSimulation.Editor {
             renderer.TargetSimulation = sim;
 
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute");
-            if (compute == null) compute = Resources.Load<ComputeShader>("WaveEquation");
             var serializedSim = new SerializedObject(sim);
             serializedSim.FindProperty("waveShader").objectReferenceValue = compute;
             serializedSim.ApplyModifiedProperties();
@@ -35,7 +34,6 @@ namespace Nobnak.WaterSimulation.Editor {
             renderer.TargetSimulation = sim;
 
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute");
-            if (compute == null) compute = Resources.Load<ComputeShader>("Boussinesq");
             var serializedSim = new SerializedObject(sim);
             serializedSim.FindProperty("boussinesqShader").objectReferenceValue = compute;
             serializedSim.ApplyModifiedProperties();
@@ -59,7 +57,6 @@ namespace Nobnak.WaterSimulation.Editor {
             renderer.TargetSimulation = sim;
 
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute");
-            if (compute == null) compute = Resources.Load<ComputeShader>("FFTOcean");
             var serializedSim = new SerializedObject(sim);
             serializedSim.FindProperty("fftShader").objectReferenceValue = compute;
             serializedSim.ApplyModifiedProperties();

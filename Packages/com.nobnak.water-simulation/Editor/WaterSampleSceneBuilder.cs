@@ -53,7 +53,6 @@ namespace Nobnak.WaterSimulation.Editor {
             renderer.TargetSimulation = sim;
 
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute");
-            if (compute == null) compute = Resources.Load<ComputeShader>("WaveEquation");
             var so = new SerializedObject(sim);
             so.FindProperty("waveShader").objectReferenceValue = compute;
             so.FindProperty("areaSize").vector2Value = new Vector2(50f, 50f);
@@ -105,7 +104,6 @@ namespace Nobnak.WaterSimulation.Editor {
             seabedRenderer.SeabedMaterial = seabedMat;
 
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute");
-            if (compute == null) compute = Resources.Load<ComputeShader>("Boussinesq");
             var so = new SerializedObject(sim);
             so.FindProperty("boussinesqShader").objectReferenceValue = compute;
             so.FindProperty("areaSize").vector2Value = new Vector2(100f, 100f);
@@ -153,7 +151,6 @@ namespace Nobnak.WaterSimulation.Editor {
             renderer.TargetSimulation = sim;
 
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute");
-            if (compute == null) compute = Resources.Load<ComputeShader>("FFTOcean");
             var so = new SerializedObject(sim);
             so.FindProperty("fftShader").objectReferenceValue = compute;
             so.FindProperty("areaSize").vector2Value = new Vector2(200f, 200f);
@@ -200,7 +197,6 @@ namespace Nobnak.WaterSimulation.Editor {
             leftRenderer.TargetSimulation = leftSim;
 
             var computeWave = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute");
-            if (computeWave == null) computeWave = Resources.Load<ComputeShader>("WaveEquation");
             var soL = new SerializedObject(leftSim);
             soL.FindProperty("waveShader").objectReferenceValue = computeWave;
             soL.FindProperty("areaSize").vector2Value = new Vector2(50f, 50f);
@@ -223,7 +219,6 @@ namespace Nobnak.WaterSimulation.Editor {
             rightRenderer.TargetSimulation = rightSim;
 
             var computeBous = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute");
-            if (computeBous == null) computeBous = Resources.Load<ComputeShader>("Boussinesq");
             var soR = new SerializedObject(rightSim);
             soR.FindProperty("boussinesqShader").objectReferenceValue = computeBous;
             soR.FindProperty("areaSize").vector2Value = new Vector2(50f, 50f);
@@ -300,7 +295,6 @@ namespace Nobnak.WaterSimulation.Editor {
             ren1.WaterMaterial = CreateWaterMaterial();
 
             var computeWave = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/WaveEquation/WaveEquation.compute");
-            if (computeWave == null) computeWave = Resources.Load<ComputeShader>("WaveEquation");
             var so1 = new SerializedObject(sim1);
             so1.FindProperty("waveShader").objectReferenceValue = computeWave;
             so1.FindProperty("areaSize").vector2Value = new Vector2(40f, 40f);
@@ -323,7 +317,6 @@ namespace Nobnak.WaterSimulation.Editor {
             ren2.WaterMaterial = CreateWaterMaterial();
 
             var computeBous = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute");
-            if (computeBous == null) computeBous = Resources.Load<ComputeShader>("Boussinesq");
             var so2 = new SerializedObject(sim2);
             so2.FindProperty("boussinesqShader").objectReferenceValue = computeBous;
             so2.FindProperty("areaSize").vector2Value = new Vector2(40f, 40f);
@@ -351,7 +344,6 @@ namespace Nobnak.WaterSimulation.Editor {
             ren3.WaterMaterial = CreateWaterMaterial();
 
             var computeFFT = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute");
-            if (computeFFT == null) computeFFT = Resources.Load<ComputeShader>("FFTOcean");
             var so3 = new SerializedObject(sim3);
             so3.FindProperty("fftShader").objectReferenceValue = computeFFT;
             so3.FindProperty("areaSize").vector2Value = new Vector2(40f, 40f);
