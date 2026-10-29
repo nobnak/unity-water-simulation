@@ -281,19 +281,22 @@ $$
   Symplectic preservation of phase space volume ($\mathrm{d}\eta \wedge \mathrm{d}v$) ensures zero numerical dissipation over long runs.
   Due to half-step staggering, the simultaneous state pair $(\eta, v)$ evaluated at $t_{n+1}$ exhibits $O(\Delta t)$ truncation error (measured error reduction ratio $2.01\times$ per halving of $\Delta t$, 1st-order convergence), while the staggered elevation sequence maintains $O(\Delta t^{2})$ (reproducible test suite: `Docs/NumericalVerificationSuite.py`).
 
-#### (4b) $\Delta t$-Scaled Conservative 4th-Order Biharmonic Filter (`CSFilterHighFrequency`)
-Inverse Helmholtz dispersion suppresses natural numerical viscosity for modes near $2\Delta x$. To eliminate sawtooth oscillations without introducing time-step distortion or mass loss, a conservative biharmonic filter is applied:
+#### (4b) Time-Step Scaled Conservative Directional-Split 4th-Order Biharmonic Filter (`CSFilterX` & `CSFilterZ`)
+Inverse Helmholtz dispersion suppresses natural numerical viscosity for modes near $2\Delta x$. In the previous unsplit 2D filter, the maximum eigenvalue of 32 for the 2D checkerboard mode constrained the explicit stability limit to $\kappa \le 1/32 = 0.03125$, restricting single-step damping of 1D along-crest corrugations (eigenvalue 16) to at most $32\%$ ($68\%$ surviving). To eliminate along-crest ripples and high-frequency oscillations without introducing time-step distortion or mass loss, a directional-split biharmonic filter is applied at the end of every substep:
 
-1. **Time-Step Invariant Dissipation Scaling**:
+1. **Directional Splitting (Pass X $\to$ Pass Z) and Unconditional Monotonicity**:
+   Executes Pass 1 along X $(I - \kappa_x D_{4, x})$ followed by Pass 2 along Z $(I - \kappa_z D_{4, z})$. Since the 1D 4th-difference operator has maximum eigenvalue 16, the explicit stability limit is expanded to $\kappa \le 1/16 = 0.0625$. The combined 2D amplification factor $G(k_x, k_z) = (1 - 16\kappa_x \sin^4(k_x \Delta x / 2))(1 - 16\kappa_z \sin^4(k_z \Delta z / 2)) \in [0, 1]$ guarantees unconditional monotonicity and prevents diagonal overshoots. Damping for along-crest $2\Delta x$ ripples is increased from $32\%$ to **$77\%$** per substep.
+
+2. **Time-Step Scaling and Explicit Stability Limit**:
    Filter dissipation scales linearly with $\Delta t$ to match physical continuum diffusion $\partial S / \partial t = -\nu \nabla^{4} S$:
 
 $$
-\kappa(\Delta t) = 0.025 \cdot \mathrm{clamp}\left(\frac{\Delta t}{0.008}, 0.05, 2.0\right)
+\kappa(\Delta t) = \min(0.058, 12.0\,\Delta t)
 $$
 
-   1-second amplitude retention remains invariant across time steps: $93.01\%$ for 16-cell waves and $99.54\%$ for 32-cell waves across $\Delta t = 0.008, 0.004, 0.002\ \mathrm{s}$.
+   In the operational range $\Delta t \le 0.00483\ \mathrm{s}$, the dissipation rate $\kappa / \Delta t = 12.0\ \mathrm{s}^{-1}$ remains strictly constant across arbitrary substep durations without artificial lower clamps, while respecting the 1D explicit stability boundary $\kappa \le 0.058 < 0.0625$.
 
-2. **Conservative Zero-Flux Boundary Stencil (Exact Mass Conservation)**:
+3. **Conservative Zero-Flux Boundary Stencil (Exact Mass Conservation)**:
    Enforces boundary fluxes $J_{-1/2} = J_{W-1/2} = 0$:
 
 $$
@@ -312,7 +315,7 @@ $$
 D_{4, x}[W-1] = S_{W-3} - 3S_{W-2} + 2S_{W-1}
 $$
 
-   For any surface elevation field, $\sum_{x=0}^{W-1} D_{4, x} S \equiv 0$ and $\sum_{z=0}^{H-1} D_{4, z} S \equiv 0$ hold to machine precision (measured $\le 1.95 \times 10^{-14}$), guaranteeing exact conservation of total water volume.
+   For any surface elevation field, $\sum D_{4, x} S \equiv 0$ and $\sum D_{4, z} S \equiv 0$ hold independently across every row and column to machine precision (measured $\le 1.95 \times 10^{-14}$), guaranteeing exact conservation of total water volume. Lateral solid walls re-enforce $u = 0$ after Pass X, and offshore/beach borders re-enforce $w = 0$ after Pass Z.
 
 #### (5) Internal Mass Source Wavemaker (`GetWavemakerSources`) and GPU Soliton Injection (`CSAddImpulse`)
 - **Wei & Kirby (1999) Internal Mass Source Wavemaker (`GetWavemakerSources`)**:

@@ -271,169 +271,169 @@
         "cells_per_wavelength": 8,
         "dt": 0.008,
         "steps_per_sec": 125,
-        "per_substep_gain": 0.9914213562373095,
-        "amplitude_after_1sec": 0.34063065335738185
+        "per_substep_gain": 0.9893624817342638,
+        "amplitude_after_1sec": 0.26268159623527615
       },
       {
         "cells_per_wavelength": 8,
         "dt": 0.004,
         "steps_per_sec": 250,
-        "per_substep_gain": 0.9957106781186548,
-        "amplitude_after_1sec": 0.34142171900038726
+        "per_substep_gain": 0.9931370849898477,
+        "amplitude_after_1sec": 0.1787721339159554
       },
       {
         "cells_per_wavelength": 8,
         "dt": 0.002,
         "steps_per_sec": 500,
-        "per_substep_gain": 0.9978553390593273,
-        "amplitude_after_1sec": 0.3418162354040133
+        "per_substep_gain": 0.9965685424949238,
+        "amplitude_after_1sec": 0.17930280949583483
       },
       {
         "cells_per_wavelength": 8,
         "dt": 0.0004,
         "steps_per_sec": 2500,
-        "per_substep_gain": 0.9995710678118654,
-        "amplitude_after_1sec": 0.3421313625484657
+        "per_substep_gain": 0.9993137084989847,
+        "amplitude_after_1sec": 0.1797267266331362
       },
       {
         "cells_per_wavelength": 8,
         "dt": 0.0002,
         "steps_per_sec": 5000,
-        "per_substep_gain": 0.9997855339059327,
-        "amplitude_after_1sec": 0.3421707231270472
+        "per_substep_gain": 0.9996568542494924,
+        "amplitude_after_1sec": 0.17977967737147166
       },
       {
         "cells_per_wavelength": 8,
         "dt": 0.0001,
         "steps_per_sec": 10000,
-        "per_substep_gain": 0.9998927669529664,
-        "amplitude_after_1sec": 0.3421904008925916
+        "per_substep_gain": 0.9998284271247462,
+        "amplitude_after_1sec": 0.17980614950090718
       },
       {
         "cells_per_wavelength": 16,
         "dt": 0.008,
         "steps_per_sec": 125,
-        "per_substep_gain": 0.99942056744293,
-        "amplitude_after_1sec": 0.9301121937933298
+        "per_substep_gain": 0.9992815036292332,
+        "amplitude_after_1sec": 0.9140734710993805
       },
       {
         "cells_per_wavelength": 16,
         "dt": 0.004,
         "steps_per_sec": 250,
-        "per_substep_gain": 0.999710283721465,
-        "amplitude_after_1sec": 0.9301219581835178
+        "per_substep_gain": 0.999536453954344,
+        "amplitude_after_1sec": 0.8905523604175051
       },
       {
         "cells_per_wavelength": 16,
         "dt": 0.002,
         "steps_per_sec": 500,
-        "per_substep_gain": 0.9998551418607325,
-        "amplitude_after_1sec": 0.9301268390023554
+        "per_substep_gain": 0.9997682269771719,
+        "amplitude_after_1sec": 0.8905643258804133
       },
       {
         "cells_per_wavelength": 16,
         "dt": 0.0004,
         "steps_per_sec": 2500,
-        "per_substep_gain": 0.9999710283721465,
-        "amplitude_after_1sec": 0.9301307429969531
+        "per_substep_gain": 0.9999536453954344,
+        "amplitude_after_1sec": 0.8905738957039279
       },
       {
         "cells_per_wavelength": 16,
         "dt": 0.0002,
         "steps_per_sec": 5000,
-        "per_substep_gain": 0.9999855141860733,
-        "amplitude_after_1sec": 0.9301312309552854
+        "per_substep_gain": 0.9999768226977171,
+        "amplitude_after_1sec": 0.8905750917724845
       },
       {
         "cells_per_wavelength": 16,
         "dt": 0.0001,
         "steps_per_sec": 10000,
-        "per_substep_gain": 0.9999927570930366,
-        "amplitude_after_1sec": 0.9301314749303679
+        "per_substep_gain": 0.9999884113488586,
+        "amplitude_after_1sec": 0.8905756897941222
       },
       {
         "cells_per_wavelength": 32,
         "dt": 0.008,
         "steps_per_sec": 125,
-        "per_substep_gain": 0.9999630794550818,
-        "amplitude_after_1sec": 0.9953954801431272
+        "per_substep_gain": 0.9999542185243013,
+        "amplitude_after_1sec": 0.9942935286526268
       },
       {
         "cells_per_wavelength": 32,
         "dt": 0.004,
         "steps_per_sec": 250,
-        "per_substep_gain": 0.9999815397275409,
-        "amplitude_after_1sec": 0.9953955225462591
+        "per_substep_gain": 0.9999704635640654,
+        "amplitude_after_1sec": 0.992642978319623
       },
       {
         "cells_per_wavelength": 32,
         "dt": 0.002,
         "steps_per_sec": 500,
-        "per_substep_gain": 0.9999907698637704,
-        "amplitude_after_1sec": 0.9953955437474342
+        "per_substep_gain": 0.9999852317820327,
+        "amplitude_after_1sec": 0.9926430324451465
       },
       {
         "cells_per_wavelength": 32,
         "dt": 0.0004,
         "steps_per_sec": 2500,
-        "per_substep_gain": 0.999998153972754,
-        "amplitude_after_1sec": 0.9953955607080763
+        "per_substep_gain": 0.9999970463564065,
+        "amplitude_after_1sec": 0.992643075744745
       },
       {
         "cells_per_wavelength": 32,
         "dt": 0.0002,
         "steps_per_sec": 5000,
-        "per_substep_gain": 0.999999076986377,
-        "amplitude_after_1sec": 0.9953955628281588
+        "per_substep_gain": 0.9999985231782033,
+        "amplitude_after_1sec": 0.9926430811571539
       },
       {
         "cells_per_wavelength": 32,
         "dt": 0.0001,
         "steps_per_sec": 10000,
-        "per_substep_gain": 0.9999995384931886,
-        "amplitude_after_1sec": 0.9953955638887515
+        "per_substep_gain": 0.9999992615891017,
+        "amplitude_after_1sec": 0.9926430838639053
       },
       {
         "cells_per_wavelength": 64,
         "dt": 0.008,
         "steps_per_sec": 125,
-        "per_substep_gain": 0.9999976813142779,
-        "amplitude_after_1sec": 0.9997102059471298
+        "per_substep_gain": 0.9999971248297045,
+        "amplitude_after_1sec": 0.999640667771692
       },
       {
         "cells_per_wavelength": 64,
         "dt": 0.004,
         "steps_per_sec": 250,
-        "per_substep_gain": 0.999998840657139,
-        "amplitude_after_1sec": 0.999710206115091
+        "per_substep_gain": 0.9999981450514223,
+        "amplitude_after_1sec": 0.9995363699351099
       },
       {
         "cells_per_wavelength": 64,
         "dt": 0.002,
         "steps_per_sec": 500,
-        "per_substep_gain": 0.9999994203285695,
-        "amplitude_after_1sec": 0.9997102061990715
+        "per_substep_gain": 0.9999990725257112,
+        "amplitude_after_1sec": 0.9995363701500904
       },
       {
         "cells_per_wavelength": 64,
         "dt": 0.0004,
         "steps_per_sec": 2500,
-        "per_substep_gain": 0.9999998840657139,
-        "amplitude_after_1sec": 0.9997102062663668
+        "per_substep_gain": 0.9999998145051422,
+        "amplitude_after_1sec": 0.9995363703219415
       },
       {
         "cells_per_wavelength": 64,
         "dt": 0.0002,
         "steps_per_sec": 5000,
-        "per_substep_gain": 0.9999999420328569,
-        "amplitude_after_1sec": 0.9997102062744874
+        "per_substep_gain": 0.9999999072525712,
+        "amplitude_after_1sec": 0.9995363703437142
       },
       {
         "cells_per_wavelength": 64,
         "dt": 0.0001,
         "steps_per_sec": 10000,
-        "per_substep_gain": 0.9999999710164285,
-        "amplitude_after_1sec": 0.9997102062786863
+        "per_substep_gain": 0.9999999536262856,
+        "amplitude_after_1sec": 0.9995363703544619
       }
     ],
     "impulse_mass_before": 1.0,
@@ -446,7 +446,7 @@
         1.0,
         1.0
       ],
-      "raw_stencil_velocity": 0.05,
+      "raw_stencil_velocity": 0.062,
       "filter_output_velocity": 0.0,
       "wall_normal_velocity_maintained_zero": true
     },
@@ -540,46 +540,46 @@
     "case1_dispersive_solid_wavemaker_slope": {
       "side_walls_strictly_zero": true,
       "max_wall_normal_velocity_final": 0.0,
-      "max_wall_normal_velocity_pre_filter_projection": 0.02812742278215229,
+      "max_wall_normal_velocity_pre_filter_projection": 0.03487800424986884,
       "max_wall_normal_velocity_pre_dispersion_projection": 0.0,
       "max_wall_normal_flux": 0.0,
       "has_nan_or_inf": false,
       "mass_initial": 1.0824674490095276e-15,
-      "mass_final": 0.0024447107461538433,
-      "mass_change": 0.002444710746152761
+      "mass_final": 0.002444710746153921,
+      "mass_change": 0.0024447107461528384
     },
     "case2_dispersive_sponge_nowavemaker_flat": {
       "side_walls_strictly_zero": false,
-      "max_wall_normal_velocity_final": 0.02769105982530469,
-      "max_wall_normal_velocity_pre_filter_projection": 0.02769105982530469,
+      "max_wall_normal_velocity_final": 0.03433691418337781,
+      "max_wall_normal_velocity_pre_filter_projection": 0.03433691418337781,
       "max_wall_normal_velocity_pre_dispersion_projection": 0.0,
-      "max_wall_normal_flux": 0.0977631520169188,
+      "max_wall_normal_flux": 0.12124461208355612,
       "has_nan_or_inf": false,
       "mass_initial": 1.0824674490095276e-15,
-      "mass_final": 0.09542240025188305,
-      "mass_change": 0.09542240025188196
+      "mass_final": 0.09542240025188292,
+      "mass_change": 0.09542240025188184
     },
     "case3_nondispersive_solid_nowavemaker_slope": {
       "side_walls_strictly_zero": true,
       "max_wall_normal_velocity_final": 0.0,
-      "max_wall_normal_velocity_pre_filter_projection": 0.02810699623834091,
+      "max_wall_normal_velocity_pre_filter_projection": 0.034852675335542725,
       "max_wall_normal_velocity_pre_dispersion_projection": 0.0036793344264118405,
       "max_wall_normal_flux": 0.0,
       "has_nan_or_inf": false,
       "mass_initial": 1.0824674490095276e-15,
-      "mass_final": -0.00019249275228138264,
-      "mass_change": -0.0001924927522824651
+      "mass_final": -0.00019249275228139804,
+      "mass_change": -0.0001924927522824805
     },
     "case4_dispersive_solid_pure_flux_conservation": {
       "side_walls_strictly_zero": true,
       "max_wall_normal_velocity_final": 0.0,
-      "max_wall_normal_velocity_pre_filter_projection": 0.028127461629134487,
+      "max_wall_normal_velocity_pre_filter_projection": 0.034878052420126766,
       "max_wall_normal_velocity_pre_dispersion_projection": 0.0,
       "max_wall_normal_flux": 0.0,
       "has_nan_or_inf": false,
       "mass_initial": 1.0824674490095276e-15,
-      "mass_final": 1.126269216777942e-15,
-      "mass_change": 4.380176776841438e-17
+      "mass_final": 1.0723843688054124e-15,
+      "mass_change": -1.0083080204115191e-17
     },
     "pure_flux_mass_conservation_satisfied": true,
     "all_solid_walls_strictly_zero": true,

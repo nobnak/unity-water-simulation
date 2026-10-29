@@ -104,6 +104,8 @@ namespace Nobnak.WaterSimulation {
         private int kernelImpulse;
         private int kernelNormal;
         private int kernelFilter;
+        private int kernelFilterX;
+        private int kernelFilterZ;
         private int kernelDefectCorrection;
         #endregion
 
@@ -374,6 +376,8 @@ namespace Nobnak.WaterSimulation {
             kernelImpulse = boussinesqShader.FindKernel("CSAddImpulse");
             kernelNormal = boussinesqShader.FindKernel("CSComputeNormal");
             kernelFilter = boussinesqShader.FindKernel("CSFilterHighFrequency");
+            kernelFilterX = boussinesqShader.FindKernel("CSFilterX");
+            kernelFilterZ = boussinesqShader.FindKernel("CSFilterZ");
             kernelDefectCorrection = boussinesqShader.FindKernel("CSDefectCorrection");
         }
 
@@ -533,15 +537,28 @@ namespace Nobnak.WaterSimulation {
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropBathymetryTex, bathymetryTex);
                 DispatchCompute2D(kernelApplyDispersion);
 
-                // 4. Biharmonic high-frequency filter (eliminates 2dx sawtooth modes)
-                boussinesqShader.SetTexture(kernelFilter, PropStateIn, predTex);
-                boussinesqShader.SetTexture(kernelFilter, PropStateOut, next);
-                DispatchCompute2D(kernelFilter);
-            } else {
-                boussinesqShader.SetTexture(kernelFilter, PropStateIn, next);
-                boussinesqShader.SetTexture(kernelFilter, PropStateOut, predTex);
-                DispatchCompute2D(kernelFilter);
+                // 4. Directional-split biharmonic filter (eliminates along-crest corrugations and sawtooth modes)
+                // Pass 1: X biharmonic filter (predTex -> next)
+                boussinesqShader.SetTexture(kernelFilterX, PropStateIn, predTex);
+                boussinesqShader.SetTexture(kernelFilterX, PropStateOut, next);
+                DispatchCompute2D(kernelFilterX);
+
+                // Pass 2: Z biharmonic filter (next -> predTex)
+                boussinesqShader.SetTexture(kernelFilterZ, PropStateIn, next);
+                boussinesqShader.SetTexture(kernelFilterZ, PropStateOut, predTex);
+                DispatchCompute2D(kernelFilterZ);
+
                 Graphics.CopyTexture(predTex, next);
+            } else {
+                // Pass 1: X biharmonic filter (next -> predTex)
+                boussinesqShader.SetTexture(kernelFilterX, PropStateIn, next);
+                boussinesqShader.SetTexture(kernelFilterX, PropStateOut, predTex);
+                DispatchCompute2D(kernelFilterX);
+
+                // Pass 2: Z biharmonic filter (predTex -> next)
+                boussinesqShader.SetTexture(kernelFilterZ, PropStateIn, predTex);
+                boussinesqShader.SetTexture(kernelFilterZ, PropStateOut, next);
+                DispatchCompute2D(kernelFilterZ);
             }
 
             if (initialCondition == InitialConditionType.ContinuousWavemaker) {

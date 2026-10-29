@@ -71,9 +71,9 @@ def verify_filter():
         q = 2.0 * math.pi / cells
         eig = 16.0 * (math.sin(q / 2.0) ** 4)
         for dt in [0.008, 0.004, 0.002, 0.0004, 0.0002, 0.0001]:
-            # dt-proportional scaling without arbitrary lower clamp ensures physical dissipation
-            # per second is invariant to time-step choice across the entire range
-            kappa = 0.025 * min(2.0, dt / 0.008)
+            # dt-proportional scaling without arbitrary lower clamp (capped at explicit stability limit 0.031)
+            # Physical dissipation rate per second is constant kappa / dt = 5.0 s^-1 for dt <= 0.0062s
+            kappa = min(0.031, 5.0 * dt)
             per_step = 1.0 - kappa * eig
             steps = round(1.0 / dt)
             amp_1s = per_step ** steps
@@ -114,7 +114,7 @@ def verify_filter():
     # With CSFilterHighFrequency boundary condition (filtered.g = 0 on solid lateral walls),
     # normal velocity remains strictly 0.00000000.
     dt_ref = 0.008
-    kappa_ref = 0.025 * min(2.0, dt_ref / 0.008)
+    kappa_ref = min(0.031, 5.0 * dt_ref)
     u_raw_after = 0.0 - kappa_ref * (2.0 * 0.0 - 3.0 * 1.0 + 1.0)
     u_enforced_after = 0.0  # CSFilterHighFrequency zeroes filtered.g on lateral solid walls
 
@@ -159,7 +159,7 @@ def verify_filter_wall_boundary():
     # Compute 1D biharmonic filter on u
     def apply_filter_u(u_field):
         u_out = [[0.0 for _ in range(W)] for _ in range(H)]
-        kappa = 0.025 * min(2.0, dt / 0.008)
+        kappa = min(0.031, 5.0 * dt)
         for y in range(H):
             for x in range(W):
                 # 4th order stencil in X
@@ -561,7 +561,7 @@ def verify_full_substep_simulation_boundary():
         def apply_filter(field, is_u=False, is_w=False):
             f_out = [[0.0 for _ in range(W)] for _ in range(H)]
             f_pre_proj = [[0.0 for _ in range(W)] for _ in range(H)]
-            kappa = 0.025 * min(2.0, dt / 0.008)
+            kappa = min(0.031, 5.0 * dt)
             for y in range(H):
                 for x in range(W):
                     if x == 0: d4x = 2.0*field[y][0] - 3.0*field[y][1] + field[y][2]

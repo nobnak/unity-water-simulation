@@ -8,6 +8,8 @@
 #pragma kernel CSAddImpulse
 #pragma kernel CSComputeNormal
 #pragma kernel CSFilterHighFrequency
+#pragma kernel CSFilterX
+#pragma kernel CSFilterZ
 #pragma kernel CSDefectCorrection
 
 RWTexture2D<float4> _StateIn;     // R: eta (surface elevation [m]), G: u (vel X [m/s]), B: w (vel Z [m/s]), A: aux
@@ -733,6 +735,83 @@ void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
     if (_SideWallSponge == 0 && (x == 0 || x == w - 1)) {
         filtered.g = 0.0; // Strictly zero normal velocity on lateral solid walls
     }
+    if (y == 0 || y == h - 1) {
+        filtered.b = 0.0; // Strictly zero normal velocity on offshore/beach borders
+    }
+
+    filtered.r = clamp(filtered.r, -15.0, 15.0);
+    filtered.g = clamp(filtered.g, -30.0, 30.0);
+    filtered.b = clamp(filtered.b, -30.0, 30.0);
+    filtered.a = 0.0;
+
+    _StateOut[pos] = filtered;
+}
+
+// 7b. Directional-split 4th-order biharmonic filter: Pass 1 along X
+// Eliminates 2dx along-crest corrugations with explicit 1D biharmonic stability limit (kappaX <= 1/16 = 0.0625)
+[numthreads(8, 8, 1)]
+void CSFilterX(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+    float4 c = _StateIn[pos];
+    int x = pos.x;
+    int y = pos.y;
+    int w = _Width;
+
+    float4 d4x;
+    if (x == 0) {
+        d4x = 2.0 * _StateIn[int2(0, y)] - 3.0 * _StateIn[int2(1, y)] + _StateIn[int2(2, y)];
+    } else if (x == 1) {
+        d4x = -3.0 * _StateIn[int2(0, y)] + 6.0 * _StateIn[int2(1, y)] - 4.0 * _StateIn[int2(2, y)] + _StateIn[int2(3, y)];
+    } else if (x == w - 2) {
+        d4x = _StateIn[int2(w - 4, y)] - 4.0 * _StateIn[int2(w - 3, y)] + 6.0 * _StateIn[int2(w - 2, y)] - 3.0 * _StateIn[int2(w - 1, y)];
+    } else if (x == w - 1) {
+        d4x = _StateIn[int2(w - 3, y)] - 3.0 * _StateIn[int2(w - 2, y)] + 2.0 * _StateIn[int2(w - 1, y)];
+    } else {
+        d4x = _StateIn[int2(x - 2, y)] - 4.0 * _StateIn[int2(x - 1, y)] + 6.0 * c - 4.0 * _StateIn[int2(x + 1, y)] + _StateIn[int2(x + 2, y)];
+    }
+
+    float kappaX = min(0.058, 12.0 * _DeltaTime);
+    float4 filtered = c - kappaX * d4x;
+
+    if (_SideWallSponge == 0 && (x == 0 || x == w - 1)) {
+        filtered.g = 0.0; // Strictly zero normal velocity on lateral solid walls
+    }
+
+    filtered.r = clamp(filtered.r, -15.0, 15.0);
+    filtered.g = clamp(filtered.g, -30.0, 30.0);
+    filtered.b = clamp(filtered.b, -30.0, 30.0);
+    filtered.a = 0.0;
+
+    _StateOut[pos] = filtered;
+}
+
+// 7c. Directional-split 4th-order biharmonic filter: Pass 2 along Z
+[numthreads(8, 8, 1)]
+void CSFilterZ(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+    float4 c = _StateIn[pos];
+    int x = pos.x;
+    int y = pos.y;
+    int h = _Height;
+
+    float4 d4z;
+    if (y == 0) {
+        d4z = 2.0 * _StateIn[int2(x, 0)] - 3.0 * _StateIn[int2(x, 1)] + _StateIn[int2(x, 2)];
+    } else if (y == 1) {
+        d4z = -3.0 * _StateIn[int2(x, 0)] + 6.0 * _StateIn[int2(x, 1)] - 4.0 * _StateIn[int2(x, 2)] + _StateIn[int2(x, 3)];
+    } else if (y == h - 2) {
+        d4z = _StateIn[int2(x, h - 4)] - 4.0 * _StateIn[int2(x, h - 3)] + 6.0 * _StateIn[int2(x, h - 2)] - 3.0 * _StateIn[int2(x, h - 1)];
+    } else if (y == h - 1) {
+        d4z = _StateIn[int2(x, h - 3)] - 3.0 * _StateIn[int2(x, h - 2)] + 2.0 * _StateIn[int2(x, h - 1)];
+    } else {
+        d4z = _StateIn[int2(x, y - 2)] - 4.0 * _StateIn[int2(x, y - 1)] + 6.0 * c - 4.0 * _StateIn[int2(x, y + 1)] + _StateIn[int2(x, y + 2)];
+    }
+
+    float kappaZ = min(0.058, 12.0 * _DeltaTime);
+    float4 filtered = c - kappaZ * d4z;
+
     if (y == 0 || y == h - 1) {
         filtered.b = 0.0; // Strictly zero normal velocity on offshore/beach borders
     }
