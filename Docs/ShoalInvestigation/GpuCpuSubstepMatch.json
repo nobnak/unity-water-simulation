@@ -1,0 +1,24 @@
+﻿{
+  "test": "GPU Compute Shader vs CPU Continuum Solver 1-Substep Match",
+  "grid_size": 32,
+  "dx": 1.5625,
+  "dt": 0.00800,
+  "stages": [
+    { "stage": "1_Predictor_Eta", "max_abs_error": 9.481E-007, "tolerance": 1.000E-004, "passed": true },
+    { "stage": "1_Predictor_ForceX", "max_abs_error": 1.084E-007, "tolerance": 1.000E-004, "passed": true },
+    { "stage": "1_Predictor_ForceZ", "max_abs_error": 2.068E-007, "tolerance": 1.000E-004, "passed": true },
+    { "stage": "2_Dispersion_Ax1", "max_abs_error": 1.031E-004, "tolerance": 5.000E-004, "passed": true },
+    { "stage": "2_Dispersion_Az1", "max_abs_error": 1.134E-004, "tolerance": 5.000E-004, "passed": true },
+    { "stage": "3_ApplyPred_UPred", "max_abs_error": 8.252E-007, "tolerance": 5.000E-004, "passed": true },
+    { "stage": "3_ApplyPred_WPred", "max_abs_error": 9.071E-007, "tolerance": 5.000E-004, "passed": true },
+    { "stage": "4_Corrector_EtaNext", "max_abs_error": 5.141E-007, "tolerance": 1.000E-004, "passed": true },
+    { "stage": "4_Corrector_ForceXStar", "max_abs_error": 1.040E-005, "tolerance": 1.000E-004, "passed": true },
+    { "stage": "4_Corrector_ForceZStar", "max_abs_error": 9.162E-006, "tolerance": 1.000E-004, "passed": true },
+    { "stage": "5_ApplyDispersion_UNext", "max_abs_error": 8.391E-007, "tolerance": 5.000E-004, "passed": true },
+    { "stage": "5_ApplyDispersion_WNext", "max_abs_error": 8.754E-007, "tolerance": 5.000E-004, "passed": true },
+    { "stage": "6_Filter_EtaFinal", "max_abs_error": 2.831E-007, "tolerance": 1.000E-004, "passed": true },
+    { "stage": "6_Filter_UFinal", "max_abs_error": 5.568E-007, "tolerance": 5.000E-004, "passed": true },
+    { "stage": "6_Filter_WFinal", "max_abs_error": 4.359E-007, "tolerance": 5.000E-004, "passed": true }
+  ],
+  "all_passed": true
+}

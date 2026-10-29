@@ -68,6 +68,82 @@ class ShoalSimulation:
 
         self.inv_dx2 = alpha / (self.dx * self.dx)
         self.inv_dz2 = alpha / (self.dz * self.dz)
+        self._precompute_tridiagonal()
+
+    def _precompute_tridiagonal(self):
+        N = self.N
+        self.c_prime_xn = [0.0] * (N * N)
+        self.m_denom_xn = [0.0] * (N * N)
+        self.a_sub_xn = [0.0] * (N * N)
+
+        self.c_prime_xt = [0.0] * (N * N)
+        self.m_denom_xt = [0.0] * (N * N)
+        self.a_sub_xt = [0.0] * (N * N)
+
+        for y in range(1, N - 1):
+            row = y * N
+            # Normal component: strict Dirichlet (ax = 0) at lateral walls
+            self.c_prime_xn[row + 0] = 0.0
+            self.m_denom_xn[row + 0] = 1.0
+            for x in range(1, N - 1):
+                hC = self.depth[row + x]
+                hL = self.depth[row + x - 1]
+                hR = self.depth[row + x + 1]
+                ax = -self.inv_dx2 * (0.5 * hC * hL - (hC * hC) / 6.0)
+                bx = 1.0 + self.inv_dx2 * ((2.0 / 3.0) * hC * hC)
+                cx = -self.inv_dx2 * (0.5 * hC * hR - (hC * hC) / 6.0)
+                self.a_sub_xn[row + x] = ax
+                denom = bx - ax * self.c_prime_xn[row + x - 1]
+                self.c_prime_xn[row + x] = cx / denom
+                self.m_denom_xn[row + x] = 1.0 / denom
+            self.m_denom_xn[row + N - 1] = 1.0
+
+            # Tangential component: strict Neumann (d(az)/dx = 0) at lateral walls
+            h0 = self.depth[row + 0]
+            beta0 = (1.0 / 3.0) * h0 * h0 * self.inv_dx2
+            b0 = 1.0 + 2.0 * beta0
+            c0 = -2.0 * beta0
+            self.c_prime_xt[row + 0] = c0 / b0
+            self.m_denom_xt[row + 0] = 1.0 / b0
+            for x in range(1, N - 1):
+                hC = self.depth[row + x]
+                hL = self.depth[row + x - 1]
+                hR = self.depth[row + x + 1]
+                ax = -self.inv_dx2 * (0.5 * hC * hL - (hC * hC) / 6.0)
+                bx = 1.0 + self.inv_dx2 * ((2.0 / 3.0) * hC * hC)
+                cx = -self.inv_dx2 * (0.5 * hC * hR - (hC * hC) / 6.0)
+                self.a_sub_xt[row + x] = ax
+                denom = bx - ax * self.c_prime_xt[row + x - 1]
+                self.c_prime_xt[row + x] = cx / denom
+                self.m_denom_xt[row + x] = 1.0 / denom
+            hE = self.depth[row + N - 1]
+            betaE = (1.0 / 3.0) * hE * hE * self.inv_dx2
+            aE = -2.0 * betaE
+            bE = 1.0 + 2.0 * betaE
+            self.a_sub_xt[row + N - 1] = aE
+            denomE = bE - aE * self.c_prime_xt[row + N - 2]
+            self.m_denom_xt[row + N - 1] = 1.0 / denomE
+
+        # Z tridiagonal: strict Dirichlet (0) at offshore/beach borders
+        self.c_prime_z = [0.0] * (N * N)
+        self.m_denom_z = [0.0] * (N * N)
+        self.a_sub_z = [0.0] * (N * N)
+        for x in range(N):
+            self.m_denom_z[0 * N + x] = 1.0
+            for y in range(1, N - 1):
+                hC = self.depth[y * N + x]
+                hD = self.depth[(y - 1) * N + x]
+                hU = self.depth[(y + 1) * N + x]
+                ay = -self.inv_dz2 * (0.5 * hC * hD - (hC * hC) / 6.0)
+                by = 1.0 + self.inv_dz2 * ((2.0 / 3.0) * hC * hC)
+                cy = -self.inv_dz2 * (0.5 * hC * hU - (hC * hC) / 6.0)
+                self.a_sub_z[y * N + x] = ay
+                denom = by - ay * self.c_prime_z[(y - 1) * N + x]
+                self.c_prime_z[y * N + x] = cy / denom
+                self.m_denom_z[y * N + x] = 1.0 / denom
+            self.m_denom_z[(N - 1) * N + x] = 1.0
+
+        self._work_d_prime = [0.0] * N
 
     @staticmethod
     def smooth_depth(raw_h):
@@ -75,115 +151,74 @@ class ShoalSimulation:
         return 0.05 + 0.5 * (d + math.sqrt(d * d + 0.0004))
 
     def sponge_damp(self, x, y):
-        sponge_w = int(24 * self.N / 512)
+        sponge_w = 24.0 * (self.N / 512.0)
         sponge_str = 3.0
         dist = min(y, self.N - 1 - y)
         if dist < sponge_w and sponge_w > 0:
-            r = (sponge_w - dist) / sponge_w
-            return math.exp(-sponge_str * r * r * self.sub_dt)
+            t = 1.0 - (dist / sponge_w)
+            return 1.0 / (1.0 + t * t * sponge_str * self.sub_dt * 15.0)
         return 1.0
 
     def get_source(self, x, y, h_val, ph):
         if self.amp <= 0.001:
             return 0.0
         dy = float(y - self.wavemaker_y)
-        if abs(dy) > (18.0 * self.N / 512):
+        sigma_m = 4.0 * (100.0 / 512.0)
+        dy_m = dy * self.dz
+        if abs(dy_m) > 18.0 * (100.0 / 512.0):
             return 0.0
-        sigma = 6.0 * self.N / 512
-        spatial = math.exp(-0.5 * (dy / sigma) ** 2)
-        c = math.sqrt(self.g * h_val)
-        flux_amp = self.amp * c / h_val
-        return flux_amp * math.sin(ph) * spatial
+        sigma_cells = sigma_m / self.dz
+        inv_sqrt_2pi_sigma = 1.0 / (2.506628 * sigma_cells * self.dz)
+        gaussian = math.exp(-0.5 * (dy / sigma_cells) ** 2)
+        c = math.sqrt(self.g * max(0.5, h_val))
+        return 2.0 * c * self.amp * math.sin(ph) * gaussian * inv_sqrt_2pi_sigma
 
-    def solve_tridiag_x(self, rhs_grid):
+    def solve_tridiag_x(self, rhs_grid, is_tangential=False):
         N = self.N
         sol_grid = [0.0] * (N * N)
-        for y in range(N):
-            row_offset = y * N
-            if y == 0 or y == N - 1:
-                continue
-            a_diag = [0.0] * N
-            b_diag = [1.0] * N
-            c_diag = [0.0] * N
-            d_vec = [rhs_grid[row_offset + x] for x in range(N)]
+        c_p = self.c_prime_xt if is_tangential else self.c_prime_xn
+        m_d = self.m_denom_xt if is_tangential else self.m_denom_xn
+        a_s = self.a_sub_xt if is_tangential else self.a_sub_xn
+        d_p = self._work_d_prime
 
-            b_diag[0] = 1.0
-            d_vec[0] = 0.0
-            b_diag[N - 1] = 1.0
-            d_vec[N - 1] = 0.0
-
+        for y in range(1, N - 1):
+            row = y * N
+            d_p[0] = (rhs_grid[row + 0] if is_tangential else 0.0) * m_d[row + 0]
             for x in range(1, N - 1):
-                hC = self.depth[row_offset + x]
-                hL = self.depth[row_offset + x - 1]
-                hR = self.depth[row_offset + x + 1]
-                a_diag[x] = -self.inv_dx2 * (0.5 * hC * hL - (hC * hC) / 6.0)
-                b_diag[x] = 1.0 + self.inv_dx2 * ((2.0 / 3.0) * hC * hC)
-                c_diag[x] = -self.inv_dx2 * (0.5 * hC * hR - (hC * hC) / 6.0)
+                idx = row + x
+                d_p[x] = (rhs_grid[idx] - a_s[idx] * d_p[x - 1]) * m_d[idx]
+            d_p[N - 1] = ((rhs_grid[row + N - 1] if is_tangential else 0.0) - a_s[row + N - 1] * d_p[N - 2]) * m_d[row + N - 1]
 
-            c_prime = [0.0] * N
-            d_prime = [0.0] * N
-            c_prime[0] = c_diag[0] / b_diag[0]
-            d_prime[0] = d_vec[0] / b_diag[0]
-            for x in range(1, N):
-                denom = b_diag[x] - a_diag[x] * c_prime[x - 1]
-                if abs(denom) < 1e-12: denom = 1e-12
-                c_prime[x] = c_diag[x] / denom
-                d_prime[x] = (d_vec[x] - a_diag[x] * d_prime[x - 1]) / denom
-
-            row_sol = [0.0] * N
-            row_sol[-1] = d_prime[-1]
+            sol_grid[row + N - 1] = d_p[N - 1]
             for x in range(N - 2, -1, -1):
-                row_sol[x] = d_prime[x] - c_prime[x] * row_sol[x + 1]
-
-            for x in range(N):
-                sol_grid[row_offset + x] = row_sol[x]
+                sol_grid[row + x] = d_p[x] - c_p[row + x] * sol_grid[row + x + 1]
         return sol_grid
 
     def solve_tridiag_z(self, rhs_grid):
         N = self.N
         sol_grid = [0.0] * (N * N)
+        m_d = self.m_denom_z
+        a_s = self.a_sub_z
+        c_p = self.c_prime_z
+        d_p = self._work_d_prime
+
         for x in range(N):
-            a_diag = [0.0] * N
-            b_diag = [1.0] * N
-            c_diag = [0.0] * N
-            d_vec = [rhs_grid[y * N + x] for y in range(N)]
-
-            b_diag[0] = 1.0
-            d_vec[0] = 0.0
-            b_diag[N - 1] = 1.0
-            d_vec[N - 1] = 0.0
-
+            d_p[0] = 0.0
             for y in range(1, N - 1):
-                hC = self.depth[y * N + x]
-                hD = self.depth[(y - 1) * N + x]
-                hU = self.depth[(y + 1) * N + x]
-                a_diag[y] = -self.inv_dz2 * (0.5 * hC * hD - (hC * hC) / 6.0)
-                b_diag[y] = 1.0 + self.inv_dz2 * ((2.0 / 3.0) * hC * hC)
-                c_diag[y] = -self.inv_dz2 * (0.5 * hC * hU - (hC * hC) / 6.0)
+                idx = y * N + x
+                d_p[y] = (rhs_grid[idx] - a_s[idx] * d_p[y - 1]) * m_d[idx]
+            d_p[N - 1] = 0.0
 
-            c_prime = [0.0] * N
-            d_prime = [0.0] * N
-            c_prime[0] = c_diag[0] / b_diag[0]
-            d_prime[0] = d_vec[0] / b_diag[0]
-            for y in range(1, N):
-                denom = b_diag[y] - a_diag[y] * c_prime[y - 1]
-                if abs(denom) < 1e-12: denom = 1e-12
-                c_prime[y] = c_diag[y] / denom
-                d_prime[y] = (d_vec[y] - a_diag[y] * d_prime[y - 1]) / denom
-
-            col_sol = [0.0] * N
-            col_sol[-1] = d_prime[-1]
+            sol_grid[(N - 1) * N + x] = 0.0
             for y in range(N - 2, -1, -1):
-                col_sol[y] = d_prime[y] - c_prime[y] * col_sol[y + 1]
-
-            for y in range(N):
-                sol_grid[y * N + x] = col_sol[y]
+                sol_grid[y * N + x] = d_p[y] - c_p[y * N + x] * sol_grid[(y + 1) * N + x]
         return sol_grid
 
     def solve_dispersion(self, fx, fz):
         # 1-sweep ADI solves (I - beta_z d_z^2)(I - beta_x d_x^2) a = f
-        ax = self.solve_tridiag_z(self.solve_tridiag_x(fx))
-        az = self.solve_tridiag_z(self.solve_tridiag_x(fz))
+        # Decoupled normal (Dirichlet) / tangential (Neumann) slip flume walls matching Boussinesq.compute
+        ax = self.solve_tridiag_z(self.solve_tridiag_x(fx, is_tangential=False))
+        az = self.solve_tridiag_z(self.solve_tridiag_x(fz, is_tangential=True))
 
         if self.sweeps > 1:
             for s in range(1, self.sweeps):
@@ -212,46 +247,37 @@ class ShoalSimulation:
                         fx_corr[idx] += betaX * betaZ * d2x_d2z_ax
                         fz_corr[idx] += betaZ * betaX * d2x_d2z_az
 
-                ax = self.solve_tridiag_z(self.solve_tridiag_x(fx_corr))
-                az = self.solve_tridiag_z(self.solve_tridiag_x(fz_corr))
+                ax = self.solve_tridiag_z(self.solve_tridiag_x(fx_corr, is_tangential=False))
+                az = self.solve_tridiag_z(self.solve_tridiag_x(fz_corr, is_tangential=True))
 
         return ax, az
 
     def apply_filter_2d(self, field, is_u=False, is_w=False):
         N = self.N
         filtered = list(field)
-        kappa = max(0.020, min(0.028, 0.025 * (self.sub_dt / 0.008)))
+        # Invariant dt-scaled biharmonic dissipation matching Boussinesq.compute
+        kappa = min(0.031, 5.0 * self.sub_dt)
 
         d4x = [0.0] * (N * N)
         for y in range(N):
             row = y * N
-            for x in range(N):
-                if x == 0:
-                    val = 2.0 * field[row + 0] - 3.0 * field[row + 1] + field[row + 2]
-                elif x == 1:
-                    val = -3.0 * field[row + 0] + 6.0 * field[row + 1] - 4.0 * field[row + 2] + field[row + 3]
-                elif x == N - 2:
-                    val = field[row + N - 4] - 4.0 * field[row + N - 3] + 6.0 * field[row + N - 2] - 3.0 * field[row + N - 1]
-                elif x == N - 1:
-                    val = field[row + N - 3] - 3.0 * field[row + N - 2] + 2.0 * field[row + N - 1]
-                else:
-                    val = field[row + x - 2] - 4.0 * field[row + x - 1] + 6.0 * field[row + x] - 4.0 * field[row + x + 1] + field[row + x + 2]
-                d4x[row + x] = val
+            d4x[row + 0] = 2.0 * field[row + 0] - 3.0 * field[row + 1] + field[row + 2]
+            d4x[row + 1] = -3.0 * field[row + 0] + 6.0 * field[row + 1] - 4.0 * field[row + 2] + field[row + 3]
+            for x in range(2, N - 2):
+                idx = row + x
+                d4x[idx] = field[idx - 2] - 4.0 * field[idx - 1] + 6.0 * field[idx] - 4.0 * field[idx + 1] + field[idx + 2]
+            d4x[row + N - 2] = field[row + N - 4] - 4.0 * field[row + N - 3] + 6.0 * field[row + N - 2] - 3.0 * field[row + N - 1]
+            d4x[row + N - 1] = field[row + N - 3] - 3.0 * field[row + N - 2] + 2.0 * field[row + N - 1]
 
         d4z = [0.0] * (N * N)
         for x in range(N):
-            for y in range(N):
-                if y == 0:
-                    val = 2.0 * field[0 * N + x] - 3.0 * field[1 * N + x] + field[2 * N + x]
-                elif y == 1:
-                    val = -3.0 * field[0 * N + x] + 6.0 * field[1 * N + x] - 4.0 * field[2 * N + x] + field[3 * N + x]
-                elif y == N - 2:
-                    val = field[(N - 4) * N + x] - 4.0 * field[(N - 3) * N + x] + 6.0 * field[(N - 2) * N + x] - 3.0 * field[(N - 1) * N + x]
-                elif y == N - 1:
-                    val = field[(N - 3) * N + x] - 3.0 * field[(N - 2) * N + x] + 2.0 * field[(N - 1) * N + x]
-                else:
-                    val = field[(y - 2) * N + x] - 4.0 * field[(y - 1) * N + x] + 6.0 * field[y * N + x] - 4.0 * field[(y + 1) * N + x] + field[(y + 2) * N + x]
-                d4z[y * N + x] = val
+            d4z[0 * N + x] = 2.0 * field[0 * N + x] - 3.0 * field[1 * N + x] + field[2 * N + x]
+            d4z[1 * N + x] = -3.0 * field[0 * N + x] + 6.0 * field[1 * N + x] - 4.0 * field[2 * N + x] + field[3 * N + x]
+            for y in range(2, N - 2):
+                idx = y * N + x
+                d4z[idx] = field[(y - 2) * N + x] - 4.0 * field[(y - 1) * N + x] + 6.0 * field[idx] - 4.0 * field[(y + 1) * N + x] + field[(y + 2) * N + x]
+            d4z[(N - 2) * N + x] = field[(N - 4) * N + x] - 4.0 * field[(N - 3) * N + x] + 6.0 * field[(N - 2) * N + x] - 3.0 * field[(N - 1) * N + x]
+            d4z[(N - 1) * N + x] = field[(N - 3) * N + x] - 3.0 * field[(N - 2) * N + x] + 2.0 * field[(N - 1) * N + x]
 
         for i in range(N * N):
             filtered[i] = field[i] - kappa * (d4x[i] + d4z[i])
@@ -401,7 +427,8 @@ class ShoalSimulation:
                     dHudx = (tot_hX * uX - tot_hC * uC) * signed_inv_dx_c
                     dHwdz = (tot_hZ * wZ - tot_hC * wC) * signed_inv_dz_c
                     src_eta = self.get_source(x, y, hC, next_phase)
-                    eta_next[idx_c] = 0.5 * (self.eta[idx_c] + eta_pred[idx_c] - sub_dt * (dHudx + dHwdz) + sub_dt * src_eta)
+                    damp = self.sponge_damp(x, y)
+                    eta_next[idx_c] = max(-15.0, min(15.0, 0.5 * (self.eta[idx_c] + eta_pred[idx_c] - sub_dt * (dHudx + dHwdz) + sub_dt * src_eta) * damp))
 
                     detadx = (eta_pred[idx_x] - eta_pred[idx_c]) * signed_inv_dx_c
                     detadz = (eta_pred[idx_z] - eta_pred[idx_c]) * signed_inv_dz_c

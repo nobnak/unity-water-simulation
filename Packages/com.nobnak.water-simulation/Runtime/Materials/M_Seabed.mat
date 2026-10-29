@@ -36,7 +36,7 @@ Material:
     - _Smoothness: 0.2
     - _VisualMode: 0
     m_Colors:
-    - _AreaSize: {r: 40, g: 40, b: 0, a: 0}
+    - _AreaSize: {r: 100, g: 100, b: 0, a: 0}
     - _DeepColor: {r: 0.18, g: 0.24, b: 0.28, a: 1}
     - _ShallowColor: {r: 0.86, g: 0.78, b: 0.62, a: 1}
     - _WallColor: {r: 0.16, g: 0.18, b: 0.2, a: 1}

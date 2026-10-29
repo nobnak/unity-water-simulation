@@ -319,6 +319,12 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetTexture(kernelImpulse, PropStateOut, targetTex);
             DispatchCompute2D(kernelImpulse);
         }
+
+        public RenderTexture CurrentStateTexture => CurrentStateTex;
+        public RenderTexture BathymetryTexture => bathymetryTex;
+        public bool CurrentPingPong => pingPong;
+        public void StepSingleSubstep(float subDt) => StepPhysics(subDt);
+        public void FinalizeFrameOutput() => ComputeNormalAndPackOutput();
         #endregion
 
         #region private methods

@@ -723,9 +723,11 @@ void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
         d4z = _StateIn[int2(x, y - 2)] - 4.0 * _StateIn[int2(x, y - 1)] + 6.0 * c - 4.0 * _StateIn[int2(x, y + 1)] + _StateIn[int2(x, y + 2)];
     }
 
-    // Time-step scaling with Nyquist floor: ensures strong 2dx spatial filtering
-    // even under small sub-step time steps while respecting the 2D explicit stability limit (kappa < 0.03125)
-    float kappa = clamp(0.025 * (_DeltaTime / 0.008), 0.020, 0.028);
+    // Time-step invariant 4th-order biharmonic dissipation:
+    // Dissipation rate per unit physical time is constant across any sub-step dt:
+    // kappa / dt = 5.0 s^-1 is constant across all time-steps without arbitrary lower clamp.
+    // Respects explicit 2D biharmonic stability limit (kappa <= 0.03125).
+    float kappa = min(0.031, 5.0 * _DeltaTime);
     float4 filtered = c - kappa * (d4x + d4z);
 
     if (_SideWallSponge == 0 && (x == 0 || x == w - 1)) {
