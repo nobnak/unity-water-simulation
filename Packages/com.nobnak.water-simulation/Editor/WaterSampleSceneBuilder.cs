@@ -101,6 +101,8 @@ namespace Nobnak.WaterSimulation.Editor {
             seabedGO.transform.SetParent(waterGO.transform, false);
             var seabedRenderer = seabedGO.AddComponent<SeabedRenderer>();
             seabedRenderer.TargetSimulation = sim;
+            var seabedMat = CreateSeabedMaterial();
+            seabedRenderer.SeabedMaterial = seabedMat;
 
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute");
             if (compute == null) compute = Resources.Load<ComputeShader>("Boussinesq");
@@ -425,6 +427,19 @@ namespace Nobnak.WaterSimulation.Editor {
             if (shader != null) {
                 var mat = new Material(shader) {
                     name = "M_WaterSurfaceCommon"
+                };
+                return mat;
+            }
+            return null;
+        }
+
+        private static Material CreateSeabedMaterial() {
+            var assetMat = AssetDatabase.LoadAssetAtPath<Material>("Packages/com.nobnak.water-simulation/Runtime/Materials/M_Seabed.mat");
+            if (assetMat != null) return assetMat;
+            var shader = Shader.Find("Nobnak/WaterSimulation/Seabed");
+            if (shader != null) {
+                var mat = new Material(shader) {
+                    name = "M_Seabed"
                 };
                 return mat;
             }

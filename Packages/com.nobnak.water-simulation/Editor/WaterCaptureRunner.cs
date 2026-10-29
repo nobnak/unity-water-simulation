@@ -12,6 +12,7 @@ namespace Nobnak.WaterSimulation.Editor {
     /// </summary>
     public static class WaterCaptureRunner {
         private const string CaptureDir = "Captures";
+        private const string ArtifactDir = "C:/Users/nakata/.gemini/antigravity/brain/71f435e1-4ae7-47d9-8753-a7b8ea532229";
 
         [MenuItem("Tools/Water Simulation/Build And Capture All", false, 55)]
         public static void BuildAndCaptureAll() {
@@ -56,6 +57,7 @@ namespace Nobnak.WaterSimulation.Editor {
 
             var boussSim = Object.FindFirstObjectByType<BoussinesqSimulation>();
             var renderer = Object.FindFirstObjectByType<WaterRenderer>();
+            var seabedRenderer = Object.FindFirstObjectByType<SeabedRenderer>();
 
             if (boussSim != null && renderer != null) {
                 // 1. Capture Bathymetry visual mode
@@ -80,6 +82,41 @@ namespace Nobnak.WaterSimulation.Editor {
                 renderer.UpdateMaterialProperties();
                 cam.Render();
                 SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "02_Boussinesq_PlanarSoliton.png"));
+
+                // 3. Capture 3D Seabed Modes
+                if (seabedRenderer != null) {
+                    var waterMesh = renderer.GetComponent<MeshRenderer>();
+                    seabedRenderer.gameObject.SetActive(true);
+                    seabedRenderer.HeightExaggeration = 2.0f;
+
+                    // 3a. Seabed Sand under Water
+                    if (waterMesh != null) waterMesh.enabled = true;
+                    seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.RealisticSand);
+                    seabedRenderer.UpdateMaterialProperties();
+                    cam.Render();
+                    SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "02_Boussinesq_Seabed_Sand.png"));
+
+                    // 3b. Seabed Heatmap under Water
+                    seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.BathymetryHeatmap);
+                    seabedRenderer.UpdateMaterialProperties();
+                    cam.Render();
+                    SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "02_Boussinesq_Seabed_Heatmap.png"));
+
+                    // 3c. Seabed Topographic Wireframe under Water
+                    seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.TopographicWireframe);
+                    seabedRenderer.UpdateMaterialProperties();
+                    cam.Render();
+                    SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "02_Boussinesq_Seabed_Wire.png"));
+
+                    // 3d. Seabed Terrain Alone (Water Mesh Disabled)
+                    if (waterMesh != null) waterMesh.enabled = false;
+                    seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.RealisticSand);
+                    seabedRenderer.UpdateMaterialProperties();
+                    cam.Render();
+                    SaveRenderTextureToPNG(rt, Path.Combine(CaptureDir, "02_Boussinesq_Seabed_Only.png"));
+
+                    if (waterMesh != null) waterMesh.enabled = true;
+                }
             }
 
             cam.targetTexture = prevTarget;
@@ -304,6 +341,10 @@ namespace Nobnak.WaterSimulation.Editor {
             byte[] bytes = tex.EncodeToPNG();
             Object.DestroyImmediate(tex);
             File.WriteAllBytes(filePath, bytes);
+            if (Directory.Exists(ArtifactDir)) {
+                string artPath = Path.Combine(ArtifactDir, Path.GetFileName(filePath));
+                File.WriteAllBytes(artPath, bytes);
+            }
             Debug.Log($"[WaterSimulation] Captured: {filePath}");
         }
     }

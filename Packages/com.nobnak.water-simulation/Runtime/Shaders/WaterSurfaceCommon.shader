@@ -187,9 +187,22 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                 float nDotH = saturate(dot(normalWS, halfDir));
                 float spec = pow(nDotH, 64.0) * _Smoothness;
 
-                float3 diffuse = waterCol * (mainLight.color * (nDotL * 0.55 + 0.45));
+                // Foam blending: calculate foam from displacement alpha
+                float foam = saturate(disp.a * _FoamIntensity);
+
+                float baseAlpha = _BaseColor.a;
+                if (_HasBathymetry > 0.5) {
+                    float h = max(0.1, SAMPLE_TEXTURE2D(_BathymetryTex, sampler_BathymetryTex, uv).r);
+                    // Clear coastal water: depth 0.5m-3.5m has high optical transmittance
+                    float shallowClarity = saturate(1.0 - (h - 0.5) / 3.5);
+                    baseAlpha = lerp(0.65, 0.35, shallowClarity);
+                }
+                float alpha = lerp(baseAlpha, 1.0, fresnel * 0.55 + foam * 0.6);
+
+                float diffuseAtten = (_HasBathymetry > 0.5) ? saturate(baseAlpha * 1.35) : 1.0;
+                float3 diffuse = waterCol * (mainLight.color * (nDotL * 0.55 + 0.45)) * diffuseAtten;
                 float3 specular = mainLight.color * (spec * (fresnel * 0.85 + 0.15) * 2.0);
-                float3 ambient = float3(0.05, 0.12, 0.18);
+                float3 ambient = float3(0.05, 0.12, 0.18) * diffuseAtten;
 
                 // Crest Subsurface Scattering (SSS): thin choppy wave ridges transmit turquoise-jade light
                 float crestHeightMask = saturate(disp.g * 0.45 + 0.35);
@@ -198,18 +211,8 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                 float3 sssColor = float3(0.14, 0.72, 0.68) * mainLight.color * sssFactor * 0.55;
 
                 float3 finalColor = diffuse + specular + sssColor + ambient;
-
-                // Foam blending: only blend foam if disp.a is active
-                float foam = saturate(disp.a * _FoamIntensity);
                 finalColor = lerp(finalColor, _FoamColor.rgb, foam);
 
-                float baseAlpha = _BaseColor.a;
-                if (_HasBathymetry > 0.5) {
-                    float h = max(0.1, SAMPLE_TEXTURE2D(_BathymetryTex, sampler_BathymetryTex, uv).r);
-                    float shallowClarity = saturate(1.0 - (h - 0.4) / 4.0);
-                    baseAlpha = lerp(_BaseColor.a, 0.55, shallowClarity * 0.65);
-                }
-                float alpha = lerp(baseAlpha, 1.0, fresnel * 0.4 + foam * 0.6);
                 return half4(finalColor, alpha);
             }
             ENDHLSL

@@ -32,12 +32,15 @@ namespace Nobnak.WaterSimulation {
         [Tooltip("Depth [m] of the basin bottom skirt.")]
         [SerializeField] private float basinBottomDepth = 12.0f;
 
+        [Tooltip("Vertical relief exaggeration factor for bathymetry display.")]
+        [SerializeField] private float heightExaggeration = 2.0f;
+
         [Header("Visual Settings")]
         [SerializeField] private VisualMode visualizationMode = VisualMode.RealisticSand;
         [SerializeField] private Material seabedMaterial;
-        [SerializeField] private Color shallowColor = new Color(0.82f, 0.74f, 0.60f, 1.0f);
-        [SerializeField] private Color deepColor = new Color(0.23f, 0.29f, 0.32f, 1.0f);
-        [SerializeField] private Color wallColor = new Color(0.18f, 0.20f, 0.22f, 1.0f);
+        [SerializeField] private Color shallowColor = new Color(0.86f, 0.78f, 0.62f, 1.0f);
+        [SerializeField] private Color deepColor = new Color(0.18f, 0.24f, 0.28f, 1.0f);
+        [SerializeField] private Color wallColor = new Color(0.16f, 0.18f, 0.20f, 1.0f);
         [SerializeField] private float contourInterval = 1.0f;
         #endregion
 
@@ -75,7 +78,10 @@ namespace Nobnak.WaterSimulation {
             set {
                 seabedMaterial = value;
                 if (meshRenderer == null) meshRenderer = GetComponent<MeshRenderer>();
-                if (meshRenderer != null) meshRenderer.sharedMaterial = value;
+                if (meshRenderer != null) {
+                    meshRenderer.sharedMaterial = value;
+                    meshRenderer.sharedMaterials = value != null ? new Material[] { value } : new Material[0];
+                }
             }
         }
 
@@ -84,6 +90,14 @@ namespace Nobnak.WaterSimulation {
             set {
                 includeBasinWalls = value;
                 EnsureMesh();
+            }
+        }
+
+        public float HeightExaggeration {
+            get => heightExaggeration;
+            set {
+                heightExaggeration = math.clamp(value, 1.0f, 5.0f);
+                UpdateMaterialProperties();
             }
         }
         #endregion
@@ -148,22 +162,49 @@ namespace Nobnak.WaterSimulation {
             propBlock.SetColor(PropWallColor, wallColor);
             propBlock.SetFloat(PropContourInterval, contourInterval);
             propBlock.SetFloat(PropBasinBottomDepth, basinBottomDepth);
+            propBlock.SetFloat(PropHeightExaggeration, heightExaggeration);
 
             meshRenderer.SetPropertyBlock(propBlock);
+
+            // Also mirror directly to material so SRP Batcher pipelines receive all uniform parameters
+            var mat = meshRenderer.sharedMaterial;
+            if (mat != null) {
+                if (targetSimulation != null && targetSimulation.BathymetryTexture != null) {
+                    mat.SetTexture(PropBathymetryTex, targetSimulation.BathymetryTexture);
+                    mat.SetVector(PropAreaSize, new Vector4(targetSimulation.AreaSize.x, targetSimulation.AreaSize.y, 0f, 0f));
+                }
+                mat.SetFloat(PropVisualMode, (float)visualizationMode);
+                mat.SetColor(PropShallowColor, shallowColor);
+                mat.SetColor(PropDeepColor, deepColor);
+                mat.SetColor(PropWallColor, wallColor);
+                mat.SetFloat(PropContourInterval, contourInterval);
+                mat.SetFloat(PropBasinBottomDepth, basinBottomDepth);
+                mat.SetFloat(PropHeightExaggeration, heightExaggeration);
+            }
         }
         #endregion
 
         #region private methods
         private void EnsureDefaultMaterial() {
             if (meshRenderer == null) meshRenderer = GetComponent<MeshRenderer>();
-            if (seabedMaterial == null && meshRenderer.sharedMaterial == null) {
-                var shader = Shader.Find("Nobnak/WaterSimulation/Seabed");
-                if (shader != null) {
-                    seabedMaterial = new Material(shader) {
-                        name = "M_Seabed_Default"
-                    };
-                    meshRenderer.sharedMaterial = seabedMaterial;
+            if (seabedMaterial == null && (meshRenderer.sharedMaterial == null || meshRenderer.sharedMaterials.Length == 0)) {
+#if UNITY_EDITOR
+                var assetMat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>("Packages/com.nobnak.water-simulation/Runtime/Materials/M_Seabed.mat");
+                if (assetMat != null) seabedMaterial = assetMat;
+#endif
+                if (seabedMaterial == null) {
+                    var shader = Shader.Find("Nobnak/WaterSimulation/Seabed");
+                    if (shader != null) {
+                        seabedMaterial = new Material(shader) {
+                            name = "M_Seabed_Default"
+                        };
+                    }
                 }
+            }
+
+            if (seabedMaterial != null) {
+                meshRenderer.sharedMaterial = seabedMaterial;
+                meshRenderer.sharedMaterials = new Material[] { seabedMaterial };
             }
         }
 
@@ -341,7 +382,7 @@ namespace Nobnak.WaterSimulation {
             mesh.SetUVs(0, uvs);
             mesh.SetColors(colors);
             mesh.SetTriangles(indices, 0);
-            mesh.bounds = new Bounds(new Vector3(0f, -wallDepth * 0.5f, 0f), new Vector3(width, wallDepth + 20f, length));
+            mesh.bounds = new Bounds(new Vector3(0f, -wallDepth * 0.5f, 0f), new Vector3(width, wallDepth + 30f, length));
             return mesh;
         }
         #endregion
@@ -355,6 +396,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropWallColor = Shader.PropertyToID("_WallColor");
         private static readonly int PropContourInterval = Shader.PropertyToID("_ContourInterval");
         private static readonly int PropBasinBottomDepth = Shader.PropertyToID("_BasinBottomDepth");
+        private static readonly int PropHeightExaggeration = Shader.PropertyToID("_HeightExaggeration");
         #endregion
     }
 }

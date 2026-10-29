@@ -266,15 +266,31 @@ namespace Nobnak.WaterSimulation {
                 if (seabedRenderer != null) {
                     GUILayout.BeginHorizontal();
                     bool showSeabed = seabedRenderer.gameObject.activeSelf;
-                    if (GUILayout.Button(showSeabed ? "Seabed: ON" : "Seabed: OFF", GUILayout.Width(95))) {
+                    if (GUILayout.Button(showSeabed ? "Seabed: ON" : "Seabed: OFF", GUILayout.Width(100))) {
                         seabedRenderer.gameObject.SetActive(!showSeabed);
                     }
+                    if (waterRenderer != null) {
+                        var waterMesh = waterRenderer.GetComponent<MeshRenderer>();
+                        bool showWater = waterMesh != null && waterMesh.enabled;
+                        if (GUILayout.Button(showWater ? "Water: ON" : "Water: OFF", GUILayout.Width(95))) {
+                            if (waterMesh != null) waterMesh.enabled = !showWater;
+                        }
+                    }
+                    GUILayout.EndHorizontal();
+
                     if (showSeabed) {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label("海底描画:", GUILayout.Width(65));
                         if (GUILayout.Button("Sand")) seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.RealisticSand);
                         if (GUILayout.Button("Heatmap")) seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.BathymetryHeatmap);
                         if (GUILayout.Button("Wire")) seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.TopographicWireframe);
+                        GUILayout.EndHorizontal();
+
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label($"起伏強調: {seabedRenderer.HeightExaggeration:F1}x", GUILayout.Width(110));
+                        seabedRenderer.HeightExaggeration = GUILayout.HorizontalSlider(seabedRenderer.HeightExaggeration, 1.0f, 4.0f);
+                        GUILayout.EndHorizontal();
                     }
-                    GUILayout.EndHorizontal();
                 }
 
                 GUILayout.Space(2);

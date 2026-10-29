@@ -1,15 +1,16 @@
 Shader "Nobnak/WaterSimulation/Seabed" {
     Properties {
         [Header(Seabed Surface)]
-        _ShallowColor ("Shallow Sand Color", Color) = (0.82, 0.74, 0.60, 1.0)
-        _DeepColor ("Deep Sediment Color", Color) = (0.23, 0.29, 0.32, 1.0)
-        _WallColor ("Basin Wall Color", Color) = (0.18, 0.20, 0.22, 1.0)
-        _Smoothness ("Smoothness", Range(0, 1)) = 0.20
-        _Metallic ("Metallic", Range(0, 1)) = 0.05
+        _ShallowColor ("Shallow Sand Color", Color) = (0.86, 0.78, 0.62, 1.0)
+        _DeepColor ("Deep Sediment Color", Color) = (0.18, 0.24, 0.28, 1.0)
+        _WallColor ("Basin Wall Color", Color) = (0.16, 0.18, 0.20, 1.0)
+        _Smoothness ("Smoothness", Range(0, 1)) = 0.22
+        _Metallic ("Metallic", Range(0, 1)) = 0.04
         _ContourInterval ("Depth Contour Interval (m)", Float) = 1.0
         _BasinBottomDepth ("Basin Bottom Depth (m)", Float) = 12.0
+        _HeightExaggeration ("Height Exaggeration", Range(1.0, 5.0)) = 2.0
 
-        [Header(Textures & Domain)]
+        [Header(Textures and Domain)]
         [NoScaleOffset] _BathymetryTex ("Bathymetry Texture", 2D) = "black" {}
         _AreaSize ("Area Size (X, Z)", Vector) = (100, 100, 0, 0)
 
@@ -22,6 +23,7 @@ Shader "Nobnak/WaterSimulation/Seabed" {
             "RenderType" = "Opaque"
             "Queue" = "Geometry"
             "RenderPipeline" = "UniversalPipeline"
+            "DisableBatching" = "True"
         }
 
         Pass {
@@ -71,6 +73,7 @@ Shader "Nobnak/WaterSimulation/Seabed" {
                 float _Metallic;
                 float _ContourInterval;
                 float _BasinBottomDepth;
+                float _HeightExaggeration;
                 float _VisualMode;
                 float4 _AreaSize;
             CBUFFER_END
@@ -81,15 +84,16 @@ Shader "Nobnak/WaterSimulation/Seabed" {
                 float4 bathy = SAMPLE_TEXTURE2D_LOD(_BathymetryTex, sampler_BathymetryTex, uv, 0);
                 float h = max(0.01, bathy.r);
                 float zb = bathy.g;
+                float exag = max(1.0, _HeightExaggeration);
 
                 float3 worldPos = TransformObjectToWorld(input.positionOS.xyz);
                 float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
 
                 if (input.color.r > 0.75) {
                     // Seabed terrain surface: displace vertically by bed elevation zb = -h
-                    worldPos.y += zb;
+                    worldPos.y += zb * exag;
 
-                    // Analytical terrain normal from bathymetry gradients: grad(y - zb) = (dh/dx, 1, dh/dz)
+                    // Analytical terrain normal from bathymetry gradients: grad(y - zb*exag) = (exag*dh/dx, 1, exag*dh/dz)
                     float2 texel = (_BathymetryTex_TexelSize.z > 0.0) ? _BathymetryTex_TexelSize.xy : float2(0.002, 0.002);
                     float hR = SAMPLE_TEXTURE2D_LOD(_BathymetryTex, sampler_BathymetryTex, uv + float2(texel.x, 0.0), 0).r;
                     float hL = SAMPLE_TEXTURE2D_LOD(_BathymetryTex, sampler_BathymetryTex, uv - float2(texel.x, 0.0), 0).r;
@@ -98,12 +102,12 @@ Shader "Nobnak/WaterSimulation/Seabed" {
 
                     float spanX = max(0.1, 2.0 * texel.x * _AreaSize.x);
                     float spanZ = max(0.1, 2.0 * texel.y * _AreaSize.y);
-                    float dhdx = (hR - hL) / spanX;
-                    float dhdz = (hU - hD) / spanZ;
+                    float dhdx = (hR - hL) / spanX * exag;
+                    float dhdz = (hU - hD) / spanZ * exag;
                     normalWS = normalize(float3(dhdx, 1.0, dhdz));
                 } else if (input.color.r > 0.25) {
                     // Skirt top: follows bed elevation zb
-                    worldPos.y += zb;
+                    worldPos.y += zb * exag;
                 } else {
                     // Skirt bottom: drops to fixed bottom depth
                     worldPos.y -= _BasinBottomDepth;
@@ -119,12 +123,13 @@ Shader "Nobnak/WaterSimulation/Seabed" {
             }
 
             float3 HeatmapColor(float t) {
-                // Blue (-1) -> Cyan (-0.5) -> Green (0) -> Yellow (0.5) -> Red (1)
-                t = clamp(t, -1.0, 1.0);
-                float val = t * 0.5 + 0.5;
-                float r = clamp(1.5 - abs(val * 4.0 - 3.0), 0.0, 1.0);
-                float g = clamp(1.5 - abs(val * 4.0 - 2.0), 0.0, 1.0);
-                float b = clamp(1.5 - abs(val * 4.0 - 1.0), 0.0, 1.0);
+                // Smooth spectral hypsometric gradient:
+                // Red (shallowest < 0.8m) -> Orange -> Yellow -> Green -> Cyan -> Deep Blue (> 3.5m)
+                t = clamp(t, 0.0, 1.0);
+                float val = (1.0 - t) * 4.0;
+                float r = saturate(min(val - 1.5, 4.5 - val));
+                float g = saturate(min(val - 0.5, 3.5 - val));
+                float b = saturate(min(val + 0.5, 2.5 - val));
                 return float3(r, g, b);
             }
 
@@ -138,14 +143,15 @@ Shader "Nobnak/WaterSimulation/Seabed" {
                 float3 normalWS = normalize(input.normalWS);
                 float3 lightDir = normalize(mainLight.direction);
                 float nDotL = saturate(dot(normalWS, lightDir));
-                float3 diffuseLight = mainLight.color * (nDotL * 0.65 + 0.35);
-                float3 ambient = float3(0.06, 0.10, 0.14);
+                float3 diffuseLight = mainLight.color * (nDotL * 0.70 + 0.30);
+                float3 ambient = float3(0.07, 0.11, 0.15);
 
                 if (!isSeabed) {
-                    // Basin wall: dark architectural slate with horizontal depth groove lines
+                    // Basin wall: architectural dark slate bedrock with horizontal stratum grooves
                     float wallY = input.positionWS.y;
-                    float groove = smoothstep(0.05, 0.0, abs(frac(wallY) - 0.5) - 0.45);
-                    float3 wallCol = _WallColor.rgb * (1.0 - groove * 0.3);
+                    float groove = smoothstep(0.06, 0.0, abs(frac(wallY * 0.5) - 0.5) - 0.44);
+                    float fineGroove = smoothstep(0.04, 0.0, abs(frac(wallY * 2.0) - 0.5) - 0.46);
+                    float3 wallCol = _WallColor.rgb * (1.0 - groove * 0.35 - fineGroove * 0.15);
                     float3 finalWall = wallCol * diffuseLight + ambient;
                     return half4(finalWall, 1.0);
                 }
@@ -154,44 +160,61 @@ Shader "Nobnak/WaterSimulation/Seabed" {
 
                 if (vmode == 1) {
                     // Mode 1: Hypsometric Bathymetry Heatmap
-                    float normDepth = 1.0 - saturate((h - 0.5) / 10.0) * 1.9;
+                    // Map depth h: [0.5m (Cape/Shoal)] -> 0.0 (Red/Yellow), [3.5m+ (Deep)] -> 1.0 (Navy Blue)
+                    float normDepth = saturate((h - 0.5) / 3.2);
                     float3 col = HeatmapColor(normDepth);
+
+                    // 1-meter sharp dark contour lines
                     float contour = frac(h / max(0.1, _ContourInterval));
-                    float contourLine = smoothstep(0.06, 0.0, abs(contour - 0.5) - 0.44);
-                    col = lerp(col, float3(0.08, 0.08, 0.08), contourLine * 0.65);
-                    return half4(col * (nDotL * 0.4 + 0.6), 1.0);
+                    float contourLine = smoothstep(0.07, 0.0, abs(contour - 0.5) - 0.43);
+                    col = lerp(col, float3(0.06, 0.06, 0.08), contourLine * 0.75);
+
+                    // 2-meter bright major contour lines
+                    float majorContour = frac(h / max(0.1, _ContourInterval * 2.0));
+                    float majorLine = smoothstep(0.05, 0.0, abs(majorContour - 0.5) - 0.45);
+                    col = lerp(col, float3(1.0, 1.0, 1.0), majorLine * 0.50);
+
+                    return half4(col * (nDotL * 0.35 + 0.65), 1.0);
                 } else if (vmode == 2) {
                     // Mode 2: Topographic Wireframe / Grid
                     float2 grid = frac(uv * 64.0);
                     float edge = min(min(grid.x, 1.0 - grid.x), min(grid.y, 1.0 - grid.y));
-                    float wire = smoothstep(0.0, 0.06, edge);
-                    float3 base = lerp(float3(0.85, 0.75, 0.5), float3(0.15, 0.20, 0.25), wire);
+                    float wire = smoothstep(0.0, 0.07, edge);
+                    float3 base = lerp(float3(0.90, 0.82, 0.55), float3(0.12, 0.16, 0.22), wire);
+
+                    // Luminous contour bands
                     float contour = frac(h / max(0.1, _ContourInterval));
                     float contourLine = smoothstep(0.06, 0.0, abs(contour - 0.5) - 0.44);
-                    base = lerp(base, float3(1.0, 0.9, 0.3), contourLine * 0.8);
+                    base = lerp(base, float3(1.0, 0.95, 0.40), contourLine * 0.85);
+
                     return half4(base, 1.0);
                 }
 
                 // Mode 0: Realistic Sea Floor (Sand, Sediment & Subtle Depth Contours)
-                float tDepth = saturate((h - 0.5) / 4.0);
+                float tDepth = saturate((h - 0.5) / 3.0);
                 float3 bedCol = lerp(_ShallowColor.rgb, _DeepColor.rgb, tDepth);
 
-                // Subtle sand ripple micro-texture
-                float2 rippleUV = uv * _AreaSize.xy * 0.8;
-                float ripple = sin(rippleUV.x * 2.5 + rippleUV.y * 1.8) * cos(rippleUV.y * 2.2);
-                bedCol += ripple * 0.03 * (1.0 - tDepth * 0.6);
+                // Distinct sand dune ripples
+                float2 rippleUV = uv * _AreaSize.xy * 0.45;
+                float ripple = sin(rippleUV.x * 2.2 + rippleUV.y * 1.6) * cos(rippleUV.y * 2.0);
+                bedCol += ripple * 0.045 * (1.0 - tDepth * 0.55);
 
-                // Depth contour lines (1m intervals)
+                // Depth contour lines (1m subtle sediment lines)
                 float contour = frac(h / max(0.1, _ContourInterval));
-                float contourLine = smoothstep(0.05, 0.0, abs(contour - 0.5) - 0.45);
-                bedCol = lerp(bedCol, bedCol * 0.72, contourLine * 0.55);
+                float contourLine = smoothstep(0.06, 0.0, abs(contour - 0.5) - 0.44);
+                bedCol = lerp(bedCol, bedCol * 0.68, contourLine * 0.55);
 
-                // Specular highlight
+                // Major 2m contour lines
+                float majorContour = frac(h / max(0.1, _ContourInterval * 2.0));
+                float majorLine = smoothstep(0.05, 0.0, abs(majorContour - 0.5) - 0.45);
+                bedCol = lerp(bedCol, bedCol * 0.55, majorLine * 0.65);
+
+                // Specular highlight on wet seabed sand
                 float3 viewDirWS = normalize(GetCameraPositionWS() - input.positionWS);
                 float3 halfDir = normalize(lightDir + viewDirWS);
                 float nDotH = saturate(dot(normalWS, halfDir));
                 float spec = pow(nDotH, 32.0) * _Smoothness;
-                float3 specular = mainLight.color * spec * _Metallic * 0.5;
+                float3 specular = mainLight.color * spec * _Metallic * 0.8;
 
                 float3 finalColor = bedCol * diffuseLight + specular + ambient;
                 return half4(finalColor, 1.0);
