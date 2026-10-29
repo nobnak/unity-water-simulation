@@ -128,6 +128,12 @@ void CSInit(uint3 id : SV_DispatchThreadID) {
     _AccelPong[id.xy] = float2(0.0, 0.0);
 }
 
+// Smooth C^1 approximation of max(0.05, totalDepth) to avoid derivative discontinuities
+float SmoothTotalDepth(float rawH) {
+    float d = rawH - 0.05;
+    return 0.05 + 0.5 * (d + sqrt(d * d + 0.0004));
+}
+
 // 1. Symmetric MacCormack Predictor: Forward on even parity, Backward on odd parity
 [numthreads(8, 8, 1)]
 void CSPredict(uint3 id : SV_DispatchThreadID) {
@@ -150,9 +156,9 @@ void CSPredict(uint3 id : SV_DispatchThreadID) {
     float hX = SampleDepth(posX);
     float hZ = SampleDepth(posZ);
 
-    float totalHC = max(0.05, hC + eta);
-    float totalHX = max(0.05, hX + stateX.r);
-    float totalHZ = max(0.05, hZ + stateZ.r);
+    float totalHC = SmoothTotalDepth(hC + eta);
+    float totalHX = SmoothTotalDepth(hX + stateX.r);
+    float totalHZ = SmoothTotalDepth(hZ + stateZ.r);
 
     float signedInvDx = (float)dir / GetDx();
     float signedInvDz = (float)dir / GetDz();
@@ -247,9 +253,9 @@ void CSCorrect(uint3 id : SV_DispatchThreadID) {
     float hX = SampleDepth(posX);
     float hZ = SampleDepth(posZ);
 
-    float totalHC = max(0.05, hC + etaStar);
-    float totalHX = max(0.05, hX + statePredX.r);
-    float totalHZ = max(0.05, hZ + statePredZ.r);
+    float totalHC = SmoothTotalDepth(hC + etaStar);
+    float totalHX = SmoothTotalDepth(hX + statePredX.r);
+    float totalHZ = SmoothTotalDepth(hZ + statePredZ.r);
 
     float signedInvDx = (float)dir / GetDx();
     float signedInvDz = (float)dir / GetDz();
@@ -717,9 +723,9 @@ void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
         d4z = _StateIn[int2(x, y - 2)] - 4.0 * _StateIn[int2(x, y - 1)] + 6.0 * c - 4.0 * _StateIn[int2(x, y + 1)] + _StateIn[int2(x, y + 2)];
     }
 
-    // Time-step scaling: kappa is proportional to _DeltaTime so physical dissipation per second
-    // is invariant to time step choice (eliminates dt-dependence in convergence analysis)
-    float kappa = 0.025 * min(2.0, _DeltaTime / 0.008);
+    // Time-step scaling with Nyquist floor: ensures strong 2dx spatial filtering
+    // even under small sub-step time steps while respecting the 2D explicit stability limit (kappa < 0.03125)
+    float kappa = clamp(0.025 * (_DeltaTime / 0.008), 0.020, 0.028);
     float4 filtered = c - kappa * (d4x + d4z);
 
     if (_SideWallSponge == 0 && (x == 0 || x == w - 1)) {

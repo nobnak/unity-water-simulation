@@ -444,6 +444,8 @@ namespace Nobnak.WaterSimulation {
             float maxDt = (minGrid / maxWaveSpeed) * 0.55f;
 
             int subSteps = math.max(1, (int)math.ceil(dt / maxDt));
+            // Ensure even sub-steps to preserve MacCormack stencil pair parity across display frames
+            if ((subSteps & 1) != 0) subSteps++;
             lastSubStepCount = subSteps;
             float subDt = dt / subSteps;
 
