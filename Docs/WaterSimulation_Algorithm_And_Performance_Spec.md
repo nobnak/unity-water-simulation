@@ -87,18 +87,19 @@ $$
 \nabla^{2} \eta_{i,j}^{n} \approx \frac{4(\eta_{i-1,j}^{n} + \eta_{i+1,j}^{n} + \eta_{i,j-1}^{n} + \eta_{i,j+1}^{n}) + (\eta_{i-1,j-1}^{n} + \eta_{i+1,j-1}^{n} + \eta_{i-1,j+1}^{n} + \eta_{i+1,j+1}^{n}) - 20\eta_{i,j}^{n}}{6\Delta x^{2}}
 $$
 
-#### (3) Symplectic Leapfrog Time Integration (`CSStep`)
-Tracking physical velocity $v = \partial_{t}\eta$ explicitly, the state is advanced via a symplectic Leapfrog scheme with semi-implicit damping:
+#### (3) Symplectic Euler (Kick-Drift) Time Integration (`CSStep`)
+Tracking physical velocity $v = \partial_{t}\eta$ directly in `RGFloat` state textures, the system is advanced via a symplectic Euler (Kick-Drift) scheme with semi-implicit damping:
 
 $$
-\eta^{n+1} = \eta^{n} + \Delta t\, v^{n} + \frac{1}{2}\Delta t^{2}\, c^{2}\nabla^{2}\eta^{n}
+v^{n+1} = \frac{v^{n} + \Delta t\, c^{2}\nabla^{2}\eta^{n}}{1 + \gamma_{\mathrm{eff}}\Delta t}
 $$
 
 $$
-v^{n+1} = \frac{\left(1 - \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t\right)v^{n} + \frac{1}{2}\Delta t\, c^{2}\left(\nabla^{2}\eta^{n} + \nabla^{2}\eta^{n+1}\right)}{1 + \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t}
+\eta^{n+1} = \eta^{n} + \Delta t\, v^{n+1}
 $$
 
-Because the physical velocity $v$ is stored directly in state textures, dynamic adjustments to wave speed $c$ or substep width $\Delta t$ during runtime do not cause the artificial energy discontinuities associated with two-step backward Verlet formulations.
+Because the physical velocity $v$ is stored directly in state textures, dynamic adjustments to wave speed $c$ or substep width $\Delta t$ during runtime do not cause the artificial energy discontinuities associated with two-step backward difference formulations.
+When evaluated on the simultaneous state pair $(\eta^{n}, v^{n})$ at integer time steps $n$, the Kick-Drift time integration exhibits strict 1st-order convergence (error reduction ratio $\approx 2.01\times$ upon halving $\Delta t$, empirical order $1.00$). While it is 2nd-order as a staggered leapfrog sequence for $v^{n+1/2}$, storing and rendering simultaneous $(h, v)$ on GPU textures matches the 1st-order simultaneous state convergence. Spatial discretization error ($O(\Delta x^{2})$ from the 9-point Laplacian) and temporal integration error ($O(\Delta t)$ on the simultaneous pair) are verified independently.
 
 Here, the perimeter sponge damping $\gamma_{\mathrm{sponge}}$ is defined in terms of the minimum cell distance to the domain boundary $d_{\mathrm{border}} = \min(i,\ N_{x} - 1 - i,\ j,\ N_{z} - 1 - j)$:
 
@@ -181,7 +182,8 @@ To prevent floating-point quantization under small substep intervals ($\Delta t 
 | :--- | :---: | :---: | :--- |
 | `stateTexA`, `stateTexB` (`_StateIn`, `_StateOut`) | `ARGBFloat` | 16 Bytes | Ping-Pong state buffers. `R`: $\eta\ [\mathrm{m}]$, `G`: $u\ [\mathrm{m/s}]$, `B`: $w\ [\mathrm{m/s}]$, `A`: 0 |
 | `predTex` (`_StatePred`) | `ARGBFloat` | 16 Bytes | Intermediate MacCormack predictor state $(\eta^{\ast}, u^{\ast}, w^{\ast}, 0)$ |
-| `forceTex` (`_ForceTex`) | `RGFloat` | 8 Bytes | Predictor / corrector RHS force vector $\mathbf{f} = (f_{x}, f_{z})$ |
+| `forceOrigTex` (`_ForceOrigTex`) | `RGFloat` | 8 Bytes | Original non-dispersive acceleration $\mathbf{f}_{\mathrm{orig}} = (f_{x}, f_{z})$ (immutable across sweeps) |
+| `forceTex` (`_ForceTex`) | `RGFloat` | 8 Bytes | Working RHS force vector for ADI PCR solver (holds $\mathbf{f}_{\mathrm{orig}} + \text{defect}$ at sweep $s$) |
 | `forcePredTex` (`_ForcePredTex`) | `RGFloat` | 8 Bytes | Predictor dispersed acceleration $\mathbf{a}^{(1)} = L^{-1}\mathbf{f}^{n}$ storage |
 | `accelTexA`, `accelTexB` (`_AccelPing`, `_AccelPong`) | `RGFloat` | 8 Bytes | ADI tridiagonal PCR dispersion solver Ping-Pong buffers ($\mathbf{a}^{\ast}, \mathbf{a}$) |
 | `bathymetryTex` (`_BathymetryTex`) | `ARGBHalf` | 8 Bytes | `R`: Still water depth $h\ [\mathrm{m}]$, `G`: Seabed elevation $z_{b} = -h\ [\mathrm{m}]$ |
@@ -220,23 +222,35 @@ $$
 
    Corrector RHS force $\mathbf{f^{\ast}} = (f_{x}^{\ast}, f_{z}^{\ast})$ is stored into `_ForceTex`.
 
-#### (3) ADI Tridiagonal PCR Solver & Defect Correction (`CSTridiagonalX`, `CSTridiagonalZ`, `CSDefectCorrection`)
-The previous artificial clamp $\beta \le 6$ is removed. The 2D Peregrine dispersion operator $(I - \frac{h^{2}}{3}\nabla^{2})\mathbf{a} = \mathbf{f}$ is solved via direction-split Alternating Direction Implicit (Peaceman-Rachford ADI) reduction:
+#### (3) Irrotational Componentwise Helmholtz Dispersion Model, ADI PCR Solver & True Defect Correction (`CSTridiagonalX`, `CSTridiagonalZ`, `CSDefectCorrection`)
+The continuous PDE solved by this implementation is the **irrotational componentwise Helmholtz Boussinesq model** under the assumptions of irrotational flow ($\nabla \times \mathbf{u} = \mathbf{0}$, meaning $\nabla(\nabla \cdot \mathbf{a}) \equiv \nabla^{2}\mathbf{a}$) and slowly varying bathymetry ($|\nabla h| \ll 1$):
 
 $$
-\left(I - \beta_{x}\partial_{x}^{2}\right)\left(I - \beta_{z}\partial_{z}^{2}\right)\mathbf{a} = \mathbf{f}, \quad \beta_{x} = \frac{\alpha h^{2}}{3\Delta x^{2}}, \quad \beta_{z} = \frac{\alpha h^{2}}{3\Delta z^{2}}
+\left(I - \alpha \frac{h^{2}}{3}\nabla^{2}\right)\mathbf{a} = \mathbf{f} \iff \begin{cases} \left(I - \alpha \frac{h^{2}}{3}\nabla^{2}\right) a_{x} = f_{x} \\ \left(I - \alpha \frac{h^{2}}{3}\nabla^{2}\right) a_{z} = f_{z} \end{cases}
+$$
+
+In full variable-bathymetry Peregrine (1967) systems, the 2D dispersion operator includes bathymetric gradient couplings and potential rotational velocity cross-derivatives ($\partial_{xz} a_{z}$). Under the physical assumptions of irrotational surface gravity wave propagation on mild beds, those cross-coupling terms are omitted.
+
+The 2D isotropic Helmholtz operator is solved via Peaceman-Rachford Alternating Direction Implicit (ADI) splitting:
+
+$$
+\left(I - \beta_{x}\partial_{x}^{2}\right)\left(I - \beta_{z}\partial_{z}^{2}\right)\mathbf{a} = \mathbf{f} + \beta_{x}\beta_{z}\partial_{x}^{2}\partial_{z}^{2}\mathbf{a}, \quad \beta_{x} = \frac{\alpha h^{2}}{3\Delta x^{2}}, \quad \beta_{z} = \frac{\alpha h^{2}}{3\Delta z^{2}}
 $$
 
 - **Continuum Symbol & Directional Properties**:
-  In Fourier space, the ADI factored operator exhibits gain $G_{\mathrm{ADI}} = \frac{1}{(1 + \frac{1}{3}k_{x}^{2}h^{2})(1 + \frac{1}{3}k_{z}^{2}h^{2})}$.
-  - Grid Axes ($0^{\circ}, 90^{\circ}$, $k_{x}=0$ or $k_{z}=0$): Cross-terms vanish, matching standard Peregrine coupled gain $G_{\mathrm{Peregrine}} = \frac{1}{1 + \frac{1}{3}k^{2}h^{2}}$ exactly ($0.00\%$ error).
-  - $45^{\circ}$ Diagonal: Cross-term $\frac{1}{9}k_{x}^{2}k_{z}^{2}h^{4}$ introduces a phase speed bias of **$-1.03\%$** at $kh=1.0$.
-- **ADI Defect Correction (`CSDefectCorrection`)**:
-  When `dispersionSweeps > 1` (clamped 1..4), cross-derivative defect $\mathcal{R} = \beta_{x}\beta_{z}\partial_{x}^{2}\partial_{z}^{2}\mathbf{a}$ is calculated by `CSDefectCorrection` and added to RHS forces.
-  One defect correction sweep (`dispersionSweeps = 2`) reduces the $45^{\circ}$ phase speed error from $-1.03\%$ to **$-0.02\%$** ($49\times$ error reduction), recovering near-perfect isotropy.
-- **Decoupled Normal/Tangential Sidewall Boundary Conditions**:
-  At solid lateral boundaries ($x = 0, W-1$, `SideWallSponge = false`), normal acceleration $a_{x} = 0$ (strict Dirichlet) and tangential acceleration $\partial_{x} a_{z} = 0$ (Neumann) are solved on separate matrix rows.
-  Vectorized PCR with `groupshared float2` solves normal components via independent Dirichlet rows ($b_{x}=1, c_{x}=0, d_{x}=0$), guaranteeing exactly **$0.00000000$** normal acceleration at the wall (eliminating the $\approx 0.844$ neighbor coupling of prior implementations).
+  In Fourier space, the direct ADI factored operator exhibits gain $G_{\mathrm{ADI}} = \frac{1}{(1 + \frac{1}{3}k_{x}^{2}h^{2})(1 + \frac{1}{3}k_{z}^{2}h^{2})}$.
+  - Grid Axes ($0^{\circ}, 90^{\circ}$, $k_{x}=0$ or $k_{z}=0$): Cross-terms vanish, matching the target Helmholtz gain $G_{\mathrm{Helmholtz}} = \frac{1}{1 + \frac{1}{3}k^{2}h^{2}}$ exactly ($0.00\%$ error, zero residual).
+  - $45^{\circ}$ Diagonal: Directional splitting error $\frac{1}{9}k_{x}^{2}k_{z}^{2}h^{4}$ introduces a phase speed bias of **$-1.03\%$** at $kh=1.0$.
+- **True ADI Defect Correction (`CSDefectCorrection`)**:
+  The defect correction compensates for the **4th-order directional factorization splitting error $\beta_{x}\beta_{z}\partial_{x}^{2}\partial_{z}^{2}\mathbf{a}$**, NOT general 2D rotational cross-component coupling.
+  In each predictor and corrector stage, the non-dispersive force $\mathbf{f}_{\mathrm{orig}}$ is stored immutably in `_ForceOrigTex`. At sweep $s \ge 2$, the working RHS is assembled as $\mathbf{f}_{\mathrm{work}} = \mathbf{f}_{\mathrm{orig}} + \beta_{x}\beta_{z}\partial_{x}^{2}\partial_{z}^{2}\mathbf{a}^{(s-1)}$. Because previous sweep defects are not accumulated into $\mathbf{f}_{\mathrm{orig}}$, the iteration is a strict contraction mapping with rate $\rho = \frac{\beta^{2}}{(1+\beta)^{2}} \approx \frac{1}{49}$:
+  - **Sweeps 1 (Direct ADI)**: $45^{\circ}$ error $-1.0257\%$, residual $2.04 \times 10^{-2}$ (recommended for fast real-time rendering)
+  - **Sweeps 2 (1 Correction)**: $45^{\circ}$ error **$-0.0208\%$**, residual $4.16 \times 10^{-4}$ ($49\times$ error reduction, recommended for high precision)
+  - **Sweeps 3 (2 Corrections)**: $45^{\circ}$ error **$-0.000425\%$**, residual $8.50 \times 10^{-6}$
+  - **Sweeps 4 (3 Corrections)**: $45^{\circ}$ error **$-0.000009\%$**, residual $1.73 \times 10^{-7}$
+- **Boundary Separation & Final Normal Velocity Enforcement**:
+  At solid lateral boundaries ($x = 0, W-1$, `SideWallSponge = false`), the PCR dispersion solver enforces $a_{x} = 0.00000000$ strictly on decoupled Dirichlet rows.
+  Furthermore, the final biharmonic spatial filter (`CSFilterHighFrequency`) strictly re-enforces zero normal velocity ($u=0$ on lateral solid walls, $w=0$ on offshore/beach borders) on the final output state. This prevents filter-induced velocity re-injection, guaranteeing that final wall normal velocity and normal flux $H u$ are strictly **$0.00000000$** across all stages, while conserving total water mass $\sum \eta$ to machine precision ($\Delta \mathrm{Mass} < 10^{-14}$).
 
 #### (4) Time Stepping & Numerical Convergence Properties (`CSApplyPredictedDispersion` & `CSApplyDispersion`)
 - **Boussinesq System**:
@@ -510,10 +524,10 @@ $$
 $$
 
 3. **Method 2: Boussinesq System (`BoussinesqSimulation`)**:
-   - `stateTexA` (16B) + `stateTexB` (16B) + `predTex` (16B) + `forceTex` (8B) + `accelTexA` (8B) + `accelTexB` (8B) + `normalTex` (8B) + `waterDataTex` (8B) + `bathymetryTex` (8B) = **96 Bytes/px**
+   - `stateTexA` (16B) + `stateTexB` (16B) + `predTex` (16B) + `forceOrigTex` (8B) + `forceTex` (8B) + `forcePredTex` (8B) + `accelTexA` (8B) + `accelTexB` (8B) + `normalTex` (8B) + `waterDataTex` (8B) + `bathymetryTex` (8B) = **112 Bytes/px**
 
 $$
-\mathrm{VRAM_{Boussinesq}}(N) = 96 N^{2}\ [\mathrm{Bytes}]
+\mathrm{VRAM_{Boussinesq}}(N) = 112 N^{2}\ [\mathrm{Bytes}]
 $$
 
 4. **Method 3: FFT Ocean Model (`FFTOceanSimulation`)**:
@@ -525,9 +539,9 @@ $$
 
 | Grid Resolution $N \times N$ | Total Cells $N^{2}$ | Method 1: 2D Wave Eq | Method 2: Boussinesq | Method 3: FFT Ocean | Shared Mesh ($256^{2}$) |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| **$256 \times 256$** | $65,536$ | **$2.06\ \mathrm{MB}$** | **$6.00\ \mathrm{MB}$** | **$6.00\ \mathrm{MB}$** | $4.50\ \mathrm{MB}$ |
-| **$512 \times 512$** | $262,144$ | **$8.25\ \mathrm{MB}$** | **$24.00\ \mathrm{MB}$** | **$24.00\ \mathrm{MB}$** | $4.50\ \mathrm{MB}$ |
-| **$1024 \times 1024$** | $1,048,576$ | **$33.00\ \mathrm{MB}$** | **$96.00\ \mathrm{MB}$** | **$96.00\ \mathrm{MB}$** | $4.50\ \mathrm{MB}$ |
+| **$256 \times 256$** | $65,536$ | **$2.06\ \mathrm{MB}$** | **$7.34\ \mathrm{MB}$** | **$6.00\ \mathrm{MB}$** | $4.50\ \mathrm{MB}$ |
+| **$512 \times 512$** | $262,144$ | **$8.25\ \mathrm{MB}$** | **$29.36\ \mathrm{MB}$** | **$24.00\ \mathrm{MB}$** | $4.50\ \mathrm{MB}$ |
+| **$1024 \times 1024$** | $1,048,576$ | **$33.00\ \mathrm{MB}$** | **$117.44\ \mathrm{MB}$** | **$96.00\ \mathrm{MB}$** | $4.50\ \mathrm{MB}$ |
 
 ---
 

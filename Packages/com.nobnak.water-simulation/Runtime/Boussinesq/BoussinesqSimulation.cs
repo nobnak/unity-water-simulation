@@ -84,6 +84,7 @@ namespace Nobnak.WaterSimulation {
         private RenderTexture stateTexA;
         private RenderTexture stateTexB;
         private RenderTexture predTex;
+        private RenderTexture forceOrigTex;
         private RenderTexture forceTex;
         private RenderTexture forcePredTex;
         private RenderTexture accelTexA;
@@ -331,6 +332,7 @@ namespace Nobnak.WaterSimulation {
             stateTexA = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
             stateTexB = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
             predTex = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
+            forceOrigTex = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
             forceTex = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
             forcePredTex = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
             accelTexA = CreateSimulationTexture(w, h, RenderTextureFormat.RGFloat);
@@ -361,6 +363,7 @@ namespace Nobnak.WaterSimulation {
             ReleaseTexture(ref stateTexA);
             ReleaseTexture(ref stateTexB);
             ReleaseTexture(ref predTex);
+            ReleaseTexture(ref forceOrigTex);
             ReleaseTexture(ref forceTex);
             ReleaseTexture(ref forcePredTex);
             ReleaseTexture(ref accelTexA);
@@ -385,6 +388,7 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetTexture(kernelInit, PropStateOut, stateTexA);
             boussinesqShader.SetTexture(kernelInit, PropNormalTex, normalTex);
             boussinesqShader.SetTexture(kernelInit, PropWaterDataTex, waterDataTex);
+            boussinesqShader.SetTexture(kernelInit, PropForceOrigTex, forceOrigTex);
             boussinesqShader.SetTexture(kernelInit, PropForceTex, forceTex);
             boussinesqShader.SetTexture(kernelInit, PropForcePredTex, forcePredTex);
             boussinesqShader.SetTexture(kernelInit, PropAccelPing, accelTexA);
@@ -468,10 +472,11 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetFloat(PropWavemakerPhase, wavemakerPhase);
             boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
 
-            // 1. Predictor step (Forward/Backward differences -> forceTex & predTex)
+            // 1. Predictor step (Forward/Backward differences -> forceOrigTex & forceTex & predTex)
             boussinesqShader.SetTexture(kernelPredict, PropStateIn, current);
             boussinesqShader.SetTexture(kernelPredict, PropStatePred, predTex);
             boussinesqShader.SetTexture(kernelPredict, PropBathymetryTex, bathymetryTex);
+            boussinesqShader.SetTexture(kernelPredict, PropForceOrigTex, forceOrigTex);
             boussinesqShader.SetTexture(kernelPredict, PropForceTex, forceTex);
             boussinesqShader.SetTexture(kernelPredict, PropAccelPing, accelTexA);
             DispatchCompute2D(kernelPredict);
@@ -486,11 +491,12 @@ namespace Nobnak.WaterSimulation {
                 DispatchCompute2D(kernelApplyPredictedDispersion);
             }
 
-            // 2. Corrector step (Opposite differences on predTex -> forceTex & next)
+            // 2. Corrector step (Opposite differences on predTex -> forceOrigTex & forceTex & next)
             boussinesqShader.SetTexture(kernelCorrect, PropStateIn, current);
             boussinesqShader.SetTexture(kernelCorrect, PropStatePred, predTex);
             boussinesqShader.SetTexture(kernelCorrect, PropStateOut, next);
             boussinesqShader.SetTexture(kernelCorrect, PropBathymetryTex, bathymetryTex);
+            boussinesqShader.SetTexture(kernelCorrect, PropForceOrigTex, forceOrigTex);
             boussinesqShader.SetTexture(kernelCorrect, PropForceTex, forceTex);
             boussinesqShader.SetTexture(kernelCorrect, PropForcePredTex, forcePredTex);
             boussinesqShader.SetTexture(kernelCorrect, PropAccelPing, accelTexA);
@@ -534,8 +540,9 @@ namespace Nobnak.WaterSimulation {
             int sweeps = math.clamp(dispersionSweeps, 1, 4);
             for (int s = 0; s < sweeps; s++) {
                 if (s > 0) {
-                    // ADI Defect Correction: add cross-derivative defect betaX * betaZ * d_x^2 d_z^2 a to _ForceTex
+                    // ADI Defect Correction: add cross-derivative defect betaX * betaZ * d_x^2 d_z^2 a to _ForceOrigTex -> _ForceTex
                     boussinesqShader.SetTexture(kernelDefectCorrection, PropAccelPing, accelTexA);
+                    boussinesqShader.SetTexture(kernelDefectCorrection, PropForceOrigTex, forceOrigTex);
                     boussinesqShader.SetTexture(kernelDefectCorrection, PropForceTex, forceTex);
                     boussinesqShader.SetTexture(kernelDefectCorrection, PropBathymetryTex, bathymetryTex);
                     DispatchCompute2D(kernelDefectCorrection);
@@ -719,6 +726,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropBathymetryTex = Shader.PropertyToID("_BathymetryTex");
         private static readonly int PropNormalTex = Shader.PropertyToID("_NormalTex");
         private static readonly int PropWaterDataTex = Shader.PropertyToID("_WaterDataTex");
+        private static readonly int PropForceOrigTex = Shader.PropertyToID("_ForceOrigTex");
         private static readonly int PropForceTex = Shader.PropertyToID("_ForceTex");
         private static readonly int PropForcePredTex = Shader.PropertyToID("_ForcePredTex");
         private static readonly int PropAccelPing = Shader.PropertyToID("_AccelPing");

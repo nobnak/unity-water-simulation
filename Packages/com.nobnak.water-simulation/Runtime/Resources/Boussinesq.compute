@@ -14,7 +14,8 @@ RWTexture2D<float4> _StateIn;     // R: eta (surface elevation [m]), G: u (vel X
 RWTexture2D<float4> _StatePred;   // Predicted state (MacCormack)
 RWTexture2D<float4> _StateOut;    // Corrected / output state
 Texture2D<float4> _BathymetryTex; // R: still water depth h [m], G: bed level z_b = -h [m]
-RWTexture2D<float2> _ForceTex;    // RG: non-dispersive RHS acceleration f = (fx, fz) at current stage
+RWTexture2D<float2> _ForceOrigTex;// RG: original non-dispersive acceleration f_orig (preserved across sweeps)
+RWTexture2D<float2> _ForceTex;    // RG: RHS acceleration f = (fx, fz) at current sweep
 RWTexture2D<float2> _ForcePredTex;// RG: dispersed predictor acceleration a^(1) = (ax^(1), az^(1))
 RWTexture2D<float2> _AccelPing;   // RG: dispersed acceleration a = (ax, az)
 RWTexture2D<float2> _AccelPong;   // RG: intermediate acceleration a*
@@ -120,6 +121,7 @@ void CSInit(uint3 id : SV_DispatchThreadID) {
     _StateOut[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
     _NormalTex[id.xy] = float4(0.0, 1.0, 0.0, 0.0);
     _WaterDataTex[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+    _ForceOrigTex[id.xy] = float2(0.0, 0.0);
     _ForceTex[id.xy] = float2(0.0, 0.0);
     _ForcePredTex[id.xy] = float2(0.0, 0.0);
     _AccelPing[id.xy] = float2(0.0, 0.0);
@@ -182,6 +184,7 @@ void CSPredict(uint3 id : SV_DispatchThreadID) {
     float fx = -_Gravity * detadx - advectX - friction * u;
     float fz = -_Gravity * detadz - advectZ - friction * w;
 
+    _ForceOrigTex[pos] = float2(fx, fz);
     _ForceTex[pos] = float2(fx, fz);
     _AccelPing[pos] = float2(fx, fz);
 
@@ -190,6 +193,8 @@ void CSPredict(uint3 id : SV_DispatchThreadID) {
         etaPred = clamp(etaPred * damp, -15.0, 15.0);
         float uPred = clamp((u + _DeltaTime * fx) * damp, -30.0, 30.0);
         float wPred = clamp((w + _DeltaTime * fz) * damp, -30.0, 30.0);
+        if (_SideWallSponge == 0 && (pos.x == 0 || pos.x == _Width - 1)) uPred = 0.0;
+        if (pos.y == 0 || pos.y == _Height - 1) wPred = 0.0;
         _StatePred[pos] = float4(etaPred, uPred, wPred, 0.0);
     } else {
         // Store un-damped etaPred and current (u, w); CSApplyPredictedDispersion will finalize uPred, wPred and damp
@@ -283,10 +288,13 @@ void CSCorrect(uint3 id : SV_DispatchThreadID) {
     if (_DispersionAlpha <= 0.001) {
         float uNext = clamp(0.5 * (stateN.g + uStar + _DeltaTime * fxStar) * damp, -30.0, 30.0);
         float wNext = clamp(0.5 * (stateN.b + wStar + _DeltaTime * fzStar) * damp, -30.0, 30.0);
+        if (_SideWallSponge == 0 && (pos.x == 0 || pos.x == _Width - 1)) uNext = 0.0;
+        if (pos.y == 0 || pos.y == _Height - 1) wNext = 0.0;
         _StateOut[pos] = float4(etaNext, uNext, wNext, 0.0);
     } else {
-        // Store corrector RHS f* = (fxStar, fzStar) in _ForceTex
+        // Store corrector RHS f* = (fxStar, fzStar) in _ForceOrigTex and _ForceTex
         float2 fStar = float2(fxStar, fzStar);
+        _ForceOrigTex[pos] = fStar;
         _ForceTex[pos] = fStar;
         _StateOut[pos] = float4(etaNext, stateN.g, stateN.b, 0.0);
     }
@@ -615,6 +623,8 @@ void CSAddImpulse(uint3 id : SV_DispatchThreadID) {
 
             state.r = clamp(state.r + dEta, -15.0, 15.0);
             state.b = clamp(state.b + dW, -30.0, 30.0);
+            if (_SideWallSponge == 0 && (pos.x == 0 || pos.x == _Width - 1)) state.g = 0.0;
+            if (pos.y == 0 || pos.y == _Height - 1) state.b = 0.0;
             _StateOut[pos] = state;
         }
     } else {
@@ -626,6 +636,8 @@ void CSAddImpulse(uint3 id : SV_DispatchThreadID) {
             float q = max(0.0, 1.0 - rNorm * rNorm);
             float dEta = _ImpulseStrength * (q * q * q);
             state.r = clamp(state.r + dEta, -15.0, 15.0);
+            if (_SideWallSponge == 0 && (pos.x == 0 || pos.x == _Width - 1)) state.g = 0.0;
+            if (pos.y == 0 || pos.y == _Height - 1) state.b = 0.0;
             _StateOut[pos] = state;
         }
     }
@@ -707,8 +719,15 @@ void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
 
     // Time-step scaling: kappa is proportional to _DeltaTime so physical dissipation per second
     // is invariant to time step choice (eliminates dt-dependence in convergence analysis)
-    float kappa = 0.025 * clamp(_DeltaTime / 0.008, 0.05, 2.0);
+    float kappa = 0.025 * min(2.0, _DeltaTime / 0.008);
     float4 filtered = c - kappa * (d4x + d4z);
+
+    if (_SideWallSponge == 0 && (x == 0 || x == w - 1)) {
+        filtered.g = 0.0; // Strictly zero normal velocity on lateral solid walls
+    }
+    if (y == 0 || y == h - 1) {
+        filtered.b = 0.0; // Strictly zero normal velocity on offshore/beach borders
+    }
 
     filtered.r = clamp(filtered.r, -15.0, 15.0);
     filtered.g = clamp(filtered.g, -30.0, 30.0);
@@ -719,7 +738,7 @@ void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
 }
 
 // 8. ADI Defect correction for dispersionSweeps > 1:
-// Calculates cross-derivative defect (beta_x * beta_z * d_x^2 d_z^2 a) and adds it to _ForceTex
+// Calculates cross-derivative defect (beta_x * beta_z * d_x^2 d_z^2 a) and sets _ForceTex = _ForceOrigTex + defect
 [numthreads(8, 8, 1)]
 void CSDefectCorrection(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
@@ -753,5 +772,5 @@ void CSDefectCorrection(uint3 id : SV_DispatchThreadID) {
     float2 crossD4 = d2zR - 2.0 * d2zC + d2zL;
 
     float2 defect = betaX * betaZ * crossD4;
-    _ForceTex[pos] += defect;
+    _ForceTex[pos] = _ForceOrigTex[pos] + defect;
 }
