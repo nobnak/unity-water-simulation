@@ -88,18 +88,21 @@ $$
 $$
 
 #### (3) Symplectic Euler (Kick-Drift) Time Integration (`CSStep`)
-Tracking physical velocity $v = \partial_{t}\eta$ directly in `RGFloat` state textures, the system is advanced via a symplectic Euler (Kick-Drift) scheme with semi-implicit damping:
+Tracking physical velocity $v = \partial_{t}\eta$ directly in `RGFloat` state textures, the system is advanced via a symplectic Euler (Kick-Drift) scheme with centered half-step Cayley damping:
 
 $$
-v^{n+1} = \frac{v^{n} + \Delta t\, c^{2}\nabla^{2}\eta^{n}}{1 + \gamma_{\mathrm{eff}}\Delta t}
+v^{n+1} = \frac{v^{n}\left(1 - \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t\right) + \Delta t\, c^{2}\nabla^{2}\eta^{n}}{1 + \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t} \quad \text{[Kick]}
 $$
 
 $$
-\eta^{n+1} = \eta^{n} + \Delta t\, v^{n+1}
+\eta^{n+1} = \eta^{n} + \Delta t\, v^{n+1} \quad \text{[Drift]}
 $$
 
-Because the physical velocity $v$ is stored directly in state textures, dynamic adjustments to wave speed $c$ or substep width $\Delta t$ during runtime do not cause the artificial energy discontinuities associated with two-step backward difference formulations.
-When evaluated on the simultaneous state pair $(\eta^{n}, v^{n})$ at integer time steps $n$, the Kick-Drift time integration exhibits strict 1st-order convergence (error reduction ratio $\approx 2.01\times$ upon halving $\Delta t$, empirical order $1.00$). While it is 2nd-order as a staggered leapfrog sequence for $v^{n+1/2}$, storing and rendering simultaneous $(h, v)$ on GPU textures matches the 1st-order simultaneous state convergence. Spatial discretization error ($O(\Delta x^{2})$ from the 9-point Laplacian) and temporal integration error ($O(\Delta t)$ on the simultaneous pair) are verified independently.
+This update formula exactly matches the shader implementation in `WaveEquation.compute` (lines 118–121) and Section 4.4.
+- **Undamped regime ($\gamma_{\mathrm{eff}} = 0$)**: Exhibits a strict symplectic geometric structure, conserving phase-space area ($\mathrm{d}\eta \wedge \mathrm{d}v = \mathrm{const}$) and preserving Hamiltonian energy over extended runtimes without artificial amplitude decay.
+- **Damped regime ($\gamma_{\mathrm{eff}} > 0$)**: Governed by the centered half-step Cayley factor $\frac{1 - \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t}{1 + \frac{1}{2}\gamma_{\mathrm{eff}}\Delta t} \in (-1, 1)$, ensuring unconditional numerical stability and 2nd-order local damping accuracy matching Crank-Nicolson formulation without numerical oscillation or blow-up.
+- **State preservation & convergence**: Because physical velocity $v$ is stored directly, dynamic adjustments to wave speed $c$ or substep width $\Delta t$ during runtime do not cause the artificial energy discontinuities associated with two-step backward difference formulations.
+When evaluated on the simultaneous state pair $(\eta^{n}, v^{n})$ at integer time steps $n$, the Kick-Drift time integration exhibits strict 1st-order convergence (error reduction ratio $\approx 2.01\times$ upon halving $\Delta t$, empirical order $1.00$). While it is 2nd-order as a staggered leapfrog sequence for $v^{n+1/2}$, storing and rendering simultaneous $(h, v)$ on GPU textures matches the 1st-order simultaneous state convergence. Spatial discretization error ($O(\Delta x^{2})$ from the 9-point Laplacian) and temporal integration error ($O(\Delta t)$ on the simultaneous pair) are verified independently (reproducible test: `Docs/NumericalVerificationSuite.py`).
 
 Here, the perimeter sponge damping $\gamma_{\mathrm{sponge}}$ is defined in terms of the minimum cell distance to the domain boundary $d_{\mathrm{border}} = \min(i,\ N_{x} - 1 - i,\ j,\ N_{z} - 1 - j)$:
 

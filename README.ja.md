@@ -8,13 +8,13 @@ UPMパッケージ本体は [`Packages/com.nobnak.water-simulation`](Packages/co
 
 ## 特徴
 1. **2D線形波動方程式 (`WaveEquationSimulation`)**:
-   - 9点等方ラプラシアン＋`fp32` (`RGFloat`) シンプレクティック Leapfrog 時間積分による軽量・高応答な波紋シミュレーション。
-   - 物理量 $(\eta, v = \partial_{t}\eta)$ の明示保持により波速や時間刻み変更時にも不連続跳びが発生せず、10秒以上の長波伝播打切り誤差を $0.00008\%$ へ低減。
+   - 9点等方ラプラシアン＋`fp32` (`RGFloat`) シンプレクティック Euler (kick-drift) 時間積分（半ステップ中央化 Cayley 減衰）による軽量・高応答な波紋シミュレーション。
+   - 物理状態対 $(\eta, v = \partial_{t}\eta)$ の同時保持により、同時刻サンプリングにおいて厳密な1次収束 $O(\Delta t)$（時間刻み半減時の誤差低減比 $\approx 2.01\times$）を示しつつ、波速や時間刻み変更時にも不連続跳びが発生せず、長波長伝播打切り誤差を $0.00008\%$ へ低減。
    - スリット通過時の回折・干渉、障害物反射（Dirichlet / Neumann）、外周スポンジ無反射吸収、滑らかなコンパクト $C^{2}$ 級ベル型インパルス（高周波ギブズリンギングなし）・周期パルス・移動波源・マウスクリック励起。
 2. **Boussinesq系浅水波モデル (`BoussinesqSimulation`)**:
-   - 標準 Peregrine (1967) 弱非線形・弱分散浅水波方程式（$1/3$ 分散係数準拠、位相速度誤差 $-0.764\%$）。
-   - 高解像度での係数切捨て上限を完全撤廃し、2次元 Peregrine 作用素を Peaceman-Rachford ADI 型に分解して `groupshared` メモリ内の三重対角並列巡回簡約（PCR）により無条件安定に直接求解。
-   - 予測子・修正子の双方で分散逆行列を解く Heun 2次時間更新により、時間刻み半減で誤差が $3.99\times$ 低減する真の $O(\Delta t^{2})$ 2次収束を達成。
+   - 無回転・緩勾配海底を前提とする成分分離 Helmholtz 型 Peregrine (1967) 弱非線形・弱分散浅水波モデル（$\left(I - \alpha \frac{h^{2}}{3}\nabla^{2}\right)\mathbf{a} = \mathbf{f}$、$1/3$ 分散係数準拠。表面重力波前提に基づき速度成分間交差微分 $\partial_{xz}a_z$ や分散作用素内の水深勾配は省略）。
+   - 方向分離 Peaceman-Rachford ADI 分解と `groupshared` メモリ内の三重対角並列巡回簡約（PCR）により無条件安定な分散逆行列求解を行い、欠損補正（`CSDefectCorrection`, `dispersionSweeps`）によって方向分離に伴う4階交差項 $\beta_x \beta_z \partial_x^2 \partial_z^2 \mathbf{a}$ を補正（スイープ毎に誤差約49倍低減、$45^\circ$ 斜め位相速度誤差を Sweep 1 の $-1.03\%$ から Sweep 2 で $-0.021\%$、Sweep 3 で $-0.0004\%$ へ低減）。
+   - 予測子・修正子の対称結合（MacCormack-Heun更新）、CFL条件に基づく自動サブステップ分割（$\Delta t \le 0.55 \frac{\Delta x}{\sqrt{2(c + u)}}$）、物理時間あたり減衰不変な4階保存バイハーモニック空間フィルター、および不透過固体側壁での厳密な法線流速拘束（$u \equiv 0$、流束 $Hu \equiv 0$）。
    - 水深変化に応じた波速変化（$c \sim \sqrt{gh}$）、斜め浅瀬での屈折（Refraction）、波長短縮（Shoaling）、岬への波エネルギー集中。
    - 沖合進行波造波に加え、平面孤立波（Planar Soliton）・円形ガウスパルスの単発・周期・移動・マウス注入に対応。
 3. **スペクトル／FFT海面 (`FFTOceanSimulation`)**:

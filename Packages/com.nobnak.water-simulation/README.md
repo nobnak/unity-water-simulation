@@ -74,7 +74,7 @@ $$
   - $\eta$: Surface elevation [m]
   - $c$: Wave phase speed [m/s]
   - $\gamma$: Damping rate [1/s]
-- **Numerical Scheme**: 9-point isotropic Laplacian FDM + `fp32` (`RGFloat`) symplectic Leapfrog time-stepping. Preserves physical velocity $v = \partial_{t}\eta$ explicitly across variable $\Delta t$ and wave speed $c$ without artificial time-step discontinuities. The fp32 upgrade reduces 10-second cumulative truncation drift for long waves from $223.78\%$ down to $0.00008\%$.
+- **Numerical Scheme**: 9-point isotropic Laplacian FDM + `fp32` (`RGFloat`) symplectic Euler (kick-drift) time-stepping with centered half-step Cayley damping. Simultaneous physical state tracking $(\eta, v = \partial_{t}\eta)$ exhibits 1st-order convergence $O(\Delta t)$ ($2.01\times$ reduction per halving of $\Delta t$), preserving continuity across variable $\Delta t$ and wave speed $c$ without artificial time-step discontinuities. The fp32 upgrade reduces 10-second cumulative truncation drift for long waves down to $0.00008\%$.
 - **Key Features**:
   - **CFL Auto-Substepping**: Automatically subdivides time steps to satisfy $\Delta t \le 0.95 \frac{\Delta x}{\sqrt{2}\,c}$, ensuring unconditional numerical stability.
   - **Sponge Absorbing Perimeter**: Suppresses boundary reflections smoothly.
@@ -107,11 +107,12 @@ $$
   - $h(\mathbf{x})$: Still water depth [m]
   - $\mathbf{u}$: Depth-averaged horizontal velocity vector [m/s]
   - $c_{f}$: Seabed friction coefficient
-  - Standard Peregrine (1967) $1/3$ dispersion coefficient with phase velocity error at $kh=1$ of only $-0.764\%$ (substantially improved from $+6.09\%$ with the previous ad-hoc $1/6$ model).
-- **Numerical Stabilization (`fp32` Symmetric MacCormack + ADI Tridiagonal PCR Dispersion Solver)**:
+  - Decoupled-component Helmholtz-type Peregrine (1967) $1/3$ dispersion model with phase velocity error at $kh=1$ of only $-0.764\%$ (velocity cross-derivatives $\partial_{xz}a_z$ and intra-operator bathymetric gradients are omitted under irrotational mild-slope wave propagation assumptions).
+- **Numerical Stabilization (`fp32` Symmetric MacCormack + Direction-Split ADI PCR Dispersion Solver & Defect Correction)**:
   - Explicit evaluation of the 3rd-order spatial derivative $\nabla(\nabla^{2} \eta)$ suffers from severe stiffness ($\propto \Delta x^{-3}$), requiring $\Delta t < 10^{-6}\ \mathrm{s}$ and causing explosive checkerboard spikes.
-  - The previous artificial clamp $\beta \le 6$ (which discarded up to $99.4\%$ of physical dispersion on refined grids) is removed. The 2D Peregrine dispersion operator is factored into an unconditionally stable Alternating Direction Implicit (Peaceman-Rachford ADI) system solved directly in `groupshared` memory via Parallel Cyclic Reduction (PCR).
-  - Dispersion is solved symmetrically on both predictor and corrector stages, applying a Heun 2nd-order velocity update with verified $O(\Delta t^{2})$ convergence ($3.99\times$ error reduction per halving of $\Delta t$).
+  - The 2D Peregrine dispersion operator is factored into an Alternating Direction Implicit (Peaceman-Rachford ADI) system solved directly in `groupshared` memory via tridiagonal Parallel Cyclic Reduction (PCR).
+  - An iterative Defect Correction loop (`CSDefectCorrection`, `dispersionSweeps`) eliminates the 4th-order directional-splitting artifact $\beta_x \beta_z \partial_x^2 \partial_z^2 \mathbf{a}$ with geometric convergence ($\approx 49\times$ reduction per sweep; reducing $45^\circ$ oblique phase speed error from $-1.03\%$ at Sweep 1 to $-0.021\%$ at Sweep 2 and $-0.0004\%$ at Sweep 3).
+  - Coupled with MacCormack-Heun predictor-corrector time stepping, CFL automatic sub-stepping ($\Delta t \le 0.55 \frac{\Delta x}{\sqrt{2(c + u)}}$), a $\Delta t$-scaled 4th-order conservative biharmonic filter, and post-filter lateral solid wall velocity zeroing ($u \equiv 0$).
 - **Key Features**:
   - **Procedural Bathymetry**: Shoal and Cape, Flat bed, Linear Slope, or custom bathymetry texture.
   - **Rich Wave Excitation & Soliton Modes**: Offshore progressive wavemaker plus planar solitary waves (Planar Soliton: ${\mathrm{sech}}^{2}$) and circular Gaussian pulses (Circular Pulse) across single-shot, periodic, moving source, and interactive mouse click/drag modes via non-destructive GPU injection (`CSAddImpulse`).
