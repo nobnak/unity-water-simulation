@@ -203,7 +203,13 @@ Shader "Nobnak/WaterSimulation/WaterSurfaceCommon" {
                 float foam = saturate(disp.a * _FoamIntensity);
                 finalColor = lerp(finalColor, _FoamColor.rgb, foam);
 
-                float alpha = lerp(_BaseColor.a, 1.0, fresnel * 0.4 + foam * 0.6);
+                float baseAlpha = _BaseColor.a;
+                if (_HasBathymetry > 0.5) {
+                    float h = max(0.1, SAMPLE_TEXTURE2D(_BathymetryTex, sampler_BathymetryTex, uv).r);
+                    float shallowClarity = saturate(1.0 - (h - 0.4) / 4.0);
+                    baseAlpha = lerp(_BaseColor.a, 0.55, shallowClarity * 0.65);
+                }
+                float alpha = lerp(baseAlpha, 1.0, fresnel * 0.4 + foam * 0.6);
                 return half4(finalColor, alpha);
             }
             ENDHLSL

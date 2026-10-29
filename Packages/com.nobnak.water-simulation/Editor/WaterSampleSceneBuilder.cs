@@ -97,6 +97,11 @@ namespace Nobnak.WaterSimulation.Editor {
             var renderer = waterGO.AddComponent<WaterRenderer>();
             renderer.TargetSimulation = sim;
 
+            var seabedGO = new GameObject("Seabed");
+            seabedGO.transform.SetParent(waterGO.transform, false);
+            var seabedRenderer = seabedGO.AddComponent<SeabedRenderer>();
+            seabedRenderer.TargetSimulation = sim;
+
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>("Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute");
             if (compute == null) compute = Resources.Load<ComputeShader>("Boussinesq");
             var so = new SerializedObject(sim);
@@ -126,6 +131,7 @@ namespace Nobnak.WaterSimulation.Editor {
             soUI.FindProperty("scopeAndLimitations").stringValue = "深さ平均モデルのため、砕波による波頭の巻き込み（Plunging breaker）や飛沫・気泡の3D流体計算は含まれません（急勾配での散逸・Foamとして表現）。";
             soUI.FindProperty("simulation").objectReferenceValue = sim;
             soUI.FindProperty("waterRenderer").objectReferenceValue = renderer;
+            soUI.FindProperty("seabedRenderer").objectReferenceValue = seabedRenderer;
             soUI.FindProperty("cameraController").objectReferenceValue = cam.GetComponent<SimpleCameraController>();
             soUI.ApplyModifiedProperties();
 
@@ -328,6 +334,11 @@ namespace Nobnak.WaterSimulation.Editor {
             so2.FindProperty("wavemakerAmplitude").floatValue = 0.15f;
             so2.FindProperty("wavemakerFrequency").floatValue = 0.25f;
             so2.ApplyModifiedProperties();
+
+            var seabedGO2 = new GameObject("Seabed");
+            seabedGO2.transform.SetParent(go2.transform, false);
+            var seabedRen2 = seabedGO2.AddComponent<SeabedRenderer>();
+            seabedRen2.TargetSimulation = sim2;
 
             // 3. FFT Ocean
             var go3 = new GameObject("03_FFTOcean");

@@ -22,6 +22,7 @@ namespace Nobnak.WaterSimulation {
         [Header("Target Simulation")]
         [SerializeField] private WaterSimulationBase simulation;
         [SerializeField] private WaterRenderer waterRenderer;
+        [SerializeField] private SeabedRenderer seabedRenderer;
         [SerializeField] private SimpleCameraController cameraController;
 
         [Header("UI Display")]
@@ -41,6 +42,7 @@ namespace Nobnak.WaterSimulation {
         #region Unity lifecycle
         private void OnEnable() {
             comparisonController = FindFirstObjectByType<WaterComparisonController>();
+            if (seabedRenderer == null) seabedRenderer = FindFirstObjectByType<SeabedRenderer>();
         }
 
         private void Update() {
@@ -260,6 +262,20 @@ namespace Nobnak.WaterSimulation {
                 if (GUILayout.Button("Shoal (浅瀬・岬)")) boussSim.SetBathymetryType(BoussinesqSimulation.BathymetryType.ShoalAndCape);
                 if (GUILayout.Button("Slope (斜面)")) boussSim.SetBathymetryType(BoussinesqSimulation.BathymetryType.LinearSlope);
                 GUILayout.EndHorizontal();
+
+                if (seabedRenderer != null) {
+                    GUILayout.BeginHorizontal();
+                    bool showSeabed = seabedRenderer.gameObject.activeSelf;
+                    if (GUILayout.Button(showSeabed ? "Seabed: ON" : "Seabed: OFF", GUILayout.Width(95))) {
+                        seabedRenderer.gameObject.SetActive(!showSeabed);
+                    }
+                    if (showSeabed) {
+                        if (GUILayout.Button("Sand")) seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.RealisticSand);
+                        if (GUILayout.Button("Heatmap")) seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.BathymetryHeatmap);
+                        if (GUILayout.Button("Wire")) seabedRenderer.SetVisualMode(SeabedRenderer.VisualMode.TopographicWireframe);
+                    }
+                    GUILayout.EndHorizontal();
+                }
 
                 GUILayout.Space(2);
                 GUILayout.Label("<b>[波源モード / Source Mode]</b>");

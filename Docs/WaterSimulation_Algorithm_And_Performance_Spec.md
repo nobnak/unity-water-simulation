@@ -499,6 +499,18 @@ $$
 4. **`Wireframe` (`_VisualMode == 3`)**: $64\times 64$ UV grid visualizing horizontal choppy convergence and surface deformation.
 5. **`Bathymetry` (`_VisualMode == 4`)**: Warm (shallow) to cool (deep) heatmap of still water depth $h \in [1\ \mathrm{m}, 15\ \mathrm{m}]$ with $1\ \mathrm{m}$ isobath contours and $+0.12\eta$ wave crest overlay.
 
+### 5.3 3D Seabed Mesh Visualization (`SeabedRenderer.cs`, `Seabed.shader`)
+Provides explicit 3D mesh rendering of the seabed bathymetry $z_{b}(x, z) = -h(x, z)$ beneath the water surface for physical and educational comprehension of wave-bottom interactions (shoaling, refraction, energy focusing):
+
+- **GPU Vertex Displacement**: Samples bed elevation $z_{b} = -h$ directly from `_BathymetryTex` in the vertex shader, dynamically updating without CPU mesh reallocations upon parameter edits.
+- **Analytical Terrain Normal**: Computes surface normals via texture gradients $\nabla(y - z_{b}) = (\partial h/\partial x,\ 1,\ \partial h/\partial z)$ for smooth directional and ambient shading.
+- **Basin Skirt Walls (`includeBasinWalls`)**: Extends boundary edges down to a perimeter basin floor (default $-12\ \mathrm{m}$) to form an architectural tank slice.
+- **3 Visual Modes**:
+  1. `RealisticSand`: Shallow warm sand to deep shelf sediment gradient, 1m isobath contours, and procedural sand ripples.
+  2. `BathymetryHeatmap`: Hypsometric depth chart coloring.
+  3. `TopographicWireframe`: Mesh wireframe highlighting terrain slopes and grid resolution.
+- **Water Transmittance Coupling**: Dynamically raises water surface transparency over shallow areas ($h \le 1.5\ \mathrm{m}$) to clearly reveal the underlying seabed topography through waves.
+
 ---
 
 ## 6. Performance Estimation Model (VRAM, Memory Bandwidth, Dispatch Count, and Execution Time)
