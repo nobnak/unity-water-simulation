@@ -1,0 +1,10 @@
+﻿{
+  "test": "GPU Compute Shader Peregrine Dispersion vs CPU Reference",
+  "kh": 1.0, "angle_deg": 45, "depth_m": 3.5, "resolution": 64, "gpu": "Intel(R) Arc(TM) 140V GPU (16GB)", "api": "Direct3D11",
+  "sweeps": [
+    { "sweep": 1, "cpu_gain": 0.73469388, "gpu_gain": 0.73549470, "abs_error": 8.01E-004, "passed": true },
+    { "sweep": 2, "cpu_gain": 0.74968763, "gpu_gain": 0.74964960, "abs_error": 3.80E-005, "passed": true },
+    { "sweep": 3, "cpu_gain": 0.74999363, "gpu_gain": 0.75078210, "abs_error": 7.88E-004, "passed": true },
+    { "sweep": 4, "cpu_gain": 0.74999987, "gpu_gain": 0.75078210, "abs_error": 7.82E-004, "passed": true }
+  ]
+}

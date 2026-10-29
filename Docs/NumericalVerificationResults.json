@@ -450,6 +450,11 @@
       "filter_output_velocity": 0.0,
       "wall_normal_velocity_maintained_zero": true
     },
+    "filter_wall_preservation": {
+      "max_wall_normal_velocity": 0.0,
+      "max_wall_normal_flux": 0.0,
+      "side_walls_strictly_zero": true
+    },
     "full_substep_wall_preservation": {
       "max_wall_normal_velocity": 0.0,
       "max_wall_normal_flux": 0.0,
@@ -530,5 +535,54 @@
       "regime": "Near Cutoff / Evanescent",
       "is_valid_intermediate": false
     }
-  ]
+  ],
+  "full_substep_simulation_boundary": {
+    "case1_dispersive_solid_wavemaker_slope": {
+      "side_walls_strictly_zero": true,
+      "max_wall_normal_velocity_final": 0.0,
+      "max_wall_normal_velocity_pre_filter_projection": 0.02812742278215229,
+      "max_wall_normal_velocity_pre_dispersion_projection": 0.0,
+      "max_wall_normal_flux": 0.0,
+      "has_nan_or_inf": false,
+      "mass_initial": 1.0824674490095276e-15,
+      "mass_final": 0.0024447107461538433,
+      "mass_change": 0.002444710746152761
+    },
+    "case2_dispersive_sponge_nowavemaker_flat": {
+      "side_walls_strictly_zero": false,
+      "max_wall_normal_velocity_final": 0.02769105982530469,
+      "max_wall_normal_velocity_pre_filter_projection": 0.02769105982530469,
+      "max_wall_normal_velocity_pre_dispersion_projection": 0.0,
+      "max_wall_normal_flux": 0.0977631520169188,
+      "has_nan_or_inf": false,
+      "mass_initial": 1.0824674490095276e-15,
+      "mass_final": 0.09542240025188305,
+      "mass_change": 0.09542240025188196
+    },
+    "case3_nondispersive_solid_nowavemaker_slope": {
+      "side_walls_strictly_zero": true,
+      "max_wall_normal_velocity_final": 0.0,
+      "max_wall_normal_velocity_pre_filter_projection": 0.02810699623834091,
+      "max_wall_normal_velocity_pre_dispersion_projection": 0.0036793344264118405,
+      "max_wall_normal_flux": 0.0,
+      "has_nan_or_inf": false,
+      "mass_initial": 1.0824674490095276e-15,
+      "mass_final": -0.00019249275228138264,
+      "mass_change": -0.0001924927522824651
+    },
+    "case4_dispersive_solid_pure_flux_conservation": {
+      "side_walls_strictly_zero": true,
+      "max_wall_normal_velocity_final": 0.0,
+      "max_wall_normal_velocity_pre_filter_projection": 0.028127461629134487,
+      "max_wall_normal_velocity_pre_dispersion_projection": 0.0,
+      "max_wall_normal_flux": 0.0,
+      "has_nan_or_inf": false,
+      "mass_initial": 1.0824674490095276e-15,
+      "mass_final": 1.126269216777942e-15,
+      "mass_change": 4.380176776841438e-17
+    },
+    "pure_flux_mass_conservation_satisfied": true,
+    "all_solid_walls_strictly_zero": true,
+    "no_nan_or_inf_detected": true
+  }
 }
