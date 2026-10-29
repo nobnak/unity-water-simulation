@@ -5,7 +5,7 @@ namespace Nobnak.WaterSimulation {
     /// <summary>
     /// 2D Linear Wave Equation simulation.
     /// Fast and responsive ripple simulation with obstacle reflection, diffraction, and interference.
-    /// Stores (eta, velocity) in fp32x2 (RGFloat) with symplectic Leapfrog time integration.
+    /// Stores (eta, velocity) in fp32x2 (RGFloat) with symplectic Euler (kick-drift) time integration.
     /// </summary>
     [ExecuteAlways]
     public class WaveEquationSimulation : WaterSimulationBase {

@@ -109,7 +109,7 @@ void CSStep(uint3 id : SV_DispatchThreadID) {
     // 9-point Laplacian
     float lap = ComputeLaplacian(pos, eta);
 
-    // Symplectic Leapfrog / Semi-implicit Velocity-Position formulation:
+    // Symplectic Euler (Kick-Drift) / Semi-implicit Velocity-Position formulation:
     // Stores physical velocity v [m/s] directly so variable dt or WaveSpeed changes remain C^1 continuous!
     // dv/dt = c^2 * Laplacian(eta) - gamma * v
     // d(eta)/dt = v
