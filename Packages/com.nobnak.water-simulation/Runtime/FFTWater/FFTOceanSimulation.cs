@@ -60,6 +60,8 @@ namespace Nobnak.WaterSimulation {
         private int kernelEvolution;
         private int kernelFFTHorizontal;
         private int kernelFFTVertical;
+        private int kernelFFTRow;
+        private int kernelFFTCol;
         private int kernelPack;
         #endregion
 
@@ -235,6 +237,8 @@ namespace Nobnak.WaterSimulation {
             kernelEvolution = fftShader.FindKernel("CSTimeEvolution");
             kernelFFTHorizontal = fftShader.FindKernel("CSFFTHorizontal");
             kernelFFTVertical = fftShader.FindKernel("CSFFTVertical");
+            kernelFFTRow = fftShader.FindKernel("CSFFTRow");
+            kernelFFTCol = fftShader.FindKernel("CSFFTCol");
             kernelPack = fftShader.FindKernel("CSPackOceanData");
         }
 
@@ -324,6 +328,24 @@ namespace Nobnak.WaterSimulation {
 
         private void Perform2DIFFT(RenderTexture spectrumTarget) {
             int n = resolution.x;
+
+            // Fast path: single-dispatch 1D IFFT per axis via groupshared memory ping-pong
+            if (n <= 512 && kernelFFTRow >= 0 && kernelFFTCol >= 0) {
+                // 1. Horizontal IFFT along all rows (1 dispatch)
+                fftShader.SetTexture(kernelFFTRow, PropInputPing, spectrumTarget);
+                fftShader.SetTexture(kernelFFTRow, PropOutputPong, pingPongTexA);
+                fftShader.Dispatch(kernelFFTRow, 1, n, 1);
+                lastDispatchCount++;
+
+                // 2. Vertical IFFT along all columns (1 dispatch)
+                fftShader.SetTexture(kernelFFTCol, PropInputPing, pingPongTexA);
+                fftShader.SetTexture(kernelFFTCol, PropOutputPong, spectrumTarget);
+                fftShader.Dispatch(kernelFFTCol, n, 1, 1);
+                lastDispatchCount++;
+                return;
+            }
+
+            // Fallback: multi-pass Stockham IFFT for arbitrary / larger grids
             int numStages = (int)math.round(math.log2(n));
             int gx = math.max(1, (n + 7) / 8);
 

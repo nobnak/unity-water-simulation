@@ -63,21 +63,23 @@ def verify_boussinesq_dispersion():
     return results
 
 def verify_filter():
-    """Point 2: Time-step scaled damping, solid wall velocity zeroing,
-    and exact mass conservation of zero-flux biharmonic stencil.
+    """Point 2: Directional-Split 4th-Order Biharmonic Spatial Filter (CSFilterX & CSFilterZ)
+    Verifies time-step scaled damping, explicit stability limit, exact mass conservation,
+    wall boundary projection, and spatial extrema / overshoot characteristics.
+    Also retains legacy unsplit 2D filter verification with clear distinction.
     """
-    modes = []
+    # 1. Mode damping for Current Directional-Split Filter (CSFilterX -> CSFilterZ)
+    split_modes = []
     for cells in [8, 16, 32, 64]:
         q = 2.0 * math.pi / cells
         eig = 16.0 * (math.sin(q / 2.0) ** 4)
         for dt in [0.008, 0.004, 0.002, 0.0004, 0.0002, 0.0001]:
-            # dt-proportional scaling without arbitrary lower clamp (capped at explicit stability limit 0.031)
-            # Physical dissipation rate per second is constant kappa / dt = 5.0 s^-1 for dt <= 0.0062s
-            kappa = min(0.031, 5.0 * dt)
+            # Directional-split scaling: kappa = min(0.058, 12.0 * dt)
+            kappa = min(0.058, 12.0 * dt)
             per_step = 1.0 - kappa * eig
             steps = round(1.0 / dt)
             amp_1s = per_step ** steps
-            modes.append({
+            split_modes.append({
                 "cells_per_wavelength": cells,
                 "dt": dt,
                 "steps_per_sec": steps,
@@ -85,9 +87,25 @@ def verify_filter():
                 "amplitude_after_1sec": amp_1s
             })
 
-    # Conservative zero-flux boundary test
+    # Legacy unsplit filter modes (for clear historical comparison)
+    legacy_unsplit_modes = []
+    for cells in [8, 16, 32, 64]:
+        q = 2.0 * math.pi / cells
+        eig = 16.0 * (math.sin(q / 2.0) ** 4)
+        for dt in [0.008, 0.004, 0.002, 0.0004, 0.0002, 0.0001]:
+            kappa_legacy = min(0.031, 5.0 * dt)
+            per_step = 1.0 - kappa_legacy * eig
+            steps = round(1.0 / dt)
+            legacy_unsplit_modes.append({
+                "cells_per_wavelength": cells,
+                "dt": dt,
+                "steps_per_sec": steps,
+                "per_substep_gain": per_step,
+                "amplitude_after_1sec": per_step ** steps
+            })
+
+    # Conservative zero-flux boundary test for 1D stencil
     w = 32
-    # Single impulse test
     s = [0.0] * w
     s[0] = 1.0
     d4_impulse = [0.0] * w
@@ -109,103 +127,250 @@ def verify_filter():
     d4_rand[w-2] = rand_field[w-4] - 4.0 * rand_field[w-3] + 6.0 * rand_field[w-2] - 3.0 * rand_field[w-1]
     d4_rand[w-1] = rand_field[w-3] - 3.0 * rand_field[w-2] + 2.0 * rand_field[w-1]
 
-    # Solid wall velocity check: [0, 1, 1] input
-    # Stencil without boundary zeroing gives u_after = 0.0 - 0.025 * (2*0 - 3*1 + 1) = +0.05 m/s.
-    # With CSFilterHighFrequency boundary condition (filtered.g = 0 on solid lateral walls),
-    # normal velocity remains strictly 0.00000000.
-    dt_ref = 0.008
-    kappa_ref = min(0.031, 5.0 * dt_ref)
-    u_raw_after = 0.0 - kappa_ref * (2.0 * 0.0 - 3.0 * 1.0 + 1.0)
-    u_enforced_after = 0.0  # CSFilterHighFrequency zeroes filtered.g on lateral solid walls
+    # Directional-split 2-pass wall boundary verification
+    wall_test_results = verify_filter_wall_boundary_split()
 
-    # Biharmonic spatial filter boundary constraint verification
-    # Verifies filter-stage normal velocity projection and normal flux Hu on solid lateral walls
-    filter_test_results = verify_filter_wall_boundary()
+    # Extremum and monotonicity investigation (testing impulse, Gaussian, step, oblique wave)
+    extrema_results = verify_filter_extrema_and_monotonicity()
 
     return {
-        "periodic_modes": modes,
+        "directional_split_modes": split_modes,
+        "legacy_unsplit_modes": legacy_unsplit_modes,
         "impulse_mass_before": float(sum(s)),
-        "impulse_mass_after": float(sum(s) - 0.025 * sum(d4_impulse)),
+        "impulse_mass_after": float(sum(s) - 0.058 * sum(d4_impulse)),
         "impulse_d4_sum": float(sum(d4_impulse)),
         "random_field_d4_sum": float(sum(d4_rand)),
-        "wall_velocity_test": {
-            "input_first_three_cells": [0.0, 1.0, 1.0],
-            "raw_stencil_velocity": u_raw_after,
-            "filter_output_velocity": u_enforced_after,
-            "wall_normal_velocity_maintained_zero": (u_enforced_after == 0.0)
-        },
-        "filter_wall_preservation": filter_test_results,
-        "full_substep_wall_preservation": filter_test_results
+        "wall_preservation_split": wall_test_results,
+        "filter_extrema_and_monotonicity": extrema_results
     }
 
-def verify_filter_wall_boundary():
-    """Point 2b: Biharmonic spatial filter boundary constraint verification.
-    Applies the 4th-order biharmonic spatial filter to a 2D velocity field with lateral walls at x=0, W-1.
-    Confirms post-filter normal velocity projection and normal flux Hu are strictly zero.
+def verify_filter_wall_boundary_split():
+    """Point 2b: Directional-split 2-pass biharmonic filter boundary constraint verification.
+    Applies Pass 1 (CSFilterX) then Pass 2 (CSFilterZ) to 2D velocity fields.
+    Confirms lateral wall normal velocity u=0 at x=0, W-1 and offshore/beach normal velocity w=0 at y=0, H-1.
     """
     W, H = 16, 16
     dx, dz, dt = 1.0, 1.0, 0.008
-    g = 9.81
+    kappa_x = min(0.058, 12.0 * dt)
+    kappa_z = min(0.058, 12.0 * dt)
 
-    # Depth: linear slope 3.5m to 0.8m along Y/Z
-    depth = [[3.5 - (3.5 - 0.8) * (y / (H - 1)) for x in range(W)] for y in range(H)]
-
-    # Initial state: oblique incident wave + random perturbation, but normal velocity u=0 at x=0, W-1
     random.seed(123)
+    depth = [[3.5 - (3.5 - 0.8) * (y / (H - 1)) for x in range(W)] for y in range(H)]
     eta = [[0.2 * math.cos(2.0 * math.pi * (x / W + y / H)) for x in range(W)] for y in range(H)]
     u = [[0.0 if (x == 0 or x == W - 1) else random.uniform(-0.5, 0.5) for x in range(W)] for y in range(H)]
     w = [[0.0 if (y == 0 or y == H - 1) else random.uniform(-0.5, 0.5) for x in range(W)] for y in range(H)]
 
-    # Compute 1D biharmonic filter on u
-    def apply_filter_u(u_field):
-        u_out = [[0.0 for _ in range(W)] for _ in range(H)]
-        kappa = min(0.031, 5.0 * dt)
+    # Pass 1: X biharmonic filter
+    u_mid = [[0.0 for _ in range(W)] for _ in range(H)]
+    w_mid = [[0.0 for _ in range(W)] for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            # 4th difference in X
+            if x == 0:
+                d4x_u = 2.0 * u[y][0] - 3.0 * u[y][1] + u[y][2]
+                d4x_w = 2.0 * w[y][0] - 3.0 * w[y][1] + w[y][2]
+            elif x == 1:
+                d4x_u = -3.0 * u[y][0] + 6.0 * u[y][1] - 4.0 * u[y][2] + u[y][3]
+                d4x_w = -3.0 * w[y][0] + 6.0 * w[y][1] - 4.0 * w[y][2] + w[y][3]
+            elif x == W - 2:
+                d4x_u = u[y][W-4] - 4.0 * u[y][W-3] + 6.0 * u[y][W-2] - 3.0 * u[y][W-1]
+                d4x_w = w[y][W-4] - 4.0 * w[y][W-3] + 6.0 * w[y][W-2] - 3.0 * w[y][W-1]
+            elif x == W - 1:
+                d4x_u = u[y][W-3] - 3.0 * u[y][W-2] + 2.0 * u[y][W-1]
+                d4x_w = w[y][W-3] - 3.0 * w[y][W-2] + 2.0 * w[y][W-1]
+            else:
+                d4x_u = u[y][x-2] - 4.0 * u[y][x-1] + 6.0 * u[y][x] - 4.0 * u[y][x+1] + u[y][x+2]
+                d4x_w = w[y][x-2] - 4.0 * w[y][x-1] + 6.0 * w[y][x] - 4.0 * w[y][x+1] + w[y][x+2]
+
+            filtered_u = u[y][x] - kappa_x * d4x_u
+            if x == 0 or x == W - 1:
+                filtered_u = 0.0
+            u_mid[y][x] = filtered_u
+            w_mid[y][x] = w[y][x] - kappa_x * d4x_w
+
+    # Pass 2: Z biharmonic filter
+    u_out = [[0.0 for _ in range(W)] for _ in range(H)]
+    w_out = [[0.0 for _ in range(W)] for _ in range(H)]
+    for x in range(W):
         for y in range(H):
-            for x in range(W):
-                # 4th order stencil in X
-                if x == 0:
-                    d4x = 2.0 * u_field[y][0] - 3.0 * u_field[y][1] + u_field[y][2]
-                elif x == 1:
-                    d4x = -3.0 * u_field[y][0] + 6.0 * u_field[y][1] - 4.0 * u_field[y][2] + u_field[y][3]
-                elif x == W - 2:
-                    d4x = u_field[y][W-4] - 4.0 * u_field[y][W-3] + 6.0 * u_field[y][W-2] - 3.0 * u_field[y][W-1]
-                elif x == W - 1:
-                    d4x = u_field[y][W-3] - 3.0 * u_field[y][W-2] + 2.0 * u_field[y][W-1]
-                else:
-                    d4x = u_field[y][x-2] - 4.0 * u_field[y][x-1] + 6.0 * u_field[y][x] - 4.0 * u_field[y][x+1] + u_field[y][x+2]
+            # 4th difference in Z
+            if y == 0:
+                d4z_u = 2.0 * u_mid[0][x] - 3.0 * u_mid[1][x] + u_mid[2][x]
+                d4z_w = 2.0 * w_mid[0][x] - 3.0 * w_mid[1][x] + w_mid[2][x]
+            elif y == 1:
+                d4z_u = -3.0 * u_mid[0][x] + 6.0 * u_mid[1][x] - 4.0 * u_mid[2][x] + u_mid[3][x]
+                d4z_w = -3.0 * w_mid[0][x] + 6.0 * w_mid[1][x] - 4.0 * w_mid[2][x] + w_mid[3][x]
+            elif y == H - 2:
+                d4z_u = u_mid[H-4][x] - 4.0 * u_mid[H-3][x] + 6.0 * u_mid[H-2][x] - 3.0 * u_mid[H-1][x]
+                d4z_w = w_mid[H-4][x] - 4.0 * w_mid[H-3][x] + 6.0 * w_mid[H-2][x] - 3.0 * w_mid[H-1][x]
+            elif y == H - 1:
+                d4z_u = u_mid[H-3][x] - 3.0 * u_mid[H-2][x] + 2.0 * u_mid[H-1][x]
+                d4z_w = w_mid[H-3][x] - 3.0 * w_mid[H-2][x] + 2.0 * w_mid[H-1][x]
+            else:
+                d4z_u = u_mid[y-2][x] - 4.0 * u_mid[y-1][x] + 6.0 * u_mid[y][x] - 4.0 * u_mid[y+1][x] + u_mid[y+2][x]
+                d4z_w = w_mid[y-2][x] - 4.0 * w_mid[y-1][x] + 6.0 * w_mid[y][x] - 4.0 * w_mid[y+1][x] + w_mid[y+2][x]
 
-                # 4th order stencil in Z
-                if y == 0:
-                    d4z = 2.0 * u_field[0][x] - 3.0 * u_field[1][x] + u_field[2][x]
-                elif y == 1:
-                    d4z = -3.0 * u_field[0][x] + 6.0 * u_field[1][x] - 4.0 * u_field[2][x] + u_field[3][x]
-                elif y == H - 2:
-                    d4z = u_field[H-4][x] - 4.0 * u_field[H-3][x] + 6.0 * u_field[H-2][x] - 3.0 * u_field[H-1][x]
-                elif y == H - 1:
-                    d4z = u_field[H-3][x] - 3.0 * u_field[H-2][x] + 2.0 * u_field[H-1][x]
-                else:
-                    d4z = u_field[y-2][x] - 4.0 * u_field[y-1][x] + 6.0 * u_field[y][x] - 4.0 * u_field[y+1][x] + u_field[y+2][x]
+            u_out[y][x] = u_mid[y][x] - kappa_z * d4z_u
+            filtered_w = w_mid[y][x] - kappa_z * d4z_w
+            if y == 0 or y == H - 1:
+                filtered_w = 0.0
+            w_out[y][x] = filtered_w
 
-                filtered = u_field[y][x] - kappa * (d4x + d4z)
-                # Enforce lateral solid wall condition
-                if x == 0 or x == W - 1:
-                    filtered = 0.0
-                u_out[y][x] = filtered
-        return u_out
-
-    u_filtered = apply_filter_u(u)
-    max_wall_u = max(max(abs(u_filtered[y][0]), abs(u_filtered[y][W-1])) for y in range(H))
-    max_wall_flux = max(max(abs((depth[y][0] + eta[y][0]) * u_filtered[y][0]),
-                            abs((depth[y][W-1] + eta[y][W-1]) * u_filtered[y][W-1])) for y in range(H))
+    max_wall_u = max(max(abs(u_out[y][0]), abs(u_out[y][W-1])) for y in range(H))
+    max_wall_w = max(max(abs(w_out[0][x]), abs(w_out[H-1][x])) for x in range(W))
 
     return {
-        "max_wall_normal_velocity": float(max_wall_u),
-        "max_wall_normal_flux": float(max_wall_flux),
-        "side_walls_strictly_zero": (max_wall_u == 0.0)
+        "max_lateral_wall_u": float(max_wall_u),
+        "max_transverse_wall_w": float(max_wall_w),
+        "walls_strictly_zero": (max_wall_u == 0.0 and max_wall_w == 0.0)
     }
 
+def verify_filter_extrema_and_monotonicity():
+    """Point 3: Rigorous verification of biharmonic spatial filter monotonicity and extrema.
+    Evaluates new extrema (undershoot / overshoot) on:
+    1. Single impulse (delta function)
+    2. Narrow and broad Gaussian bumps
+    3. Heaviside step discontinuity
+    4. Oblique solitary wave ridge
+    5. Crest corrugation damping vs secondary ripple formation
+    """
+    kappa = 0.058 # maximum explicit stability cap
+    N = 64
+
+    # 1. Single Delta Impulse
+    f_impulse = [0.0] * N
+    f_impulse[N // 2] = 1.0
+    out_impulse = _apply_1d_biharmonic(f_impulse, kappa)
+    impulse_min = min(out_impulse)
+    impulse_max = max(out_impulse)
+
+    # 2. Gaussian bumps of varying widths (sigma = 0.8, 1.0, 1.5, 2.0, 3.0)
+    gauss_results = []
+    for sigma in [0.8, 1.0, 1.2, 1.5, 2.0, 3.0]:
+        f_g = [math.exp(-((x - N // 2) / sigma) ** 2) for x in range(N)]
+        out_g = _apply_1d_biharmonic(f_g, kappa)
+        gauss_results.append({
+            "sigma": sigma,
+            "orig_min": min(f_g),
+            "orig_max": max(f_g),
+            "filtered_min": min(out_g),
+            "filtered_max": max(out_g),
+            "undershoot_depth": float(max(0.0, -min(out_g)))
+        })
+
+    # 3. Heaviside Step Function
+    f_step = [1.0 if x >= N // 2 else 0.0 for x in range(N)]
+    out_step = _apply_1d_biharmonic(f_step, kappa)
+    step_min = min(out_step)
+    step_max = max(out_step)
+
+    # 4. 2D Oblique solitary wave ridge: sech^2((x + y - N) / sigma)
+    W, H = 32, 32
+    oblique_steep = [0.0] * (W * H)
+    oblique_broad = [0.0] * (W * H)
+    for y in range(H):
+        for x in range(W):
+            xi_steep = (x + y - 32.0) / 0.8
+            xi_broad = (x + y - 32.0) / 2.5
+            oblique_steep[y * W + x] = (1.0 / math.cosh(xi_steep)) ** 2
+            oblique_broad[y * W + x] = (1.0 / math.cosh(xi_broad)) ** 2
+
+    out_obl_steep = _apply_2d_split_biharmonic(oblique_steep, W, H, kappa, kappa)
+    out_obl_broad = _apply_2d_split_biharmonic(oblique_broad, W, H, kappa, kappa)
+
+    # 5. Crest Corrugation test: 1D wave crest with high-frequency sawtooth ripple
+    # Smooth crest + 10% 2dx ripple
+    f_corrug = [0.0] * N
+    for x in range(N):
+        macro = math.exp(-((x - N // 2) / 4.0) ** 2)
+        ripple = 0.10 * (1.0 if (x % 2 == 0) else -1.0) * macro
+        f_corrug[x] = macro + ripple
+
+    out_corrug = _apply_1d_biharmonic(f_corrug, kappa)
+    # Measure ripple amplitude before and after: d2 = |f[x+1] - 2*f[x] + f[x-1]|
+    d2_before = max(abs(f_corrug[x+1] - 2*f_corrug[x] + f_corrug[x-1]) for x in range(1, N-1))
+    d2_after = max(abs(out_corrug[x+1] - 2*out_corrug[x] + out_corrug[x-1]) for x in range(1, N-1))
+
+    return {
+        "impulse_test": {
+            "input_range": [0.0, 1.0],
+            "filtered_min": impulse_min,
+            "filtered_max": impulse_max,
+            "has_negative_dip": (impulse_min < -1e-6),
+            "undershoot_depth": float(-impulse_min)
+        },
+        "gaussian_tests": gauss_results,
+        "step_test": {
+            "input_range": [0.0, 1.0],
+            "filtered_min": step_min,
+            "filtered_max": step_max,
+            "overshoot": float(step_max - 1.0),
+            "undershoot": float(-step_min)
+        },
+        "oblique_wave_test": {
+            "steep_ridge_orig_min": min(oblique_steep),
+            "steep_ridge_filtered_min": min(out_obl_steep),
+            "steep_undershoot": float(max(0.0, -min(out_obl_steep))),
+            "broad_ridge_orig_min": min(oblique_broad),
+            "broad_ridge_filtered_min": min(out_obl_broad),
+            "broad_undershoot": float(max(0.0, -min(out_obl_broad)))
+        },
+        "corrugation_damping_test": {
+            "sawtooth_d2_before": float(d2_before),
+            "sawtooth_d2_after": float(d2_after),
+            "damping_ratio_pct": float((1.0 - d2_after / d2_before) * 100.0)
+        },
+        "theoretical_monotonicity_summary": (
+            "The 4th-order biharmonic stencil [-kappa, 4*kappa, 1-6*kappa, 4*kappa, -kappa] "
+            "possesses negative side lobes (-kappa). While Fourier modes satisfy L^2 stability "
+            "G(k) in [0, 1], the operator violates spatial monotonicity (TVD / Maximum Principle). "
+            "Sharp gradients (sigma < 1.5 cells) and step discontinuities produce O(kappa) "
+            "undershoots/overshoots (e.g. -0.058 on unit delta impulse)."
+        )
+    }
+
+def _apply_1d_biharmonic(f, kappa):
+    n = len(f)
+    out = [0.0] * n
+    d4 = [0.0] * n
+    d4[0] = 2.0 * f[0] - 3.0 * f[1] + f[2]
+    d4[1] = -3.0 * f[0] + 6.0 * f[1] - 4.0 * f[2] + f[3]
+    for x in range(2, n - 2):
+        d4[x] = f[x-2] - 4.0 * f[x-1] + 6.0 * f[x] - 4.0 * f[x+1] + f[x+2]
+    d4[n-2] = f[n-4] - 4.0 * f[n-3] + 6.0 * f[n-2] - 3.0 * f[n-1]
+    d4[n-1] = f[n-3] - 3.0 * f[n-2] + 2.0 * f[n-1]
+    for i in range(n):
+        out[i] = f[i] - kappa * d4[i]
+    return out
+
+def _apply_2d_split_biharmonic(field, W, H, kappa_x, kappa_z):
+    mid = [0.0] * (W * H)
+    for y in range(H):
+        row = y * W
+        mid[row + 0] = field[row + 0] - kappa_x * (2.0 * field[row + 0] - 3.0 * field[row + 1] + field[row + 2])
+        mid[row + 1] = field[row + 1] - kappa_x * (-3.0 * field[row + 0] + 6.0 * field[row + 1] - 4.0 * field[row + 2] + field[row + 3])
+        for x in range(2, W - 2):
+            idx = row + x
+            d4 = field[idx - 2] - 4.0 * field[idx - 1] + 6.0 * field[idx] - 4.0 * field[idx + 1] + field[idx + 2]
+            mid[idx] = field[idx] - kappa_x * d4
+        mid[row + W - 2] = field[row + W - 2] - kappa_x * (field[row + W - 4] - 4.0 * field[row + W - 3] + 6.0 * field[row + W - 2] - 3.0 * field[row + W - 1])
+        mid[row + W - 1] = field[row + W - 1] - kappa_x * (field[row + W - 3] - 3.0 * field[row + W - 2] + 2.0 * field[row + W - 1])
+
+    out = [0.0] * (W * H)
+    for x in range(W):
+        out[0 * W + x] = mid[0 * W + x] - kappa_z * (2.0 * mid[0 * W + x] - 3.0 * mid[1 * W + x] + mid[2 * W + x])
+        out[1 * W + x] = mid[1 * W + x] - kappa_z * (-3.0 * mid[0 * W + x] + 6.0 * mid[1 * W + x] - 4.0 * mid[2 * W + x] + mid[3 * W + x])
+        for y in range(2, H - 2):
+            idx = y * W + x
+            d4 = mid[(y - 2) * W + x] - 4.0 * mid[(y - 1) * W + x] + 6.0 * mid[idx] - 4.0 * mid[(y + 1) * W + x] + mid[(y + 2) * W + x]
+            out[idx] = mid[idx] - kappa_z * d4
+        out[(H - 2) * W + x] = mid[(H - 2) * W + x] - kappa_z * (mid[(H - 4) * W + x] - 4.0 * mid[(H - 3) * W + x] + 6.0 * mid[(H - 2) * W + x] - 3.0 * mid[(H - 1) * W + x])
+        out[(H - 1) * W + x] = mid[(H - 1) * W + x] - kappa_z * (mid[(H - 3) * W + x] - 3.0 * mid[(H - 2) * W + x] + 2.0 * mid[(H - 1) * W + x])
+    return out
+
 # Backward compatibility alias
-verify_full_substep_wall_boundary = verify_filter_wall_boundary
+verify_filter_wall_boundary = verify_filter_wall_boundary_split
+verify_full_substep_wall_boundary = verify_filter_wall_boundary_split
 
 def _pcr_solve(n, a_in, b_in, c_in, d_in):
     """Tridiagonal Parallel Cyclic Reduction (PCR) solver matching CSTridiagonalX/Z."""
@@ -779,8 +944,10 @@ if __name__ == "__main__":
     print(f"Subdiagonal interior coeff: {suite['slip_boundary']['subdiagonal_interior_coefficient']}")
     print(f"Filter Impulse Mass Change: {suite['filter']['impulse_mass_after'] - suite['filter']['impulse_mass_before']:.2e}")
     print(f"Filter Random Field d4 Sum: {suite['filter']['random_field_d4_sum']:.2e}")
-    print(f"Filter Solid Wall Normal Vel: {suite['filter']['wall_velocity_test']['filter_output_velocity']:.8f} (raw stencil: {suite['filter']['wall_velocity_test']['raw_stencil_velocity']:.4f})")
-    print(f"Filter Wall Preservation Max U: {suite['filter']['filter_wall_preservation']['max_wall_normal_velocity']:.8f}")
+    wall_split = suite['filter']['wall_preservation_split']
+    print(f"Filter Directional-Split Wall Normal Vel U: {wall_split['max_lateral_wall_u']:.8f}, W: {wall_split['max_transverse_wall_w']:.8f} (strictly zero: {wall_split['walls_strictly_zero']})")
+    extrema = suite['filter']['filter_extrema_and_monotonicity']
+    print(f"Filter Monotonicity Check: Impulse Dip={extrema['impulse_test']['undershoot_depth']:.4f}, Step Overshoot={extrema['step_test']['overshoot']:.4f}, Corrugation Damping={extrema['corrugation_damping_test']['damping_ratio_pct']:.1f}%")
     full_sub = suite["full_substep_simulation_boundary"]
     print("Full Substep Simulation Boundary:")
     print(f"  All solid walls strictly zero: {full_sub['all_solid_walls_strictly_zero']}")

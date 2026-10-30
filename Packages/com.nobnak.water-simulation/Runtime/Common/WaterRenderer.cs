@@ -175,6 +175,7 @@ namespace Nobnak.WaterSimulation {
             if (meshRenderer.sharedMaterial == null && waterMaterial != null) {
                 meshRenderer.sharedMaterial = waterMaterial;
             }
+            meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
         private Mesh GeneratePlaneMesh(float width, float length, int resX, int resZ) {

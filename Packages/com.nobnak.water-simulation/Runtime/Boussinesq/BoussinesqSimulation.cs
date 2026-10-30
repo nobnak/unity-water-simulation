@@ -32,6 +32,11 @@ namespace Nobnak.WaterSimulation {
             CircularPulse = 1
         }
 
+        public enum FilterType {
+            LegacyUnsplit2D = 0,
+            DirectionalSplit = 1
+        }
+
         #region serialized fields
         [Header("Boussinesq Physics")]
         [Tooltip("Dispersion factor alpha (1.0 = standard Peregrine 1/3 Boussinesq dispersion, 0.0 = non-dispersive shallow water).")]
@@ -41,6 +46,9 @@ namespace Nobnak.WaterSimulation {
         [Tooltip("Number of alternating X/Z tridiagonal PCR sweeps per stage (1 sweep direct ADI).")]
         [Range(1, 4)]
         [SerializeField] private int dispersionSweeps = 1;
+
+        [Tooltip("High-frequency spatial dissipation filter mode.")]
+        [SerializeField] private FilterType filterMode = FilterType.DirectionalSplit;
 
         [Tooltip("Bed friction / bottom drag coefficient.")]
         [Range(0f, 0.1f)]
@@ -118,6 +126,11 @@ namespace Nobnak.WaterSimulation {
         public int DispersionSweeps {
             get => dispersionSweeps;
             set => dispersionSweeps = math.clamp(value, 1, 6);
+        }
+
+        public FilterType Filter {
+            get => filterMode;
+            set => filterMode = value;
         }
 
         public bool SideWallSponge {
@@ -459,6 +472,25 @@ namespace Nobnak.WaterSimulation {
             lastSubStepCount = subSteps;
             float subDt = dt / subSteps;
 
+            int wavemakerY = (int)(resolution.y * wavemakerLocationNorm);
+            float activeAmp = (initialCondition == InitialConditionType.ContinuousWavemaker) ? wavemakerAmplitude : 0f;
+
+            // Bind step-invariant constants once per frame instead of every substep
+            boussinesqShader.SetInt(PropWidth, resolution.x);
+            boussinesqShader.SetInt(PropHeight, resolution.y);
+            boussinesqShader.SetFloat(PropDeltaTime, subDt);
+            boussinesqShader.SetFloat(PropGridSpacing, dx);
+            boussinesqShader.SetFloat(PropGridSpacingZ, dz);
+            boussinesqShader.SetFloat(PropGravity, Gravity);
+            boussinesqShader.SetFloat(PropDispersionAlpha, dispersionAlpha);
+            boussinesqShader.SetFloat(PropBedFriction, bedFriction);
+            boussinesqShader.SetFloat(PropSpongeWidth, spongeWidth);
+            boussinesqShader.SetFloat(PropSpongeStrength, spongeStrength);
+            boussinesqShader.SetInt(PropSideWallSponge, sideWallSponge ? 1 : 0);
+            boussinesqShader.SetFloat(PropWavemakerAmp, activeAmp);
+            boussinesqShader.SetFloat(PropWavemakerFreq, wavemakerFrequency);
+            boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
+
             for (int s = 0; s < subSteps; s++) {
                 StepPhysics(subDt);
             }
@@ -473,28 +505,8 @@ namespace Nobnak.WaterSimulation {
             RenderTexture current = CurrentStateTex;
             RenderTexture next    = NextStateTex;
 
-            float dx = areaSize.x / resolution.x;
-            float dz = areaSize.y / resolution.y;
-            int wavemakerY = (int)(resolution.y * wavemakerLocationNorm);
-            float activeAmp = (initialCondition == InitialConditionType.ContinuousWavemaker) ? wavemakerAmplitude : 0f;
-
-            boussinesqShader.SetInt(PropWidth, resolution.x);
-            boussinesqShader.SetInt(PropHeight, resolution.y);
-            boussinesqShader.SetFloat(PropDeltaTime, subDt);
-            boussinesqShader.SetFloat(PropGridSpacing, dx);
-            boussinesqShader.SetFloat(PropGridSpacingZ, dz);
-            boussinesqShader.SetFloat(PropGravity, Gravity);
-            boussinesqShader.SetFloat(PropDispersionAlpha, dispersionAlpha);
-            boussinesqShader.SetFloat(PropBedFriction, bedFriction);
-            boussinesqShader.SetFloat(PropSpongeWidth, spongeWidth);
-            boussinesqShader.SetFloat(PropSpongeStrength, spongeStrength);
-            boussinesqShader.SetInt(PropSideWallSponge, sideWallSponge ? 1 : 0);
             boussinesqShader.SetInt(PropStepParity, pingPong ? 1 : 0);
-
-            boussinesqShader.SetFloat(PropWavemakerAmp, activeAmp);
-            boussinesqShader.SetFloat(PropWavemakerFreq, wavemakerFrequency);
             boussinesqShader.SetFloat(PropWavemakerPhase, wavemakerPhase);
-            boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
 
             // 1. Predictor step (Forward/Backward differences -> forceOrigTex & forceTex & predTex)
             boussinesqShader.SetTexture(kernelPredict, PropStateIn, current);
@@ -537,28 +549,38 @@ namespace Nobnak.WaterSimulation {
                 boussinesqShader.SetTexture(kernelApplyDispersion, PropBathymetryTex, bathymetryTex);
                 DispatchCompute2D(kernelApplyDispersion);
 
-                // 4. Directional-split biharmonic filter (eliminates along-crest corrugations and sawtooth modes)
-                // Pass 1: X biharmonic filter (predTex -> next)
-                boussinesqShader.SetTexture(kernelFilterX, PropStateIn, predTex);
-                boussinesqShader.SetTexture(kernelFilterX, PropStateOut, next);
-                DispatchCompute2D(kernelFilterX);
+                // 4. Spatial dissipation filter
+                if (filterMode == FilterType.LegacyUnsplit2D) {
+                    boussinesqShader.SetTexture(kernelFilter, PropStateIn, predTex);
+                    boussinesqShader.SetTexture(kernelFilter, PropStateOut, next);
+                    DispatchCompute2D(kernelFilter);
+                } else {
+                    // Directional-split 4th-order biharmonic filter:
+                    // Pass X: predTex -> current (reusing inactive buffer)
+                    // Pass Z: current -> next (direct write without CopyTexture)
+                    boussinesqShader.SetTexture(kernelFilterX, PropStateIn, predTex);
+                    boussinesqShader.SetTexture(kernelFilterX, PropStateOut, current);
+                    DispatchCompute2D(kernelFilterX);
 
-                // Pass 2: Z biharmonic filter (next -> predTex)
-                boussinesqShader.SetTexture(kernelFilterZ, PropStateIn, next);
-                boussinesqShader.SetTexture(kernelFilterZ, PropStateOut, predTex);
-                DispatchCompute2D(kernelFilterZ);
-
-                Graphics.CopyTexture(predTex, next);
+                    boussinesqShader.SetTexture(kernelFilterZ, PropStateIn, current);
+                    boussinesqShader.SetTexture(kernelFilterZ, PropStateOut, next);
+                    DispatchCompute2D(kernelFilterZ);
+                }
             } else {
-                // Pass 1: X biharmonic filter (next -> predTex)
-                boussinesqShader.SetTexture(kernelFilterX, PropStateIn, next);
-                boussinesqShader.SetTexture(kernelFilterX, PropStateOut, predTex);
-                DispatchCompute2D(kernelFilterX);
+                if (filterMode == FilterType.LegacyUnsplit2D) {
+                    boussinesqShader.SetTexture(kernelFilter, PropStateIn, next);
+                    boussinesqShader.SetTexture(kernelFilter, PropStateOut, predTex);
+                    DispatchCompute2D(kernelFilter);
+                    Graphics.CopyTexture(predTex, next);
+                } else {
+                    boussinesqShader.SetTexture(kernelFilterX, PropStateIn, next);
+                    boussinesqShader.SetTexture(kernelFilterX, PropStateOut, predTex);
+                    DispatchCompute2D(kernelFilterX);
 
-                // Pass 2: Z biharmonic filter (predTex -> next)
-                boussinesqShader.SetTexture(kernelFilterZ, PropStateIn, predTex);
-                boussinesqShader.SetTexture(kernelFilterZ, PropStateOut, next);
-                DispatchCompute2D(kernelFilterZ);
+                    boussinesqShader.SetTexture(kernelFilterZ, PropStateIn, predTex);
+                    boussinesqShader.SetTexture(kernelFilterZ, PropStateOut, next);
+                    DispatchCompute2D(kernelFilterZ);
+                }
             }
 
             if (initialCondition == InitialConditionType.ContinuousWavemaker) {

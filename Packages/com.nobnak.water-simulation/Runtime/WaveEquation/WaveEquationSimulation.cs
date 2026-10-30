@@ -252,6 +252,20 @@ namespace Nobnak.WaterSimulation {
             lastSubStepCount = subSteps;
             float subDt = dt / subSteps;
 
+            // Bind step-invariant parameters once per frame instead of every substep
+            waveShader.SetInt(PropWidth, resolution.x);
+            waveShader.SetInt(PropHeight, resolution.y);
+            waveShader.SetFloat(PropDeltaTime, subDt);
+            waveShader.SetFloat(PropGridSpacing, dx);
+            waveShader.SetFloat(PropGridSpacingZ, dz);
+            waveShader.SetFloat(PropWaveSpeed, waveSpeed);
+            waveShader.SetFloat(PropDamping, damping);
+            waveShader.SetFloat(PropSpongeWidth, spongeWidth);
+            waveShader.SetFloat(PropSpongeStrength, spongeStrength);
+            waveShader.SetInt(PropIsSpongeEnabled, enableSpongeBoundary ? 1 : 0);
+            waveShader.SetInt(PropObstacleNeumann, obstacleNeumannReflection ? 1 : 0);
+            waveShader.SetTexture(kernelStep, PropObstacleTex, obstacleTex);
+
             for (int s = 0; s < subSteps; s++) {
                 StepPhysics(subDt);
             }
@@ -266,24 +280,8 @@ namespace Nobnak.WaterSimulation {
             RenderTexture current = CurrentStateTex;
             RenderTexture next    = NextStateTex;
 
-            float dx = areaSize.x / resolution.x;
-            float dz = areaSize.y / resolution.y;
-
-            waveShader.SetInt(PropWidth, resolution.x);
-            waveShader.SetInt(PropHeight, resolution.y);
-            waveShader.SetFloat(PropDeltaTime, subDt);
-            waveShader.SetFloat(PropGridSpacing, dx);
-            waveShader.SetFloat(PropGridSpacingZ, dz);
-            waveShader.SetFloat(PropWaveSpeed, waveSpeed);
-            waveShader.SetFloat(PropDamping, damping);
-            waveShader.SetFloat(PropSpongeWidth, spongeWidth);
-            waveShader.SetFloat(PropSpongeStrength, spongeStrength);
-            waveShader.SetInt(PropIsSpongeEnabled, enableSpongeBoundary ? 1 : 0);
-            waveShader.SetInt(PropObstacleNeumann, obstacleNeumannReflection ? 1 : 0);
-
             waveShader.SetTexture(kernelStep, PropCurrentState, current);
             waveShader.SetTexture(kernelStep, PropNextState, next);
-            waveShader.SetTexture(kernelStep, PropObstacleTex, obstacleTex);
 
             DispatchCompute(kernelStep);
 
@@ -315,13 +313,6 @@ namespace Nobnak.WaterSimulation {
 
         private void ComputeNormalAndPackOutput() {
             RenderTexture current = CurrentStateTex;
-            float dx = areaSize.x / resolution.x;
-            float dz = areaSize.y / resolution.y;
-
-            waveShader.SetInt(PropWidth, resolution.x);
-            waveShader.SetInt(PropHeight, resolution.y);
-            waveShader.SetFloat(PropGridSpacing, dx);
-            waveShader.SetFloat(PropGridSpacingZ, dz);
             waveShader.SetTexture(kernelNormal, PropNextState, current);
             waveShader.SetTexture(kernelNormal, PropNormalTex, normalTex);
             waveShader.SetTexture(kernelNormal, PropWaterDataTex, waterDataTex);

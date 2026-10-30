@@ -1,24 +1,433 @@
 ﻿{
-  "test": "GPU Compute Shader vs CPU Continuum Solver 1-Substep Match",
-  "grid_size": 32,
-  "dx": 1.5625,
-  "dt": 0.00800,
-  "stages": [
-    { "stage": "1_Predictor_Eta", "max_abs_error": 9.481E-007, "tolerance": 1.000E-004, "passed": true },
-    { "stage": "1_Predictor_ForceX", "max_abs_error": 1.084E-007, "tolerance": 1.000E-004, "passed": true },
-    { "stage": "1_Predictor_ForceZ", "max_abs_error": 2.068E-007, "tolerance": 1.000E-004, "passed": true },
-    { "stage": "2_Dispersion_Ax1", "max_abs_error": 1.031E-004, "tolerance": 5.000E-004, "passed": true },
-    { "stage": "2_Dispersion_Az1", "max_abs_error": 1.134E-004, "tolerance": 5.000E-004, "passed": true },
-    { "stage": "3_ApplyPred_UPred", "max_abs_error": 8.252E-007, "tolerance": 5.000E-004, "passed": true },
-    { "stage": "3_ApplyPred_WPred", "max_abs_error": 9.071E-007, "tolerance": 5.000E-004, "passed": true },
-    { "stage": "4_Corrector_EtaNext", "max_abs_error": 5.141E-007, "tolerance": 1.000E-004, "passed": true },
-    { "stage": "4_Corrector_ForceXStar", "max_abs_error": 1.040E-005, "tolerance": 1.000E-004, "passed": true },
-    { "stage": "4_Corrector_ForceZStar", "max_abs_error": 9.162E-006, "tolerance": 1.000E-004, "passed": true },
-    { "stage": "5_ApplyDispersion_UNext", "max_abs_error": 8.391E-007, "tolerance": 5.000E-004, "passed": true },
-    { "stage": "5_ApplyDispersion_WNext", "max_abs_error": 8.754E-007, "tolerance": 5.000E-004, "passed": true },
-    { "stage": "6_Filter_EtaFinal", "max_abs_error": 2.831E-007, "tolerance": 1.000E-004, "passed": true },
-    { "stage": "6_Filter_UFinal", "max_abs_error": 5.568E-007, "tolerance": 5.000E-004, "passed": true },
-    { "stage": "6_Filter_WFinal", "max_abs_error": 4.359E-007, "tolerance": 5.000E-004, "passed": true }
-  ],
-  "all_passed": true
+    "test": "GPU Compute Shader vs CPU Continuum Solver Verification Suite",
+    "git_commit": "5a0c12e21b6e8b8fe68d009b060152baf9e58165",
+    "is_dirty": true,
+    "shader_hash": "fb72d9e90156ec133483d73d3d861ce82f74046168b5c7d93f2b8b39cf7c3c3a",
+    "grid_size": 32,
+    "dx": 1.5625,
+    "dz": 1.5625,
+    "dt": 0.00800000037997961,
+    "alpha": 1.0,
+    "friction": 0.004999999888241291,
+    "wave_amplitude": 0.20000000298023225,
+    "wave_frequency": 0.25,
+    "test_runs": [
+        {
+            "suite_name": "SingleSubstep_Parity_0",
+            "parity": 0,
+            "stages": [
+                {
+                    "stage": "1_Predictor_Eta",
+                    "max_abs_error": 9.480863809585571e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "1_Predictor_ForceX",
+                    "max_abs_error": 1.0844087228178978e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "1_Predictor_ForceZ",
+                    "max_abs_error": 2.0675361156463624e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "2_Dispersion_Ax1",
+                    "max_abs_error": 0.00010310113430023193,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "2_Dispersion_Az1",
+                    "max_abs_error": 0.00011342763900756836,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "3_ApplyPredDisp_EtaPred",
+                    "max_abs_error": 9.480863809585571e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "3_ApplyPredDisp_UPred",
+                    "max_abs_error": 8.25151801109314e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "3_ApplyPredDisp_WPred",
+                    "max_abs_error": 9.08970832824707e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "4_Corrector_EtaNext",
+                    "max_abs_error": 5.140900611877441e-7,
+                    "tolerance": 0.00019999999494757503,
+                    "passed": true
+                },
+                {
+                    "stage": "4_Corrector_ForceStarX",
+                    "max_abs_error": 0.000010404735803604126,
+                    "tolerance": 0.00019999999494757503,
+                    "passed": true
+                },
+                {
+                    "stage": "4_Corrector_ForceStarZ",
+                    "max_abs_error": 0.000009162351489067078,
+                    "tolerance": 0.00019999999494757503,
+                    "passed": true
+                },
+                {
+                    "stage": "5_Dispersion_Ax2",
+                    "max_abs_error": 0.00010773539543151855,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "5_Dispersion_Az2",
+                    "max_abs_error": 0.00010554492473602295,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "6_ApplyDispersion_UNext",
+                    "max_abs_error": 8.400529623031616e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "6_ApplyDispersion_WNext",
+                    "max_abs_error": 8.773058652877808e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "7_FilterX_Eta",
+                    "max_abs_error": 3.627501428127289e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "7_FilterX_U",
+                    "max_abs_error": 6.351619958877564e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "7_FilterX_W",
+                    "max_abs_error": 5.010515451431274e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "8_FilterZ_EtaFinal",
+                    "max_abs_error": 2.2351741790771485e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "8_FilterZ_UFinal",
+                    "max_abs_error": 3.2584648579359057e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "8_FilterZ_WFinal",
+                    "max_abs_error": 3.166496753692627e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                }
+            ],
+            "max_lateral_wall_u": 0.0,
+            "max_transverse_wall_w": 0.0,
+            "wall_velocities_strictly_zero": true,
+            "mass_before": 65.1920166015625,
+            "mass_after": 64.78436279296875,
+            "mass_delta": 0.40765833854675295,
+            "nan_free": true,
+            "all_passed": true
+        },
+        {
+            "suite_name": "SingleSubstep_Parity_1",
+            "parity": 1,
+            "stages": [
+                {
+                    "stage": "1_Predictor_Eta",
+                    "max_abs_error": 9.052455425262451e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "1_Predictor_ForceX",
+                    "max_abs_error": 1.0844087228178978e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "1_Predictor_ForceZ",
+                    "max_abs_error": 2.0489096641540528e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "2_Dispersion_Ax1",
+                    "max_abs_error": 0.00010754168033599854,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "2_Dispersion_Az1",
+                    "max_abs_error": 0.00010597705841064453,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "3_ApplyPredDisp_EtaPred",
+                    "max_abs_error": 9.052455425262451e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "3_ApplyPredDisp_UPred",
+                    "max_abs_error": 8.596107363700867e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "3_ApplyPredDisp_WPred",
+                    "max_abs_error": 8.475035429000855e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "4_Corrector_EtaNext",
+                    "max_abs_error": 5.140900611877441e-7,
+                    "tolerance": 0.00019999999494757503,
+                    "passed": true
+                },
+                {
+                    "stage": "4_Corrector_ForceStarX",
+                    "max_abs_error": 0.000009916722774505615,
+                    "tolerance": 0.00019999999494757503,
+                    "passed": true
+                },
+                {
+                    "stage": "4_Corrector_ForceStarZ",
+                    "max_abs_error": 0.000009066425263881683,
+                    "tolerance": 0.00019999999494757503,
+                    "passed": true
+                },
+                {
+                    "stage": "5_Dispersion_Ax2",
+                    "max_abs_error": 0.00010341405868530273,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "5_Dispersion_Az2",
+                    "max_abs_error": 0.00011277198791503906,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "6_ApplyDispersion_UNext",
+                    "max_abs_error": 8.381903171539307e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "6_ApplyDispersion_WNext",
+                    "max_abs_error": 8.754432201385498e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "7_FilterX_Eta",
+                    "max_abs_error": 3.6135315895080569e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "7_FilterX_U",
+                    "max_abs_error": 6.351619958877564e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "7_FilterX_W",
+                    "max_abs_error": 5.00120222568512e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "8_FilterZ_EtaFinal",
+                    "max_abs_error": 2.123415470123291e-7,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "8_FilterZ_UFinal",
+                    "max_abs_error": 3.25904693454504e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                },
+                {
+                    "stage": "8_FilterZ_WFinal",
+                    "max_abs_error": 3.166496753692627e-7,
+                    "tolerance": 0.0005000000237487257,
+                    "passed": true
+                }
+            ],
+            "max_lateral_wall_u": 0.0,
+            "max_transverse_wall_w": 0.0,
+            "wall_velocities_strictly_zero": true,
+            "mass_before": 65.1920166015625,
+            "mass_after": 64.89922332763672,
+            "mass_delta": 0.2927938997745514,
+            "nan_free": true,
+            "all_passed": true
+        }
+    ],
+    "multi_substep_runs": [
+        {
+            "total_steps": 4,
+            "step_reports": [
+                {
+                    "suite_name": "MultiStep_0",
+                    "parity": 0,
+                    "stages": [
+                        {
+                            "stage": "Substep_0_EtaFinal",
+                            "max_abs_error": 2.2351741790771485e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        },
+                        {
+                            "stage": "Substep_0_UFinal",
+                            "max_abs_error": 3.2584648579359057e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        },
+                        {
+                            "stage": "Substep_0_WFinal",
+                            "max_abs_error": 3.166496753692627e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        }
+                    ],
+                    "max_lateral_wall_u": 0.0,
+                    "max_transverse_wall_w": 0.0,
+                    "wall_velocities_strictly_zero": true,
+                    "mass_before": 0.0,
+                    "mass_after": 0.0,
+                    "mass_delta": 0.0,
+                    "nan_free": false,
+                    "all_passed": true
+                },
+                {
+                    "suite_name": "MultiStep_1",
+                    "parity": 1,
+                    "stages": [
+                        {
+                            "stage": "Substep_1_EtaFinal",
+                            "max_abs_error": 3.725290298461914e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        },
+                        {
+                            "stage": "Substep_1_UFinal",
+                            "max_abs_error": 4.924368113279343e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        },
+                        {
+                            "stage": "Substep_1_WFinal",
+                            "max_abs_error": 5.480833351612091e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        }
+                    ],
+                    "max_lateral_wall_u": 0.0,
+                    "max_transverse_wall_w": 0.0,
+                    "wall_velocities_strictly_zero": true,
+                    "mass_before": 0.0,
+                    "mass_after": 0.0,
+                    "mass_delta": 0.0,
+                    "nan_free": false,
+                    "all_passed": true
+                },
+                {
+                    "suite_name": "MultiStep_2",
+                    "parity": 0,
+                    "stages": [
+                        {
+                            "stage": "Substep_2_EtaFinal",
+                            "max_abs_error": 4.842877388000488e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        },
+                        {
+                            "stage": "Substep_2_UFinal",
+                            "max_abs_error": 6.07222318649292e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        },
+                        {
+                            "stage": "Substep_2_WFinal",
+                            "max_abs_error": 7.334165275096893e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        }
+                    ],
+                    "max_lateral_wall_u": 0.0,
+                    "max_transverse_wall_w": 0.0,
+                    "wall_velocities_strictly_zero": true,
+                    "mass_before": 0.0,
+                    "mass_after": 0.0,
+                    "mass_delta": 0.0,
+                    "nan_free": false,
+                    "all_passed": true
+                },
+                {
+                    "suite_name": "MultiStep_3",
+                    "parity": 1,
+                    "stages": [
+                        {
+                            "stage": "Substep_3_EtaFinal",
+                            "max_abs_error": 5.885958671569824e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        },
+                        {
+                            "stage": "Substep_3_UFinal",
+                            "max_abs_error": 7.487833499908447e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        },
+                        {
+                            "stage": "Substep_3_WFinal",
+                            "max_abs_error": 8.889473974704742e-7,
+                            "tolerance": 0.0010000000474974514,
+                            "passed": true
+                        }
+                    ],
+                    "max_lateral_wall_u": 0.0,
+                    "max_transverse_wall_w": 0.0,
+                    "wall_velocities_strictly_zero": true,
+                    "mass_before": 0.0,
+                    "mass_after": 0.0,
+                    "mass_delta": 0.0,
+                    "nan_free": false,
+                    "all_passed": true
+                }
+            ],
+            "all_passed": true
+        }
+    ],
+    "overall_passed": true
 }

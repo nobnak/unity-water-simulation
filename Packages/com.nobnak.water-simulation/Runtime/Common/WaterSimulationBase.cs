@@ -79,10 +79,14 @@ namespace Nobnak.WaterSimulation {
             float dt = Time.deltaTime * timeScale;
             if (fixedTimeStep > 0f) {
                 accumulator += dt;
+                // Clamp accumulator to at most 2 steps to avoid spiral of death when frame time spikes
+                if (accumulator > fixedTimeStep * 2f) {
+                    accumulator = fixedTimeStep * 2f;
+                }
                 float step = fixedTimeStep;
-                int maxSubSteps = 4;
+                int maxStepsPerFrame = 2;
                 int count = 0;
-                while (accumulator >= step && count < maxSubSteps) {
+                while (accumulator >= step && count < maxStepsPerFrame) {
                     Step(step);
                     accumulator -= step;
                     count++;

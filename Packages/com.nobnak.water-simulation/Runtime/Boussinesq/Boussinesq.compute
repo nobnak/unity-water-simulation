@@ -179,10 +179,18 @@ void CSPredict(uint3 id : SV_DispatchThreadID) {
     float detadx = (stateX.r - eta) * signedInvDx;
     float detadz = (stateZ.r - eta) * signedInvDz;
 
-    float dudx = (stateX.g - u) * signedInvDx;
-    float dudz = (stateZ.g - u) * signedInvDz;
-    float dwdx = (stateX.b - w) * signedInvDx;
-    float dwdz = (stateZ.b - w) * signedInvDz;
+    // Upwind convective velocity advection (eliminates downwind overshoots and parity oscillation)
+    float invDx = 1.0 / GetDx();
+    float invDz = 1.0 / GetDz();
+    float4 stateL = _StateIn[int2(max(0, pos.x - 1), pos.y)];
+    float4 stateR = _StateIn[int2(min(_Width - 1, pos.x + 1), pos.y)];
+    float4 stateD = _StateIn[int2(pos.x, max(0, pos.y - 1))];
+    float4 stateU = _StateIn[int2(pos.x, min(_Height - 1, pos.y + 1))];
+
+    float dudx = (u >= 0.0) ? (u - stateL.g) * invDx : (stateR.g - u) * invDx;
+    float dudz = (w >= 0.0) ? (u - stateD.g) * invDz : (stateU.g - u) * invDz;
+    float dwdx = (u >= 0.0) ? (w - stateL.b) * invDx : (stateR.b - w) * invDx;
+    float dwdz = (w >= 0.0) ? (w - stateD.b) * invDz : (stateU.b - w) * invDz;
 
     float advectX = u * dudx + w * dudz;
     float advectZ = u * dwdx + w * dwdz;
@@ -277,10 +285,18 @@ void CSCorrect(uint3 id : SV_DispatchThreadID) {
     float detadxStar = (statePredX.r - etaStar) * signedInvDx;
     float detadzStar = (statePredZ.r - etaStar) * signedInvDz;
 
-    float dudxStar = (statePredX.g - uStar) * signedInvDx;
-    float dudzStar = (statePredZ.g - uStar) * signedInvDz;
-    float dwdxStar = (statePredX.b - wStar) * signedInvDx;
-    float dwdzStar = (statePredZ.b - wStar) * signedInvDz;
+    // Upwind convective velocity advection on predicted state
+    float invDx = 1.0 / GetDx();
+    float invDz = 1.0 / GetDz();
+    float4 statePredL = _StatePred[int2(max(0, pos.x - 1), pos.y)];
+    float4 statePredR = _StatePred[int2(min(_Width - 1, pos.x + 1), pos.y)];
+    float4 statePredD = _StatePred[int2(pos.x, max(0, pos.y - 1))];
+    float4 statePredU = _StatePred[int2(pos.x, min(_Height - 1, pos.y + 1))];
+
+    float dudxStar = (uStar >= 0.0) ? (uStar - statePredL.g) * invDx : (statePredR.g - uStar) * invDx;
+    float dudzStar = (wStar >= 0.0) ? (uStar - statePredD.g) * invDz : (statePredU.g - uStar) * invDz;
+    float dwdxStar = (uStar >= 0.0) ? (wStar - statePredL.b) * invDx : (statePredR.b - wStar) * invDx;
+    float dwdzStar = (wStar >= 0.0) ? (wStar - statePredD.b) * invDz : (statePredU.b - wStar) * invDz;
 
     float advectXStar = uStar * dudxStar + wStar * dudzStar;
     float advectZStar = uStar * dwdxStar + wStar * dwdzStar;
@@ -771,8 +787,19 @@ void CSFilterX(uint3 id : SV_DispatchThreadID) {
         d4x = _StateIn[int2(x - 2, y)] - 4.0 * _StateIn[int2(x - 1, y)] + 6.0 * c - 4.0 * _StateIn[int2(x + 1, y)] + _StateIn[int2(x + 2, y)];
     }
 
-    float kappaX = min(0.058, 12.0 * _DeltaTime);
-    float4 filtered = c - kappaX * d4x;
+    float4 cL = _StateIn[int2(max(0, x - 1), y)];
+    float4 cR = _StateIn[int2(min(w - 1, x + 1), y)];
+
+    float4 d2x = cL - 2.0 * c + cR;
+    float slopeX = abs(cR.r - cL.r) / (2.0 * GetDx());
+    float excessSlopeX = max(0.0, slopeX - 0.40);
+    float slopeWeightX = saturate(excessSlopeX * 3.0);
+
+    float kappa4X = min(0.058, 12.0 * _DeltaTime);
+    float kappa2X = slopeWeightX * min(0.20, 30.0 * _DeltaTime);
+
+    float4 filtered = c - kappa4X * d4x + kappa2X * d2x;
+    filtered = clamp(filtered, min(c, min(cL, cR)), max(c, max(cL, cR)));
 
     if (_SideWallSponge == 0 && (x == 0 || x == w - 1)) {
         filtered.g = 0.0; // Strictly zero normal velocity on lateral solid walls
@@ -809,8 +836,19 @@ void CSFilterZ(uint3 id : SV_DispatchThreadID) {
         d4z = _StateIn[int2(x, y - 2)] - 4.0 * _StateIn[int2(x, y - 1)] + 6.0 * c - 4.0 * _StateIn[int2(x, y + 1)] + _StateIn[int2(x, y + 2)];
     }
 
-    float kappaZ = min(0.058, 12.0 * _DeltaTime);
-    float4 filtered = c - kappaZ * d4z;
+    float4 cD = _StateIn[int2(x, max(0, y - 1))];
+    float4 cU = _StateIn[int2(x, min(h - 1, y + 1))];
+
+    float4 d2z = cD - 2.0 * c + cU;
+    float slopeZ = abs(cU.r - cD.r) / (2.0 * GetDz());
+    float excessSlopeZ = max(0.0, slopeZ - 0.40);
+    float slopeWeightZ = saturate(excessSlopeZ * 3.0);
+
+    float kappa4Z = min(0.058, 12.0 * _DeltaTime);
+    float kappa2Z = slopeWeightZ * min(0.20, 30.0 * _DeltaTime);
+
+    float4 filtered = c - kappa4Z * d4z + kappa2Z * d2z;
+    filtered = clamp(filtered, min(c, min(cD, cU)), max(c, max(cD, cU)));
 
     if (y == 0 || y == h - 1) {
         filtered.b = 0.0; // Strictly zero normal velocity on offshore/beach borders

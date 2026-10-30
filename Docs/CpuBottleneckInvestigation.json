@@ -1,0 +1,91 @@
+﻿{
+    "Timestamp": "2026-10-30 10:06:44",
+    "GpuName": "Intel(R) Arc(TM) 140V GPU (16GB)",
+    "GraphicsApi": "Direct3D11",
+    "CpuName": "Intel(R) Core(TM) Ultra 7 258V",
+    "CpuCores": 8,
+    "UnityVersion": "6000.3.27f1",
+    "SceneProfiles": [
+        {
+            "SceneName": "Scene 01 (WaveEquation)",
+            "ScenePath": "Assets/Scenes/01_WaveEquation.unity",
+            "Resolution": "512x512",
+            "MeanTotalFrameMs": 2.188151666666666,
+            "MeanSimStepMs": 0.030501666666666668,
+            "MeanWaterRendererMs": 0.0030699999999999987,
+            "MeanSeabedRendererMs": 0.00007833333333333332,
+            "MeanUiMs": 1.2827683333333333,
+            "MeanCameraRenderMs": 0.8686966666666667,
+            "SubStepsPerStep": 3,
+            "DispatchesPerStep": 4,
+            "MeanGcAllocBytesPerFrame": 231697.06666666669
+        },
+        {
+            "SceneName": "Scene 02 (Boussinesq)",
+            "ScenePath": "Assets/Scenes/02_Boussinesq.unity",
+            "Resolution": "512x512",
+            "MeanTotalFrameMs": 1.5635949999999999,
+            "MeanSimStepMs": 0.16651999999999998,
+            "MeanWaterRendererMs": 0.0036966666666666668,
+            "MeanSeabedRendererMs": 0.002568333333333335,
+            "MeanUiMs": 0.5337449999999999,
+            "MeanCameraRenderMs": 0.8555116666666667,
+            "SubStepsPerStep": 4,
+            "DispatchesPerStep": 41,
+            "MeanGcAllocBytesPerFrame": 388573.86666666666
+        },
+        {
+            "SceneName": "Scene 03 (FFTOcean)",
+            "ScenePath": "Assets/Scenes/03_FFTWater.unity",
+            "Resolution": "256x256",
+            "MeanTotalFrameMs": 1.968271666666666,
+            "MeanSimStepMs": 0.03161000000000001,
+            "MeanWaterRendererMs": 0.0036550000000000004,
+            "MeanSeabedRendererMs": 0.00007666666666666664,
+            "MeanUiMs": 0.9540566666666667,
+            "MeanCameraRenderMs": 0.977765,
+            "SubStepsPerStep": 1,
+            "DispatchesPerStep": 4,
+            "MeanGcAllocBytesPerFrame": 405367.4666666667
+        }
+    ],
+    "CflInvestigation": {
+        "Substeps4_Count": 4,
+        "Substeps4_Dispatches": 41,
+        "Substeps4_CpuMs": 0.2747266666666667,
+        "Substeps2_CpuMs": 0.11714333333333334,
+        "Substeps1_CpuMs": 0.26296
+    },
+    "DispatchBreakdown": {
+        "PredictDispatchCpuMs": 0.0030320000000000006,
+        "TridiagonalXDispatchCpuMs": 0.0022660000000000004,
+        "TridiagonalZDispatchCpuMs": 0.002366,
+        "Filter2PassDispatchCpuMs": 0.005098
+    },
+    "UniformBindingInvestigation": {
+        "TimeFor16ConstantsPerSubstepMs": 0.0021404,
+        "TimeFor4SubstepsConstantsMs": 0.0085616
+    },
+    "CopyTextureInvestigation": {
+        "SingleCopyTextureCpuMs": 0.0026130000000000005,
+        "FourSubstepsCopyTextureCpuMs": 0.010452000000000002
+    },
+    "SeabedInvestigation": {
+        "CurrentFullUpdateMsPerFrame": 0.0006645,
+        "PropertyBlockOnlyMsPerFrame": 0.000671
+    },
+    "UiInvestigation": {
+        "OnGuiCpuMsPerFrame": 0.531528,
+        "GcAllocBytesPerFrame": 81346.56
+    },
+    "AccumulatorInvestigation": {
+        "StepsPerFrame_60Fps": 1,
+        "CpuMsPerFrame_60Fps": 0.2747266666666667,
+        "StepsPerFrame_30Fps": 2,
+        "CpuMsPerFrame_30Fps": 0.5494533333333334,
+        "StepsPerFrame_20Fps": 3,
+        "CpuMsPerFrame_20Fps": 0.82418,
+        "StepsPerFrame_MaxLag": 4,
+        "CpuMsPerFrame_MaxLag": 1.0989066666666668
+    }
+}

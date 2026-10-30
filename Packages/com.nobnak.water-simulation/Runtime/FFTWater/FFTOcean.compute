@@ -2,6 +2,8 @@
 #pragma kernel CSTimeEvolution
 #pragma kernel CSFFTHorizontal
 #pragma kernel CSFFTVertical
+#pragma kernel CSFFTRow
+#pragma kernel CSFFTCol
 #pragma kernel CSPackOceanData
 
 Texture2D<float4> _InitialSpectrum;   // RG: h0(k), BA: h0*(-k)
@@ -250,6 +252,129 @@ void CSFFTVertical(uint3 id : SV_DispatchThreadID) {
         _OutputPong[int2(id.x, y)] = float4(val0.xy + rot1_xy, val0.zw + rot1_zw);
     } else {
         _OutputPong[int2(id.x, y)] = float4(val0.xy - rot1_xy, val0.zw - rot1_zw);
+    }
+}
+
+#define MAX_FFT_N 512
+
+groupshared float4 s_fftDataA[MAX_FFT_N];
+groupshared float4 s_fftDataB[MAX_FFT_N];
+
+// Fast single-dispatch 1D IFFT along X rows using groupshared memory
+[numthreads(MAX_FFT_N, 1, 1)]
+void CSFFTRow(uint3 groupThreadId : SV_GroupThreadID, uint3 groupId : SV_GroupID) {
+    uint rowY = groupId.y;
+    if (rowY >= (uint)_N) return;
+    uint x = groupThreadId.x;
+
+    if (x < (uint)_N) {
+        s_fftDataA[x] = _InputPing[int2(x, rowY)];
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint numStages = (uint)round(log2((float)_N));
+    [loop]
+    for (uint stage = 0; stage < numStages; stage++) {
+        uint R = 1u << stage;
+        uint P = R << 1;
+        uint j = x & (R - 1u);
+        uint k = x / R;
+        uint t = k & 1u;
+        uint g = k >> 1;
+        uint i0 = g * R + j;
+        uint i1 = i0 + (uint(_N) >> 1);
+
+        float angle = 2.0 * PI * float(j) / float(P);
+        float2 w = float2(cos(angle), sin(angle));
+
+        if (x < (uint)_N) {
+            float4 val0, val1;
+            if ((stage & 1u) == 0u) {
+                val0 = s_fftDataA[i0];
+                val1 = s_fftDataA[i1];
+            } else {
+                val0 = s_fftDataB[i0];
+                val1 = s_fftDataB[i1];
+            }
+
+            float2 rot1_xy = float2(val1.x * w.x - val1.y * w.y, val1.x * w.y + val1.y * w.x);
+            float2 rot1_zw = float2(val1.z * w.x - val1.w * w.y, val1.z * w.y + val1.w * w.x);
+            float4 res = (t == 0u) 
+                ? float4(val0.xy + rot1_xy, val0.zw + rot1_zw)
+                : float4(val0.xy - rot1_xy, val0.zw - rot1_zw);
+
+            if ((stage & 1u) == 0u) {
+                s_fftDataB[x] = res;
+            } else {
+                s_fftDataA[x] = res;
+            }
+        }
+
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    if (x < (uint)_N) {
+        float4 finalVal = ((numStages & 1u) == 0u) ? s_fftDataA[x] : s_fftDataB[x];
+        _OutputPong[int2(x, rowY)] = finalVal;
+    }
+}
+
+// Fast single-dispatch 1D IFFT along Y columns using groupshared memory
+[numthreads(MAX_FFT_N, 1, 1)]
+void CSFFTCol(uint3 groupThreadId : SV_GroupThreadID, uint3 groupId : SV_GroupID) {
+    uint colX = groupId.x;
+    if (colX >= (uint)_N) return;
+    uint y = groupThreadId.x;
+
+    if (y < (uint)_N) {
+        s_fftDataA[y] = _InputPing[int2(colX, y)];
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint numStages = (uint)round(log2((float)_N));
+    [loop]
+    for (uint stage = 0; stage < numStages; stage++) {
+        uint R = 1u << stage;
+        uint P = R << 1;
+        uint j = y & (R - 1u);
+        uint k = y / R;
+        uint t = k & 1u;
+        uint g = k >> 1;
+        uint i0 = g * R + j;
+        uint i1 = i0 + (uint(_N) >> 1);
+
+        float angle = 2.0 * PI * float(j) / float(P);
+        float2 w = float2(cos(angle), sin(angle));
+
+        if (y < (uint)_N) {
+            float4 val0, val1;
+            if ((stage & 1u) == 0u) {
+                val0 = s_fftDataA[i0];
+                val1 = s_fftDataA[i1];
+            } else {
+                val0 = s_fftDataB[i0];
+                val1 = s_fftDataB[i1];
+            }
+
+            float2 rot1_xy = float2(val1.x * w.x - val1.y * w.y, val1.x * w.y + val1.y * w.x);
+            float2 rot1_zw = float2(val1.z * w.x - val1.w * w.y, val1.z * w.y + val1.w * w.x);
+            float4 res = (t == 0u) 
+                ? float4(val0.xy + rot1_xy, val0.zw + rot1_zw)
+                : float4(val0.xy - rot1_xy, val0.zw - rot1_zw);
+
+            if ((stage & 1u) == 0u) {
+                s_fftDataB[y] = res;
+            } else {
+                s_fftDataA[y] = res;
+            }
+        }
+
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    if (y < (uint)_N) {
+        float4 finalVal = ((numStages & 1u) == 0u) ? s_fftDataA[y] : s_fftDataB[y];
+        _OutputPong[int2(colX, y)] = finalVal;
     }
 }
 

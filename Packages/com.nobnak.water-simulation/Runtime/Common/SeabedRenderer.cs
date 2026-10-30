@@ -165,22 +165,6 @@ namespace Nobnak.WaterSimulation {
             propBlock.SetFloat(PropHeightExaggeration, heightExaggeration);
 
             meshRenderer.SetPropertyBlock(propBlock);
-
-            // Also mirror directly to material so SRP Batcher pipelines receive all uniform parameters
-            var mat = meshRenderer.sharedMaterial;
-            if (mat != null) {
-                if (targetSimulation != null && targetSimulation.BathymetryTexture != null) {
-                    mat.SetTexture(PropBathymetryTex, targetSimulation.BathymetryTexture);
-                    mat.SetVector(PropAreaSize, new Vector4(targetSimulation.AreaSize.x, targetSimulation.AreaSize.y, 0f, 0f));
-                }
-                mat.SetFloat(PropVisualMode, (float)visualizationMode);
-                mat.SetColor(PropShallowColor, shallowColor);
-                mat.SetColor(PropDeepColor, deepColor);
-                mat.SetColor(PropWallColor, wallColor);
-                mat.SetFloat(PropContourInterval, contourInterval);
-                mat.SetFloat(PropBasinBottomDepth, basinBottomDepth);
-                mat.SetFloat(PropHeightExaggeration, heightExaggeration);
-            }
         }
         #endregion
 
@@ -222,6 +206,7 @@ namespace Nobnak.WaterSimulation {
 
             generatedMesh = GenerateSeabedMesh(size.x, size.y, resX, resZ, includeBasinWalls, basinBottomDepth);
             meshFilter.sharedMesh = generatedMesh;
+            meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
             lastAreaSize = size;
             lastMeshResolution = new Vector2Int(resX, resZ);
