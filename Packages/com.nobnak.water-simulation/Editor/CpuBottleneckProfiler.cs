@@ -23,8 +23,8 @@ namespace Nobnak.WaterSimulation.Editor {
     /// with execution-order bias verification, and clear separation between:
     /// 1. Cost per 1 Physics Step (CPU issuance & GPU sync throughput)
     /// 2. Cost to simulate 1.0 physical second
-    /// 3. Projected 60Hz real-time frame budget
-    /// 4. PlayerLoop unconstrained batchmode loop interval (not labeled as display FPS).
+    /// 3. Step margin in 16.67ms frame (simulation-only, not whole app headroom)
+    /// 4. PlayerLoop loop interval and workload tracking (not labeled as display FPS).
     /// </summary>
     public static class CpuBottleneckProfiler {
         public const string OutputJsonPath = "Docs/CpuBottleneckInvestigation.json";
@@ -125,8 +125,8 @@ namespace Nobnak.WaterSimulation.Editor {
                     steps_per_physical_second = stepsIn1s,
                     physical_second_cpu_issuance_ms = Math.Round(stepsIn1s * stepCpuIssuance, 3),
                     physical_second_gpu_sync_throughput_ms = Math.Round(stepsIn1s * stepSyncThroughput, 3),
-                    projected_headroom_percent_at_60fps = Math.Round((16.667 - stepSyncThroughput) / 16.667 * 100.0, 1),
-                    note = "1 Step費用: CPU発行時間と1セルGPU完了同期を含むスループット。物理1秒費用: 1秒分の物理進行に必要な全ステップ累計費用。60Hz想定余力: 16.67msフレーム枠に対する同期スループット占有率の逆数。"
+                    step_margin_percent_in_16ms_frame = Math.Round((16.667 - stepSyncThroughput) / 16.667 * 100.0, 1),
+                    note = "1 Step費用: CPU発行時間と1セルGPU完了同期を含むスループット。物理1秒費用: 1秒分の物理進行に必要な全ステップ累計費用。16.67ms枠に対するStep単体マージン: 描画・UI・表示待ちを含まないシミュレーション単体の時間マージン。"
                 };
 
                 var profileResult = new SceneProfileResult {
@@ -149,6 +149,12 @@ namespace Nobnak.WaterSimulation.Editor {
                 if (ui != null) ui.enabled = false;
                 for (int i = 0; i < warmupFrames; i++) yield return null;
 
+                int renderedCountOff = 0;
+                void OnEndCameraOff(ScriptableRenderContext ctx, Camera c) {
+                    if (cam != null && c == cam) renderedCountOff++;
+                }
+                RenderPipelineManager.endCameraRendering += OnEndCameraOff;
+
                 int startStepOff = sim != null ? sim.StepCount : 0;
                 float startSimTimeOff = sim != null ? sim.SimulationTime : 0f;
                 var phaseSwOff = Stopwatch.StartNew();
@@ -170,11 +176,13 @@ namespace Nobnak.WaterSimulation.Editor {
                     if (gpuRecorder.Valid && gpuRecorder.Count > 0) gpuUiOff.Add(gpuRecorder.LastValue * 1e-6);
                 }
                 phaseSwOff.Stop();
+                RenderPipelineManager.endCameraRendering -= OnEndCameraOff;
 
                 int endStepOff = sim != null ? sim.StepCount : 0;
                 float endSimTimeOff = sim != null ? sim.SimulationTime : 0f;
                 int executedStepsOff = endStepOff - startStepOff;
                 float simulatedTimeOff = endSimTimeOff - startSimTimeOff;
+                string renderedFramesOffStr = renderedCountOff > 0 ? renderedCountOff.ToString() : "未計測 (バッチモード描画コールバック未検知)";
 
                 profileResult.WorkloadUiOff = new PhaseWorkload {
                     phase_name = "UI OFF (Order 1)",
@@ -189,7 +197,7 @@ namespace Nobnak.WaterSimulation.Editor {
                     simulated_physical_time_s = simulatedTimeOff,
                     total_substeps_executed = executedStepsOff * (sim != null ? sim.LastSubStepCount : 1),
                     total_dispatches_executed = executedStepsOff * (sim != null ? sim.LastDispatchCount : 1),
-                    rendered_frames = measureFrames,
+                    rendered_frames = renderedFramesOffStr,
                     note = executedStepsOff == 0
                         ? "バッチモードの非制限ループではフレーム間隔が極小(約0.18ms)のため、60フレームの累計実経過時間がfixedTimeStep(0.016s)に達せず物理Step実行は0回。"
                         : $"60フレーム間に {executedStepsOff} 回の物理Stepが実行された。"
@@ -199,6 +207,12 @@ namespace Nobnak.WaterSimulation.Editor {
                 if (sim != null) sim.ResetSimulation();
                 if (ui != null) ui.enabled = true;
                 for (int i = 0; i < warmupFrames; i++) yield return null;
+
+                int renderedCountOn = 0;
+                void OnEndCameraOn(ScriptableRenderContext ctx, Camera c) {
+                    if (cam != null && c == cam) renderedCountOn++;
+                }
+                RenderPipelineManager.endCameraRendering += OnEndCameraOn;
 
                 int startStepOn = sim != null ? sim.StepCount : 0;
                 float startSimTimeOn = sim != null ? sim.SimulationTime : 0f;
@@ -220,11 +234,13 @@ namespace Nobnak.WaterSimulation.Editor {
                     if (gpuRecorder.Valid && gpuRecorder.Count > 0) gpuUiOn.Add(gpuRecorder.LastValue * 1e-6);
                 }
                 phaseSwOn.Stop();
+                RenderPipelineManager.endCameraRendering -= OnEndCameraOn;
 
                 int endStepOn = sim != null ? sim.StepCount : 0;
                 float endSimTimeOn = sim != null ? sim.SimulationTime : 0f;
                 int executedStepsOn = endStepOn - startStepOn;
                 float simulatedTimeOn = endSimTimeOn - startSimTimeOn;
+                string renderedFramesOnStr = renderedCountOn > 0 ? renderedCountOn.ToString() : "未計測 (バッチモード描画コールバック未検知)";
 
                 profileResult.WorkloadUiOn = new PhaseWorkload {
                     phase_name = "UI ON (Order 1)",
@@ -239,7 +255,7 @@ namespace Nobnak.WaterSimulation.Editor {
                     simulated_physical_time_s = simulatedTimeOn,
                     total_substeps_executed = executedStepsOn * (sim != null ? sim.LastSubStepCount : 1),
                     total_dispatches_executed = executedStepsOn * (sim != null ? sim.LastDispatchCount : 1),
-                    rendered_frames = measureFrames,
+                    rendered_frames = renderedFramesOnStr,
                     note = executedStepsOn == 0
                         ? "バッチモードの非制限ループではフレーム間隔が極小(約0.18ms)のため、60フレームの累計実経過時間がfixedTimeStep(0.016s)に達せず物理Step実行は0回。"
                         : $"60フレーム間に {executedStepsOn} 回の物理Stepが実行された。"
@@ -304,25 +320,33 @@ namespace Nobnak.WaterSimulation.Editor {
                 // GC Allocations
                 long avgGcOn = 0;
                 long avgGcOff = 0;
-                if (gcRecorder.Valid && gcAllocUiOn.Count > 0) {
+                bool hasGcOn = gcRecorder.Valid && gcAllocUiOn.Count > 0;
+                bool hasGcOff = gcRecorder.Valid && gcAllocUiOff.Count > 0;
+
+                if (hasGcOn) {
                     avgGcOn = (long)ComputeMean(gcAllocUiOn);
                     profileResult.GcAllocBytesUiOn = $"{avgGcOn} B";
                 } else {
                     profileResult.GcAllocBytesUiOn = "取得不可";
                 }
 
-                if (gcRecorder.Valid && gcAllocUiOff.Count > 0) {
+                if (hasGcOff) {
                     avgGcOff = (long)ComputeMean(gcAllocUiOff);
                     profileResult.GcAllocBytesUiOff = $"{avgGcOff} B";
                 } else {
                     profileResult.GcAllocBytesUiOff = "取得不可";
                 }
 
-                long gcDelta = avgGcOn - avgGcOff;
-                profileResult.GcAllocDeltaBytes = $"{gcDelta} B";
-                profileResult.GcAllocAnalysis = Math.Abs(gcDelta) <= 50
-                    ? $"UI ON({avgGcOn} B) と UI OFF({avgGcOff} B) の差分({gcDelta} B)は測定ばらつきの範囲内であり有意差は確認できない。バッチモードではOSのGUIイベントが発行されないためIMGUI描画処理はスキップされており、約1.9KBのアロケーションはEditor PlayerLoop/コルーチン/ProfilerRecorder読み出し等のフレーム固定内部処理に起因する。"
-                    : $"UI ON({avgGcOn} B) と UI OFF({avgGcOff} B) の差分は {gcDelta} B。";
+                if (hasGcOn && hasGcOff) {
+                    long gcDelta = avgGcOn - avgGcOff;
+                    profileResult.GcAllocDeltaBytes = $"{gcDelta} B";
+                    profileResult.GcAllocAnalysis = Math.Abs(gcDelta) <= 50
+                        ? $"UI ON({avgGcOn} B) と UI OFF({avgGcOff} B) の差分({gcDelta} B)は測定ばらつきの範囲内であり有意差は確認できない。【仮説（コールスタック未取得のため推定）】約1.9KBのアロケーションはEditor PlayerLoop/コルーチン/ProfilerRecorder読み出し等のフレーム固定内部処理に起因すると推定される。"
+                        : $"UI ON({avgGcOn} B) と UI OFF({avgGcOff} B) の差分は {gcDelta} B。";
+                } else {
+                    profileResult.GcAllocDeltaBytes = "取得不可";
+                    profileResult.GcAllocAnalysis = "GC ProfilerRecorder未取得のためアロケーション差分および要因分析は取得不可。";
+                }
 
                 report.SceneProfiles.Add(profileResult);
 
@@ -355,23 +379,58 @@ namespace Nobnak.WaterSimulation.Editor {
         private static void InvestigateScene02Causes(ProfilingReport report, BoussinesqSimulation sim, Camera cam) {
             Debug.Log("[RealFramePlayModeRunner] Running Scene 02 in-depth causal investigation...");
 
-            // 1. CFL Substep count impact
+            // 1. CFL Substep count impact with measured substep/dispatch counts
+            double cpu4 = MeasureCpuIssuance(sim, 0.016f, 30);
+            double sync4 = MeasureGpuSyncThroughput(sim, 0.016f, 30);
+            int sub4 = sim.LastSubStepCount;
+            int disp4 = sim.LastDispatchCount;
+
+            double cpu2 = MeasureCpuIssuance(sim, 0.008f, 30);
+            double sync2 = MeasureGpuSyncThroughput(sim, 0.008f, 30);
+            int sub2 = sim.LastSubStepCount;
+            int disp2 = sim.LastDispatchCount;
+
+            // Single substep diagnostic API test
+            double cpuDiag = MeasureSingleSubstepCpuIssuance(sim, 0.004f, 30);
+            double syncDiag = MeasureSingleSubstepGpuSyncThroughput(sim, 0.004f, 30);
+            int subDiag = 1;
+            int dispDiag = sim.LastDispatchCount;
+
             var cfl = new CflSubstepInvestigation {
-                Substeps4_Count = 4,
-                Substeps4_Dispatches = 4 * 16,
-                Substeps4_CpuIssuanceMs = MeasureCpuIssuance(sim, 0.016f, 30),
-                Substeps4_GpuSyncThroughputMs = MeasureGpuSyncThroughput(sim, 0.016f, 30),
-
-                Substeps2_Count = 2,
-                Substeps2_Dispatches = 2 * 16,
-                Substeps2_CpuIssuanceMs = MeasureCpuIssuance(sim, 0.008f, 30),
-                Substeps2_GpuSyncThroughputMs = MeasureGpuSyncThroughput(sim, 0.008f, 30),
-
-                Substeps1_Count = 1,
-                Substeps1_Dispatches = 16,
-                Substeps1_CpuIssuanceMs = MeasureCpuIssuance(sim, 0.004f, 30),
-                Substeps1_GpuSyncThroughputMs = MeasureGpuSyncThroughput(sim, 0.004f, 30),
-                Note = "GPU同期スループットは最小1セル(1x1 pixel)のAsyncGPUReadback完了待機を含み、PCI-e転送オーバーヘッドを最小化してGPU完了バリアを確立。CPU発行時間は同期なしのコマンドキュー積込時間。"
+                case_step_0016 = new CflSubstepCase {
+                    condition_name = "Step(0.016) [通常Step, 4サブステップ]",
+                    dt_per_call_s = 0.016f,
+                    measured_substep_count = sub4,
+                    measured_dispatch_count = disp4,
+                    cpu_issuance_per_call_ms = Math.Round(cpu4, 4),
+                    gpu_sync_throughput_per_call_ms = Math.Round(sync4, 4),
+                    calls_for_1s_physical_time = 62.5,
+                    cpu_issuance_for_1s_physical_time_ms = Math.Round(62.5 * cpu4, 2),
+                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(62.5 * sync4, 2)
+                },
+                case_step_0008 = new CflSubstepCase {
+                    condition_name = "Step(0.008) [通常Step, 2サブステップ]",
+                    dt_per_call_s = 0.008f,
+                    measured_substep_count = sub2,
+                    measured_dispatch_count = disp2,
+                    cpu_issuance_per_call_ms = Math.Round(cpu2, 4),
+                    gpu_sync_throughput_per_call_ms = Math.Round(sync2, 4),
+                    calls_for_1s_physical_time = 125.0,
+                    cpu_issuance_for_1s_physical_time_ms = Math.Round(125.0 * cpu2, 2),
+                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(125.0 * sync2, 2)
+                },
+                case_single_substep_diag = new CflSubstepCase {
+                    condition_name = "StepSingleSubstep(0.004) [単一サブステップ診断API試験]",
+                    dt_per_call_s = 0.004f,
+                    measured_substep_count = subDiag,
+                    measured_dispatch_count = dispDiag,
+                    cpu_issuance_per_call_ms = Math.Round(cpuDiag, 4),
+                    gpu_sync_throughput_per_call_ms = Math.Round(syncDiag, 4),
+                    calls_for_1s_physical_time = 250.0,
+                    cpu_issuance_for_1s_physical_time_ms = Math.Round(250.0 * cpuDiag, 2),
+                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(250.0 * syncDiag, 2)
+                },
+                note = "通常のStep(0.004)はMacCormack偶数化規則により最低2サブステップとなるため、単一サブステップ(substeps=1)の費用は診断用API StepSingleSubstep(0.004)を用いて別試験として実測。サブステップ数・Dispatch数は固定値ではなく各条件実行後の実測値を保存。"
             };
             report.CflInvestigation = cfl;
 
@@ -389,38 +448,57 @@ namespace Nobnak.WaterSimulation.Editor {
 
             // 6. UI investigation
             var scene02 = report.SceneProfiles.Find(p => p.SceneName.Contains("Scene 02"));
-            double gcOn = 0;
-            double gcOff = 0;
-            if (scene02 != null) {
-                double.TryParse(scene02.GcAllocBytesUiOn.Replace(" B", "").Trim(), out gcOn);
-                double.TryParse(scene02.GcAllocBytesUiOff.Replace(" B", "").Trim(), out gcOff);
-            }
-            double gcDelta = gcOn - gcOff;
+            string gcOnStr = scene02 != null ? scene02.GcAllocBytesUiOn : "取得不可";
+            string gcOffStr = scene02 != null ? scene02.GcAllocBytesUiOff : "取得不可";
+            string deltaStr = scene02 != null ? scene02.GcAllocDeltaBytes : "取得不可";
 
             report.UiInvestigation = new UiInvestigation {
                 OnGuiCpuMsPerFrame = scene02 != null ? scene02.UiOverheadDeltaMs : 0.0,
-                GcAllocBytesUiOn = gcOn,
-                GcAllocBytesUiOff = gcOff,
-                UiGcDeltaBytes = gcDelta,
-                AllocationSource = "バッチモード環境下ではGUIイベントが発行されないため、UI ON / OFF による有意なGCアロケーション差は確認できない（差は測定ばらつき内）。実測された約1.9KB/frameのアロケーションは、Unity EditorのPlayerLoop内部処理、コルーチン（MoveNext）、ProfilerRecorderの内部バッファ管理等に起因するフレーム固定オーバーヘッド。シミュレーション本体ホットパスの単独アロケーションは別途プロファイラコールスタックで確認が必要。"
+                GcAllocBytesUiOn = gcOnStr,
+                GcAllocBytesUiOff = gcOffStr,
+                UiGcDeltaBytes = deltaStr,
+                AllocationAnalysis = "【仮説（コールスタック未取得のため推定）】UI ON と UI OFF の差分は測定ばらつきの範囲内であり、有意なUI固有アロケーション差は確認できない。実測された約1.9KB/frameは、Unity EditorのPlayerLoop内部処理、コルーチン（MoveNext）、ProfilerRecorderの内部バッファ管理等に起因するフレーム固定内部オーバーヘッドと推定される。シミュレーション本体ホットパスの単独アロケーションは別途プロファイラコールスタックで確認が必要。"
             };
 
-            // 7. Accumulator investigation
+            // 7. Accumulator investigation matching WaterSimulationBase.Update implementation
+            float fixedDt = sim.FixedTimeStep;
             var accum = new AccumulatorInvestigation {
-                StepsPerFrame_60Fps = 1,
-                CpuIssuanceMsPerFrame_60Fps = cfl.Substeps4_CpuIssuanceMs,
-                GpuSyncMsPerFrame_60Fps = cfl.Substeps4_GpuSyncThroughputMs,
-                StepsPerFrame_30Fps = 2,
-                CpuIssuanceMsPerFrame_30Fps = cfl.Substeps4_CpuIssuanceMs * 2.0,
-                GpuSyncMsPerFrame_30Fps = cfl.Substeps4_GpuSyncThroughputMs * 2.0,
-                StepsPerFrame_20Fps = 3,
-                CpuIssuanceMsPerFrame_20Fps = cfl.Substeps4_CpuIssuanceMs * 3.0,
-                GpuSyncMsPerFrame_20Fps = cfl.Substeps4_GpuSyncThroughputMs * 3.0,
-                StepsPerFrame_MaxLag = 4,
-                CpuIssuanceMsPerFrame_MaxLag = cfl.Substeps4_CpuIssuanceMs * 4.0,
-                GpuSyncMsPerFrame_MaxLag = cfl.Substeps4_GpuSyncThroughputMs * 4.0
+                max_steps_per_frame_limit = 2,
+                accumulator_clamp_seconds = fixedDt * 2f,
+                scenario_60fps = SimulateAccumulatorScheduling(fixedDt, 1f / 60f, cpu4, sync4, "60 FPS 運転時 (dt ≈ 0.0167s)", 60.0),
+                scenario_30fps = SimulateAccumulatorScheduling(fixedDt, 1f / 30f, cpu4, sync4, "30 FPS 運転時 (dt ≈ 0.0333s)", 30.0),
+                scenario_20fps = SimulateAccumulatorScheduling(fixedDt, 1f / 20f, cpu4, sync4, "20 FPS 運転時 (dt = 0.0500s)", 20.0),
+                scenario_max_lag_10fps = SimulateAccumulatorScheduling(fixedDt, 1f / 10f, cpu4, sync4, "最大遅延時 (10 FPS, dt = 0.100s)", 10.0),
+                scheduling_analysis = "現行のWaterSimulationBase実装では、maxStepsPerFrame=2の上限およびaccumulatorクランプ(最大2ステップ分=0.032s)により、1フレームで実行されるStep数は最大2回に制限されている。フレームレートが20 FPS以下に低下した場合でも3〜4ステップは実行されず、超過した物理時間は切り捨て(ドロップ)されてスパイラル・オブ・デスを防止する。単純な費用の掛け算は実測値ではなく線形推定値である。"
             };
             report.AccumulatorInvestigation = accum;
+        }
+
+        private static AccumulatorCase SimulateAccumulatorScheduling(float fixedDt, float frameDt, double singleStepCpu, double singleStepGpu, string name, double fps) {
+            float accum = frameDt;
+            float truncated = 0f;
+            if (accum > fixedDt * 2f) {
+                truncated = accum - fixedDt * 2f;
+                accum = fixedDt * 2f;
+            }
+            int count = 0;
+            while (accum >= fixedDt && count < 2) {
+                accum -= fixedDt;
+                count++;
+            }
+            return new AccumulatorCase {
+                scenario_name = name,
+                target_fps = fps,
+                frame_delta_time_s = Math.Round(frameDt, 5),
+                steps_executed_per_frame = count,
+                simulated_time_per_frame_s = Math.Round(count * fixedDt, 5),
+                truncated_dropped_time_per_frame_s = Math.Round(truncated, 5),
+                estimated_cpu_issuance_ms = Math.Round(count * singleStepCpu, 4),
+                estimated_gpu_sync_ms = Math.Round(count * singleStepGpu, 4),
+                note = count == 2 && truncated > 0.0001f
+                    ? $"maxStepsPerFrame=2の上限とクランプにより、超過物理時間({truncated:F4}s)は切り捨て(ドロップ)。費用は1 Step実測値に基づく単純線形推定。"
+                    : "クランプ上限内で正常進行。費用は1 Step実測値に基づく単純線形推定。"
+            };
         }
 
         private static double MeasureCpuIssuance(WaterSimulationBase sim, float dt, int trials) {
@@ -445,6 +523,34 @@ namespace Nobnak.WaterSimulation.Editor {
             var sw = Stopwatch.StartNew();
             for (int i = 0; i < trials; i++) {
                 sim.Step(dt);
+                var req = AsyncGPUReadback.Request(targetRT, 0, 0, 1, 0, 1, 0, 1);
+                req.WaitForCompletion();
+            }
+            sw.Stop();
+            return sw.Elapsed.TotalMilliseconds / trials;
+        }
+
+        private static double MeasureSingleSubstepCpuIssuance(BoussinesqSimulation sim, float subDt, int trials) {
+            sim.ResetSimulation();
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < trials; i++) {
+                sim.StepSingleSubstep(subDt);
+            }
+            sw.Stop();
+            return sw.Elapsed.TotalMilliseconds / trials;
+        }
+
+        private static double MeasureSingleSubstepGpuSyncThroughput(BoussinesqSimulation sim, float subDt, int trials) {
+            sim.ResetSimulation();
+            var targetRT = sim.WaterDataTexture ?? sim.NormalTexture;
+            if (targetRT == null) return MeasureSingleSubstepCpuIssuance(sim, subDt, trials);
+
+            var initReq = AsyncGPUReadback.Request(targetRT, 0, 0, 1, 0, 1, 0, 1);
+            initReq.WaitForCompletion();
+
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < trials; i++) {
+                sim.StepSingleSubstep(subDt);
                 var req = AsyncGPUReadback.Request(targetRT, 0, 0, 1, 0, 1, 0, 1);
                 req.WaitForCompletion();
             }
@@ -612,25 +718,25 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine();
             sb.AppendLine("通常運転のFPS、1 Stepの費用、一定のシミュレーション時間を進める費用を区別して記録した結果：");
             sb.AppendLine();
-            sb.AppendLine("| シーン名 | 格子解像度 | fixedDt | SubSteps | Dispatches | 1 Step CPU発行時間 | 1 Step GPU同期スループット | 物理1秒進行費用 (Steps) | 物理1秒 CPU発行 | 物理1秒 GPU同期 | 60Hz想定余力 |");
+            sb.AppendLine("| シーン名 | 格子解像度 | fixedDt | SubSteps | Dispatches | 1 Step CPU発行時間 | 1 Step GPU同期スループット | 物理1秒進行費用 (Steps) | 物理1秒 CPU発行 | 物理1秒 GPU同期 | 16.67ms枠 Step単体マージン |");
             sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
 
             foreach (var r in report.SceneProfiles) {
                 var c = r.StepCost;
-                sb.AppendLine($"| {r.SceneName} | {r.Resolution} | {c.fixed_time_step_s:F3}s | {c.substeps_per_step} | {c.dispatches_per_step} | {c.step_cpu_issuance_ms:F4} ms | {c.step_gpu_sync_throughput_ms:F4} ms | {c.steps_per_physical_second} steps | {c.physical_second_cpu_issuance_ms:F2} ms | {c.physical_second_gpu_sync_throughput_ms:F2} ms | {c.projected_headroom_percent_at_60fps:F1}% |");
+                sb.AppendLine($"| {r.SceneName} | {r.Resolution} | {c.fixed_time_step_s:F3}s | {c.substeps_per_step} | {c.dispatches_per_step} | {c.step_cpu_issuance_ms:F4} ms | {c.step_gpu_sync_throughput_ms:F4} ms | {c.steps_per_physical_second} steps | {c.physical_second_cpu_issuance_ms:F2} ms | {c.physical_second_gpu_sync_throughput_ms:F2} ms | {c.step_margin_percent_in_16ms_frame:F1}% |");
             }
             sb.AppendLine();
             sb.AppendLine("> [!NOTE]");
             sb.AppendLine("> - **1 Step CPU発行時間**: CPUがコンピュートカーネルをディスパッチしドライバキューに積むまでの時間（GPU完了待ちは含まない）。");
             sb.AppendLine("> - **1 Step GPU同期スループット**: CPUディスパッチ ＋ GPU計算実行 ＋ 最小限(1セル)の `AsyncGPUReadback` 完了待機を含む時間。PCI-e転送オーバーヘッドを最小化してGPU完了バリアを確立。");
-            sb.AppendLine("> - **60Hz想定余力**: リアルタイム描画フレーム枠（16.67ms）に対して1 StepのGPU同期スループットが占める割合の逆数（余力）。");
+            sb.AppendLine("> - **16.67ms枠 Step単体マージン**: 本指標は描画パス、UI、ポストプロセス、表示待機等を含まない『シミュレーションStep単体』の16.67ms(60Hz)枠に対する時間マージンであり、アプリケーション全体の総合的な動作余力を表すものではありません。");
             sb.AppendLine();
 
-            sb.AppendLine("## 2. PlayerLoop 実フレーム計測結果（非制限バッチモード・ループレート）");
+            sb.AppendLine("## 2. PlayerLoop 実フレーム計測結果（非制限バッチモード・ループレート）と処理量");
             sb.AppendLine();
-            sb.AppendLine("Unity PlayerLoop（PlayMode）上でフレームをまたいで計測した実フレーム間隔および処理量：");
+            sb.AppendLine("Unity PlayerLoop（PlayMode）上でフレームをまたいで計測した実フレーム間隔、およびその間に実行された実際の処理量：");
             sb.AppendLine();
-            sb.AppendLine("| シーン名 | 測定フェーズ | フレーム数 | 実経過時間 | 平均フレーム間隔 | P95 | P99 | バッチループ回転速度 | 実行Step数 | 進行物理時間 | 描画フレーム数 | CPU Main Thread | GPU Frame | GC Alloc |");
+            sb.AppendLine("| シーン名 | 測定フェーズ | ループ回数 | 実経過時間 | 平均フレーム間隔 | P95 | P99 | バッチループ回転速度 | 実行Step数 | 進行物理時間 | 描画回数 | CPU Main Thread | GPU Frame | GC Alloc |");
             sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
 
             foreach (var r in report.SceneProfiles) {
@@ -639,13 +745,14 @@ namespace Nobnak.WaterSimulation.Editor {
             }
             sb.AppendLine();
             sb.AppendLine("> [!IMPORTANT]");
-            sb.AppendLine("> - **表示FPSではないことの明記**: バッチモード実行ではモニタ垂直同期および表示スワップチェーンが存在しないため、フレーム間隔は極小（0.1〜0.2ms）でループ回転します。物理アキュムレータが閾値に達しない空フレーム（実行Step数: 0回/60フレーム）を含むため、上記ループ回転速度を実画面の「表示FPS」として報告・解釈してはなりません。");
+            sb.AppendLine("> - **表示FPSではないことの明記**: バッチモード実行ではモニタ垂直同期および表示スワップチェーンが存在しないため、フレーム間隔は極小（0.1〜0.2ms）でループ回転します。物理アキュムレータが閾値に達しない空フレーム（実行Step数: 0回 または 1回 / 60ループ）を含むため、上記ループ回転速度（iter/s）を実画面の「表示FPS」として報告・解釈してはなりません。");
+            sb.AppendLine("> - **描画回数の実測**: カメラの描画完了イベント（RenderPipelineManager.endCameraRendering）をフックして実際の描画回数を計測。バッチモード等で描画パイプラインが実行されない場合は「未計測」と明記。");
             sb.AppendLine("> - **GPU Frame Time**: バッチモードで表示スワップチェーン非アクティブのためドライバ非公開（取得不可）。");
             sb.AppendLine();
 
             sb.AppendLine("## 3. UI ON vs UI OFF 比較および GC Alloc 分析");
             sb.AppendLine();
-            sb.AppendLine("| シーン名 | UI Overhead Delta | Order Bias | GC Alloc (UI ON) | GC Alloc (UI OFF) | GC Delta | 評価 |");
+            sb.AppendLine("| シーン名 | UI Overhead Delta | Order Bias | GC Alloc (UI ON) | GC Alloc (UI OFF) | GC Delta | 評価・分析 |");
             sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :--- |");
 
             foreach (var r in report.SceneProfiles) {
@@ -656,11 +763,18 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine("## 4. Scene 02 詳細要因分析（CFL・ディスパッチ・定数バインド・Accumulator）");
             sb.AppendLine();
             if (report.CflInvestigation != null) {
-                sb.AppendLine("### CFL Substep 数による影響（CPU発行時間 vs GPU同期スループット）");
-                sb.AppendLine($"- **4 サブステップ (デフォルト)**: CPU発行 `{report.CflInvestigation.Substeps4_CpuIssuanceMs:F4} ms`, GPU同期スループット `{report.CflInvestigation.Substeps4_GpuSyncThroughputMs:F4} ms` (ディスパッチ数: {report.CflInvestigation.Substeps4_Dispatches})");
-                sb.AppendLine($"- **2 サブステップ**: CPU発行 `{report.CflInvestigation.Substeps2_CpuIssuanceMs:F4} ms`, GPU同期スループット `{report.CflInvestigation.Substeps2_GpuSyncThroughputMs:F4} ms`");
-                sb.AppendLine($"- **1 サブステップ**: CPU発行 `{report.CflInvestigation.Substeps1_CpuIssuanceMs:F4} ms`, GPU同期スループット `{report.CflInvestigation.Substeps1_GpuSyncThroughputMs:F4} ms`");
-                sb.AppendLine($"- **備考**: {report.CflInvestigation.Note}");
+                sb.AppendLine("### CFL Substep 数による影響（CPU発行時間 vs GPU同期スループット、実測サブステップ・Dispatch数）");
+                sb.AppendLine();
+                sb.AppendLine("| 試験条件 | 1呼出 dt | 実測Substeps | 実測Dispatches | 1呼出 CPU発行時間 | 1呼出 GPU同期スループット | 物理1秒進行 (呼出数) | 物理1秒 CPU発行 | 物理1秒 GPU同期 |");
+                sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
+                var c4 = report.CflInvestigation.case_step_0016;
+                var c2 = report.CflInvestigation.case_step_0008;
+                var c1 = report.CflInvestigation.case_single_substep_diag;
+                sb.AppendLine($"| {c4.condition_name} | {c4.dt_per_call_s:F3}s | {c4.measured_substep_count} | {c4.measured_dispatch_count} | {c4.cpu_issuance_per_call_ms:F4} ms | {c4.gpu_sync_throughput_per_call_ms:F4} ms | {c4.calls_for_1s_physical_time:F1} | {c4.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c4.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
+                sb.AppendLine($"| {c2.condition_name} | {c2.dt_per_call_s:F3}s | {c2.measured_substep_count} | {c2.measured_dispatch_count} | {c2.cpu_issuance_per_call_ms:F4} ms | {c2.gpu_sync_throughput_per_call_ms:F4} ms | {c2.calls_for_1s_physical_time:F1} | {c2.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c2.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
+                sb.AppendLine($"| {c1.condition_name} | {c1.dt_per_call_s:F3}s | {c1.measured_substep_count} | {c1.measured_dispatch_count} | {c1.cpu_issuance_per_call_ms:F4} ms | {c1.gpu_sync_throughput_per_call_ms:F4} ms | {c1.calls_for_1s_physical_time:F1} | {c1.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c1.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
+                sb.AppendLine();
+                sb.AppendLine($"> [!NOTE]\n> {report.CflInvestigation.note}");
                 sb.AppendLine();
             }
             if (report.DispatchBreakdown != null) {
@@ -674,18 +788,30 @@ namespace Nobnak.WaterSimulation.Editor {
             if (report.UiInvestigation != null) {
                 sb.AppendLine("### UI OnGUI & GC アロケーション分析");
                 sb.AppendLine($"- UI 負荷 Delta: `{report.UiInvestigation.OnGuiCpuMsPerFrame:F4} ms/frame`");
-                sb.AppendLine($"- GC Allocated In Frame (UI ON): `{report.UiInvestigation.GcAllocBytesUiOn} B`");
-                sb.AppendLine($"- GC Allocated In Frame (UI OFF): `{report.UiInvestigation.GcAllocBytesUiOff} B`");
-                sb.AppendLine($"- GC 差分: `{report.UiInvestigation.UiGcDeltaBytes} B`");
-                sb.AppendLine($"- 割り当て元分析: {report.UiInvestigation.AllocationSource}");
+                sb.AppendLine($"- GC Allocated In Frame (UI ON): `{report.UiInvestigation.GcAllocBytesUiOn}`");
+                sb.AppendLine($"- GC Allocated In Frame (UI OFF): `{report.UiInvestigation.GcAllocBytesUiOff}`");
+                sb.AppendLine($"- GC 差分: `{report.UiInvestigation.UiGcDeltaBytes}`");
+                sb.AppendLine($"- 割り当て元分析: {report.UiInvestigation.AllocationAnalysis}");
                 sb.AppendLine();
             }
             if (report.AccumulatorInvestigation != null) {
-                sb.AppendLine("### Accumulator ラグとフレームレート別物理処理負荷");
-                sb.AppendLine($"- 60 FPS時: 1 Step/frame (CPU発行 `{report.AccumulatorInvestigation.CpuIssuanceMsPerFrame_60Fps:F4} ms`, GPU同期 `{report.AccumulatorInvestigation.GpuSyncMsPerFrame_60Fps:F4} ms`)");
-                sb.AppendLine($"- 30 FPS時: 2 Steps/frame (CPU発行 `{report.AccumulatorInvestigation.CpuIssuanceMsPerFrame_30Fps:F4} ms`, GPU同期 `{report.AccumulatorInvestigation.GpuSyncMsPerFrame_30Fps:F4} ms`)");
-                sb.AppendLine($"- 20 FPS時: 3 Steps/frame (CPU発行 `{report.AccumulatorInvestigation.CpuIssuanceMsPerFrame_20Fps:F4} ms`, GPU同期 `{report.AccumulatorInvestigation.GpuSyncMsPerFrame_20Fps:F4} ms`)");
-                sb.AppendLine($"- 最大遅延時 (Max Lag = 4): 4 Steps/frame (CPU発行 `{report.AccumulatorInvestigation.CpuIssuanceMsPerFrame_MaxLag:F4} ms`, GPU同期 `{report.AccumulatorInvestigation.GpuSyncMsPerFrame_MaxLag:F4} ms`)");
+                var a = report.AccumulatorInvestigation;
+                sb.AppendLine("### Accumulator スケジューリングとフレームレート別物理処理負荷（現行実装整合）");
+                sb.AppendLine();
+                sb.AppendLine($"- **実装仕様**: 1フレームあたりの最大更新回数上限 `maxStepsPerFrame = {a.max_steps_per_frame_limit}`, アキュムレータクランプ上限 `{a.accumulator_clamp_seconds:F3}s` (最大2ステップ分)");
+                sb.AppendLine();
+                sb.AppendLine("| シナリオ | 想定FPS | フレームdt | 実行Step数/frame | 進行物理時間/frame | 切り捨て(ドロップ)時間 | 推定CPU発行費用 | 推定GPU同期スループット |");
+                sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
+                var s60 = a.scenario_60fps;
+                var s30 = a.scenario_30fps;
+                var s20 = a.scenario_20fps;
+                var slag = a.scenario_max_lag_10fps;
+                sb.AppendLine($"| {s60.scenario_name} | {s60.target_fps:F0} FPS | {s60.frame_delta_time_s:F4}s | {s60.steps_executed_per_frame} Step | {s60.simulated_time_per_frame_s:F3}s | {s60.truncated_dropped_time_per_frame_s:F4}s | {s60.estimated_cpu_issuance_ms:F4} ms (推定) | {s60.estimated_gpu_sync_ms:F4} ms (推定) |");
+                sb.AppendLine($"| {s30.scenario_name} | {s30.target_fps:F0} FPS | {s30.frame_delta_time_s:F4}s | {s30.steps_executed_per_frame} Steps | {s30.simulated_time_per_frame_s:F3}s | {s30.truncated_dropped_time_per_frame_s:F4}s | {s30.estimated_cpu_issuance_ms:F4} ms (推定) | {s30.estimated_gpu_sync_ms:F4} ms (推定) |");
+                sb.AppendLine($"| {s20.scenario_name} | {s20.target_fps:F0} FPS | {s20.frame_delta_time_s:F4}s | {s20.steps_executed_per_frame} Steps | {s20.simulated_time_per_frame_s:F3}s | {s20.truncated_dropped_time_per_frame_s:F4}s | {s20.estimated_cpu_issuance_ms:F4} ms (推定) | {s20.estimated_gpu_sync_ms:F4} ms (推定) |");
+                sb.AppendLine($"| {slag.scenario_name} | {slag.target_fps:F0} FPS | {slag.frame_delta_time_s:F4}s | {slag.steps_executed_per_frame} Steps | {slag.simulated_time_per_frame_s:F3}s | {slag.truncated_dropped_time_per_frame_s:F4}s | {slag.estimated_cpu_issuance_ms:F4} ms (推定) | {slag.estimated_gpu_sync_ms:F4} ms (推定) |");
+                sb.AppendLine();
+                sb.AppendLine($"> [!NOTE]\n> {a.scheduling_analysis}");
                 sb.AppendLine();
             }
             return sb.ToString();
@@ -718,7 +844,7 @@ namespace Nobnak.WaterSimulation.Editor {
         public float simulated_physical_time_s;
         public int total_substeps_executed;
         public int total_dispatches_executed;
-        public int rendered_frames;
+        public string rendered_frames;
         public string note;
     }
 
@@ -732,7 +858,7 @@ namespace Nobnak.WaterSimulation.Editor {
         public int steps_per_physical_second;
         public double physical_second_cpu_issuance_ms;
         public double physical_second_gpu_sync_throughput_ms;
-        public double projected_headroom_percent_at_60fps;
+        public double step_margin_percent_in_16ms_frame;
         public string note;
     }
 
@@ -781,20 +907,24 @@ namespace Nobnak.WaterSimulation.Editor {
     }
 
     [Serializable]
+    public class CflSubstepCase {
+        public string condition_name;
+        public float dt_per_call_s;
+        public int measured_substep_count;
+        public int measured_dispatch_count;
+        public double cpu_issuance_per_call_ms;
+        public double gpu_sync_throughput_per_call_ms;
+        public double calls_for_1s_physical_time;
+        public double cpu_issuance_for_1s_physical_time_ms;
+        public double gpu_sync_throughput_for_1s_physical_time_ms;
+    }
+
+    [Serializable]
     public class CflSubstepInvestigation {
-        public int Substeps4_Count;
-        public int Substeps4_Dispatches;
-        public double Substeps4_CpuIssuanceMs;
-        public double Substeps4_GpuSyncThroughputMs;
-        public int Substeps2_Count;
-        public int Substeps2_Dispatches;
-        public double Substeps2_CpuIssuanceMs;
-        public double Substeps2_GpuSyncThroughputMs;
-        public int Substeps1_Count;
-        public int Substeps1_Dispatches;
-        public double Substeps1_CpuIssuanceMs;
-        public double Substeps1_GpuSyncThroughputMs;
-        public string Note;
+        public CflSubstepCase case_step_0016;
+        public CflSubstepCase case_step_0008;
+        public CflSubstepCase case_single_substep_diag;
+        public string note;
     }
 
     [Serializable]
@@ -826,26 +956,34 @@ namespace Nobnak.WaterSimulation.Editor {
     [Serializable]
     public class UiInvestigation {
         public double OnGuiCpuMsPerFrame;
-        public double GcAllocBytesUiOn;
-        public double GcAllocBytesUiOff;
-        public double UiGcDeltaBytes;
-        public string AllocationSource;
+        public string GcAllocBytesUiOn;
+        public string GcAllocBytesUiOff;
+        public string UiGcDeltaBytes;
+        public string AllocationAnalysis;
+    }
+
+    [Serializable]
+    public class AccumulatorCase {
+        public string scenario_name;
+        public double target_fps;
+        public double frame_delta_time_s;
+        public int steps_executed_per_frame;
+        public double simulated_time_per_frame_s;
+        public double truncated_dropped_time_per_frame_s;
+        public double estimated_cpu_issuance_ms;
+        public double estimated_gpu_sync_ms;
+        public string note;
     }
 
     [Serializable]
     public class AccumulatorInvestigation {
-        public int StepsPerFrame_60Fps;
-        public double CpuIssuanceMsPerFrame_60Fps;
-        public double GpuSyncMsPerFrame_60Fps;
-        public int StepsPerFrame_30Fps;
-        public double CpuIssuanceMsPerFrame_30Fps;
-        public double GpuSyncMsPerFrame_30Fps;
-        public int StepsPerFrame_20Fps;
-        public double CpuIssuanceMsPerFrame_20Fps;
-        public double GpuSyncMsPerFrame_20Fps;
-        public int StepsPerFrame_MaxLag;
-        public double CpuIssuanceMsPerFrame_MaxLag;
-        public double GpuSyncMsPerFrame_MaxLag;
+        public int max_steps_per_frame_limit;
+        public float accumulator_clamp_seconds;
+        public AccumulatorCase scenario_60fps;
+        public AccumulatorCase scenario_30fps;
+        public AccumulatorCase scenario_20fps;
+        public AccumulatorCase scenario_max_lag_10fps;
+        public string scheduling_analysis;
     }
     #endregion
 }
