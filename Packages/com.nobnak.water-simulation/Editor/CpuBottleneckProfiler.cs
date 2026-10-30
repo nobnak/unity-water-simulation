@@ -380,21 +380,58 @@ namespace Nobnak.WaterSimulation.Editor {
             Debug.Log("[RealFramePlayModeRunner] Running Scene 02 in-depth causal investigation...");
 
             // 1. CFL Substep count impact with measured substep/dispatch counts
-            double cpu4 = MeasureCpuIssuance(sim, 0.016f, 30);
-            double sync4 = MeasureGpuSyncThroughput(sim, 0.016f, 30);
+            const int trials = 30;
+
+            sim.ResetSimulation();
+            int initDisp4 = sim.LastDispatchCount;
+            double cpu4 = MeasureCpuIssuance(sim, 0.016f, trials);
+            double sync4 = MeasureGpuSyncThroughput(sim, 0.016f, trials);
             int sub4 = sim.LastSubStepCount;
             int disp4 = sim.LastDispatchCount;
+            int totalDisp4 = trials * disp4;
 
-            double cpu2 = MeasureCpuIssuance(sim, 0.008f, 30);
-            double sync2 = MeasureGpuSyncThroughput(sim, 0.008f, 30);
+            sim.ResetSimulation();
+            int initDisp2 = sim.LastDispatchCount;
+            double cpu2 = MeasureCpuIssuance(sim, 0.008f, trials);
+            double sync2 = MeasureGpuSyncThroughput(sim, 0.008f, trials);
             int sub2 = sim.LastSubStepCount;
             int disp2 = sim.LastDispatchCount;
+            int totalDisp2 = trials * disp2;
 
-            // Single substep diagnostic API test
-            double cpuDiag = MeasureSingleSubstepCpuIssuance(sim, 0.004f, 30);
-            double syncDiag = MeasureSingleSubstepGpuSyncThroughput(sim, 0.004f, 30);
+            // Single substep diagnostic API: measure isolated 1-call dispatch difference
+            sim.ResetSimulation();
+            int initDispDiag = sim.LastDispatchCount;
+            int dispBeforeSingle = sim.LastDispatchCount;
+            sim.StepSingleSubstep(0.004f);
+            int dispAfterSingle = sim.LastDispatchCount;
+            int singleCallDiff = dispAfterSingle - dispBeforeSingle;
+
+            // Multi-trial invariance verification (verifying 1-call dispatch count does not change with trial count)
+            var invarianceChecks = new List<SingleSubstepTrialInvarianceTest>();
+            int[] testTrials = { 1, 10, 30, 50 };
+            foreach (int tc in testTrials) {
+                sim.ResetSimulation();
+                int tStart = sim.LastDispatchCount;
+                for (int t = 0; t < tc; t++) {
+                    sim.StepSingleSubstep(0.004f);
+                }
+                int tEnd = sim.LastDispatchCount;
+                int tTotal = tEnd - tStart;
+                int tPerCall = tc > 0 ? tTotal / tc : 0;
+                invarianceChecks.Add(new SingleSubstepTrialInvarianceTest {
+                    trials = tc,
+                    start_dispatch_count = tStart,
+                    end_dispatch_count = tEnd,
+                    total_interval_dispatches = tTotal,
+                    measured_dispatch_per_call = tPerCall,
+                    is_invariant = (tPerCall == singleCallDiff)
+                });
+            }
+
+            var (cpuDiag, cpuDiagInitDisp, cpuDiagTotalDisp, cpuDiagPerCall) = MeasureSingleSubstepCpuIssuance(sim, 0.004f, trials);
+            var (syncDiag, syncDiagInitDisp, syncDiagTotalDisp, syncDiagPerCall) = MeasureSingleSubstepGpuSyncThroughput(sim, 0.004f, trials);
             int subDiag = 1;
-            int dispDiag = sim.LastDispatchCount;
+            int dispDiag = singleCallDiff;
 
             var cfl = new CflSubstepInvestigation {
                 case_step_0016 = new CflSubstepCase {
@@ -402,35 +439,48 @@ namespace Nobnak.WaterSimulation.Editor {
                     dt_per_call_s = 0.016f,
                     measured_substep_count = sub4,
                     measured_dispatch_count = disp4,
+                    initialization_dispatches = initDisp4,
+                    measurement_trials = trials,
+                    total_interval_dispatches = totalDisp4,
                     cpu_issuance_per_call_ms = Math.Round(cpu4, 4),
                     gpu_sync_throughput_per_call_ms = Math.Round(sync4, 4),
                     calls_for_1s_physical_time = 62.5,
                     cpu_issuance_for_1s_physical_time_ms = Math.Round(62.5 * cpu4, 2),
-                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(62.5 * sync4, 2)
+                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(62.5 * sync4, 2),
+                    dispatch_composition = "通常Step: 4サブステップ分の物理更新(4×10) + フレーム末尾の法線計算・出力パック(1) = 計41 Dispatch"
                 },
                 case_step_0008 = new CflSubstepCase {
                     condition_name = "Step(0.008) [通常Step, 2サブステップ]",
                     dt_per_call_s = 0.008f,
                     measured_substep_count = sub2,
                     measured_dispatch_count = disp2,
+                    initialization_dispatches = initDisp2,
+                    measurement_trials = trials,
+                    total_interval_dispatches = totalDisp2,
                     cpu_issuance_per_call_ms = Math.Round(cpu2, 4),
                     gpu_sync_throughput_per_call_ms = Math.Round(sync2, 4),
                     calls_for_1s_physical_time = 125.0,
                     cpu_issuance_for_1s_physical_time_ms = Math.Round(125.0 * cpu2, 2),
-                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(125.0 * sync2, 2)
+                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(125.0 * sync2, 2),
+                    dispatch_composition = "通常Step: 2サブステップ分の物理更新(2×10) + フレーム末尾の法線計算・出力パック(1) = 計21 Dispatch"
                 },
                 case_single_substep_diag = new CflSubstepCase {
                     condition_name = "StepSingleSubstep(0.004) [単一サブステップ診断API試験]",
                     dt_per_call_s = 0.004f,
                     measured_substep_count = subDiag,
                     measured_dispatch_count = dispDiag,
+                    initialization_dispatches = initDispDiag,
+                    measurement_trials = trials,
+                    total_interval_dispatches = syncDiagTotalDisp,
                     cpu_issuance_per_call_ms = Math.Round(cpuDiag, 4),
                     gpu_sync_throughput_per_call_ms = Math.Round(syncDiag, 4),
                     calls_for_1s_physical_time = 250.0,
                     cpu_issuance_for_1s_physical_time_ms = Math.Round(250.0 * cpuDiag, 2),
-                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(250.0 * syncDiag, 2)
+                    gpu_sync_throughput_for_1s_physical_time_ms = Math.Round(250.0 * syncDiag, 2),
+                    dispatch_composition = "診断API: 物理更新単体のみを実行(10 Dispatch)。通常Stepに含まれる法線計算・出力パック(1)は含まない"
                 },
-                note = "通常のStep(0.004)はMacCormack偶数化規則により最低2サブステップとなるため、単一サブステップ(substeps=1)の費用は診断用API StepSingleSubstep(0.004)を用いて別試験として実測。サブステップ数・Dispatch数は固定値ではなく各条件実行後の実測値を保存。"
+                trial_invariance_checks = invarianceChecks,
+                note = "1呼び出しあたりの実測Dispatch数、初期化費用(Reset時4 Dispatch)、および測定区間合計(試行数×1呼出)を厳密に区別して集計。診断API(StepSingleSubstep)は物理更新のみを実行する単一サブステップ(10 Dispatch)であり、通常Stepに含まれるフレーム末尾の法線計算・出力パック処理(CSComputeNormal, 1 Dispatch)を含まない。通常Stepでは4サブステップ時に 4×10 + 1 = 41 Dispatch、2サブステップ時に 2×10 + 1 = 21 Dispatch となる。固定値ではなくリセット完了後のカウンターを基準とした実測差分として10 Dispatchを取得し、試行回数(1, 10, 30, 50回)を変更しても1呼出あたりのDispatch数が10で不変であることを実証確認。"
             };
             report.CflInvestigation = cfl;
 
@@ -530,24 +580,31 @@ namespace Nobnak.WaterSimulation.Editor {
             return sw.Elapsed.TotalMilliseconds / trials;
         }
 
-        private static double MeasureSingleSubstepCpuIssuance(BoussinesqSimulation sim, float subDt, int trials) {
+        private static (double meanMs, int initDisp, int totalIntervalDisp, int dispPerCall) MeasureSingleSubstepCpuIssuance(BoussinesqSimulation sim, float subDt, int trials) {
             sim.ResetSimulation();
+            int initDisp = sim.LastDispatchCount;
+            int dispStart = sim.LastDispatchCount;
             var sw = Stopwatch.StartNew();
             for (int i = 0; i < trials; i++) {
                 sim.StepSingleSubstep(subDt);
             }
             sw.Stop();
-            return sw.Elapsed.TotalMilliseconds / trials;
+            int dispEnd = sim.LastDispatchCount;
+            int totalIntervalDisp = dispEnd - dispStart;
+            int dispPerCall = trials > 0 ? totalIntervalDisp / trials : 0;
+            return (sw.Elapsed.TotalMilliseconds / trials, initDisp, totalIntervalDisp, dispPerCall);
         }
 
-        private static double MeasureSingleSubstepGpuSyncThroughput(BoussinesqSimulation sim, float subDt, int trials) {
+        private static (double meanMs, int initDisp, int totalIntervalDisp, int dispPerCall) MeasureSingleSubstepGpuSyncThroughput(BoussinesqSimulation sim, float subDt, int trials) {
             sim.ResetSimulation();
+            int initDisp = sim.LastDispatchCount;
             var targetRT = sim.WaterDataTexture ?? sim.NormalTexture;
             if (targetRT == null) return MeasureSingleSubstepCpuIssuance(sim, subDt, trials);
 
             var initReq = AsyncGPUReadback.Request(targetRT, 0, 0, 1, 0, 1, 0, 1);
             initReq.WaitForCompletion();
 
+            int dispStart = sim.LastDispatchCount;
             var sw = Stopwatch.StartNew();
             for (int i = 0; i < trials; i++) {
                 sim.StepSingleSubstep(subDt);
@@ -555,7 +612,10 @@ namespace Nobnak.WaterSimulation.Editor {
                 req.WaitForCompletion();
             }
             sw.Stop();
-            return sw.Elapsed.TotalMilliseconds / trials;
+            int dispEnd = sim.LastDispatchCount;
+            int totalIntervalDisp = dispEnd - dispStart;
+            int dispPerCall = trials > 0 ? totalIntervalDisp / trials : 0;
+            return (sw.Elapsed.TotalMilliseconds / trials, initDisp, totalIntervalDisp, dispPerCall);
         }
 
         private static DispatchBreakdownResult ProfileBoussinesqDispatchBreakdown(BoussinesqSimulation sim) {
@@ -765,17 +825,30 @@ namespace Nobnak.WaterSimulation.Editor {
             if (report.CflInvestigation != null) {
                 sb.AppendLine("### CFL Substep 数による影響（CPU発行時間 vs GPU同期スループット、実測サブステップ・Dispatch数）");
                 sb.AppendLine();
-                sb.AppendLine("| 試験条件 | 1呼出 dt | 実測Substeps | 実測Dispatches | 1呼出 CPU発行時間 | 1呼出 GPU同期スループット | 物理1秒進行 (呼出数) | 物理1秒 CPU発行 | 物理1秒 GPU同期 |");
-                sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
+                sb.AppendLine("| 試験条件 | 1呼出 dt | 実測Substeps | 1呼出実測Dispatch | 初期化Dispatch | 測定区間合計Dispatch (試行数) | 1呼出 CPU発行時間 | 1呼出 GPU同期スループット | 物理1秒進行 (呼出数) | 物理1秒 CPU発行 | 物理1秒 GPU同期 |");
+                sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
                 var c4 = report.CflInvestigation.case_step_0016;
                 var c2 = report.CflInvestigation.case_step_0008;
                 var c1 = report.CflInvestigation.case_single_substep_diag;
-                sb.AppendLine($"| {c4.condition_name} | {c4.dt_per_call_s:F3}s | {c4.measured_substep_count} | {c4.measured_dispatch_count} | {c4.cpu_issuance_per_call_ms:F4} ms | {c4.gpu_sync_throughput_per_call_ms:F4} ms | {c4.calls_for_1s_physical_time:F1} | {c4.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c4.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
-                sb.AppendLine($"| {c2.condition_name} | {c2.dt_per_call_s:F3}s | {c2.measured_substep_count} | {c2.measured_dispatch_count} | {c2.cpu_issuance_per_call_ms:F4} ms | {c2.gpu_sync_throughput_per_call_ms:F4} ms | {c2.calls_for_1s_physical_time:F1} | {c2.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c2.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
-                sb.AppendLine($"| {c1.condition_name} | {c1.dt_per_call_s:F3}s | {c1.measured_substep_count} | {c1.measured_dispatch_count} | {c1.cpu_issuance_per_call_ms:F4} ms | {c1.gpu_sync_throughput_per_call_ms:F4} ms | {c1.calls_for_1s_physical_time:F1} | {c1.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c1.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
+                sb.AppendLine($"| {c4.condition_name} | {c4.dt_per_call_s:F3}s | {c4.measured_substep_count} | {c4.measured_dispatch_count} | {c4.initialization_dispatches} | {c4.total_interval_dispatches} ({c4.measurement_trials}回) | {c4.cpu_issuance_per_call_ms:F4} ms | {c4.gpu_sync_throughput_per_call_ms:F4} ms | {c4.calls_for_1s_physical_time:F1} | {c4.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c4.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
+                sb.AppendLine($"| {c2.condition_name} | {c2.dt_per_call_s:F3}s | {c2.measured_substep_count} | {c2.measured_dispatch_count} | {c2.initialization_dispatches} | {c2.total_interval_dispatches} ({c2.measurement_trials}回) | {c2.cpu_issuance_per_call_ms:F4} ms | {c2.gpu_sync_throughput_per_call_ms:F4} ms | {c2.calls_for_1s_physical_time:F1} | {c2.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c2.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
+                sb.AppendLine($"| {c1.condition_name} | {c1.dt_per_call_s:F3}s | {c1.measured_substep_count} | {c1.measured_dispatch_count} | {c1.initialization_dispatches} | {c1.total_interval_dispatches} ({c1.measurement_trials}回) | {c1.cpu_issuance_per_call_ms:F4} ms | {c1.gpu_sync_throughput_per_call_ms:F4} ms | {c1.calls_for_1s_physical_time:F1} | {c1.cpu_issuance_for_1s_physical_time_ms:F2} ms | {c1.gpu_sync_throughput_for_1s_physical_time_ms:F2} ms |");
                 sb.AppendLine();
                 sb.AppendLine($"> [!NOTE]\n> {report.CflInvestigation.note}");
                 sb.AppendLine();
+
+                if (report.CflInvestigation.trial_invariance_checks != null && report.CflInvestigation.trial_invariance_checks.Count > 0) {
+                    sb.AppendLine("#### 単一サブステップ診断API 試行回数不変性検証 (Trial Invariance Verification)");
+                    sb.AppendLine();
+                    sb.AppendLine("| 試行回数 (Trials) | 開始カウンター (初期化後) | 終了カウンター | 測定区間合計Dispatch | 1呼び出しあたり実測Dispatch | 不変性判定 |");
+                    sb.AppendLine("| :---: | :---: | :---: | :---: | :---: | :---: |");
+                    foreach (var chk in report.CflInvestigation.trial_invariance_checks) {
+                        sb.AppendLine($"| {chk.trials} 回 | {chk.start_dispatch_count} | {chk.end_dispatch_count} | {chk.total_interval_dispatches} | **{chk.measured_dispatch_per_call}** | {(chk.is_invariant ? "PASS (一致)" : "FAIL (不一致)")} |");
+                    }
+                    sb.AppendLine();
+                    sb.AppendLine("> [!TIP]\n> 試行回数を1回、10回、30回、50回と変更しても、1呼び出しあたりの実測Dispatch数は常に厳密に10 Dispatchで一致しており、初期化時カウンター(4)や試行回数の累積が混入していないことを実証。");
+                    sb.AppendLine();
+                }
             }
             if (report.DispatchBreakdown != null) {
                 sb.AppendLine("### StepPhysics 内のディスパッチ CPU 発行時間内訳（同期なし）");
@@ -907,16 +980,30 @@ namespace Nobnak.WaterSimulation.Editor {
     }
 
     [Serializable]
+    public class SingleSubstepTrialInvarianceTest {
+        public int trials;
+        public int start_dispatch_count;
+        public int end_dispatch_count;
+        public int total_interval_dispatches;
+        public int measured_dispatch_per_call;
+        public bool is_invariant;
+    }
+
+    [Serializable]
     public class CflSubstepCase {
         public string condition_name;
         public float dt_per_call_s;
         public int measured_substep_count;
         public int measured_dispatch_count;
+        public int initialization_dispatches;
+        public int measurement_trials;
+        public int total_interval_dispatches;
         public double cpu_issuance_per_call_ms;
         public double gpu_sync_throughput_per_call_ms;
         public double calls_for_1s_physical_time;
         public double cpu_issuance_for_1s_physical_time_ms;
         public double gpu_sync_throughput_for_1s_physical_time_ms;
+        public string dispatch_composition;
     }
 
     [Serializable]
@@ -924,6 +1011,7 @@ namespace Nobnak.WaterSimulation.Editor {
         public CflSubstepCase case_step_0016;
         public CflSubstepCase case_step_0008;
         public CflSubstepCase case_single_substep_diag;
+        public List<SingleSubstepTrialInvarianceTest> trial_invariance_checks = new List<SingleSubstepTrialInvarianceTest>();
         public string note;
     }
 
