@@ -152,6 +152,28 @@ namespace Nobnak.WaterSimulation {
             base.OnEnable();
         }
 
+        protected override void Update() {
+            if (!isRunning || timeScale <= 0f) return;
+
+            float dt = Time.deltaTime * timeScale;
+            if (fixedTimeStep > 0f) {
+                accumulator += dt;
+                if (accumulator > fixedTimeStep * 2f) accumulator = fixedTimeStep * 2f;
+                int count = 0;
+                float totalDt = 0f;
+                while (accumulator >= fixedTimeStep && count < 2) {
+                    totalDt += fixedTimeStep;
+                    accumulator -= fixedTimeStep;
+                    count++;
+                }
+                if (totalDt > 0f) {
+                    Step(totalDt);
+                }
+            } else {
+                Step(dt);
+            }
+        }
+
         private void LateUpdate() {
             if (!isRunning && (spectrumDirty || pausedStepDirty)) {
                 pausedStepDirty = false;

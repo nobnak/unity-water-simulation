@@ -37,12 +37,22 @@ namespace Nobnak.WaterSimulation {
         private bool isFolded;
         private Vector2 scrollPos;
         private WaterComparisonController comparisonController;
+        private string cachedTitleText;
+        private string cachedMetricsText = "";
+        private float nextMetricsUpdate;
+        #endregion
+
+        #region public interface
+        public void RenderGUI() {
+            DrawHUD();
+        }
         #endregion
 
         #region Unity lifecycle
         private void OnEnable() {
             comparisonController = FindFirstObjectByType<WaterComparisonController>();
             if (seabedRenderer == null) seabedRenderer = FindFirstObjectByType<SeabedRenderer>();
+            cachedTitleText = $"<b>{sampleTitle}</b>";
         }
 
         private void Update() {
@@ -52,6 +62,14 @@ namespace Nobnak.WaterSimulation {
                 currentFps = frameCount / fpsAccumulator;
                 frameCount = 0f;
                 fpsAccumulator = 0f;
+            }
+
+            if (Time.unscaledTime >= nextMetricsUpdate) {
+                nextMetricsUpdate = Time.unscaledTime + 0.1f;
+                float simTime = simulation != null ? simulation.SimulationTime : 0f;
+                int resX = simulation != null ? simulation.Resolution.x : 0;
+                int resY = simulation != null ? simulation.Resolution.y : 0;
+                cachedMetricsText = $"Render FPS: <b>{currentFps:F1}</b> | Sim Time: <b>{simTime:F2}s</b> | Grid: {resX}x{resY}";
             }
         }
 
@@ -73,8 +91,8 @@ namespace Nobnak.WaterSimulation {
 
             // Header & FPS
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>{sampleTitle}</b>", GUILayout.ExpandWidth(true));
-            if (GUILayout.Button(isFolded ? "Open" : "Close", GUILayout.Width(50))) {
+            GUILayout.Label(cachedTitleText ?? sampleTitle, OptExpandWidthTrue);
+            if (GUILayout.Button(isFolded ? "Open" : "Close", OptWidth50)) {
                 isFolded = !isFolded;
             }
             GUILayout.EndHorizontal();
@@ -87,10 +105,7 @@ namespace Nobnak.WaterSimulation {
             scrollPos = GUILayout.BeginScrollView(scrollPos);
 
             // Performance metrics
-            float simTime = simulation != null ? simulation.SimulationTime : 0f;
-            int resX = simulation != null ? simulation.Resolution.x : 0;
-            int resY = simulation != null ? simulation.Resolution.y : 0;
-            GUILayout.Label($"Render FPS: <b>{currentFps:F1}</b> | Sim Time: <b>{simTime:F2}s</b> | Grid: {resX}x{resY}");
+            GUILayout.Label(string.IsNullOrEmpty(cachedMetricsText) ? sampleTitle : cachedMetricsText);
 
             GUILayout.Space(6);
 
@@ -408,6 +423,14 @@ namespace Nobnak.WaterSimulation {
                 waterRenderer.SetVisualMode(mode);
             }
         }
+        #endregion
+
+        #region constants / static
+        private static readonly GUILayoutOption[] OptExpandWidthTrue = new[] { GUILayout.ExpandWidth(true) };
+        private static readonly GUILayoutOption[] OptWidth50 = new[] { GUILayout.Width(50f) };
+        private static readonly GUILayoutOption[] OptWidth70 = new[] { GUILayout.Width(70f) };
+        private static readonly GUILayoutOption[] OptWidth80 = new[] { GUILayout.Width(80f) };
+        private static readonly GUILayoutOption[] OptWidth90 = new[] { GUILayout.Width(90f) };
         #endregion
     }
 }

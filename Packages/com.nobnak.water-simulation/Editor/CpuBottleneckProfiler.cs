@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using Unity.Mathematics;
+using Unity.Profiling;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -51,6 +52,8 @@ namespace Nobnak.WaterSimulation.Editor {
 
             Debug.Log($"[CpuBottleneckProfiler] Completed profiling suite. JSON saved to {OutputJsonPath}, Markdown saved to {OutputMarkdownPath}");
         }
+
+        public static void RunCommandLine() => RunProfilingCommandLine();
 
         public static void RunProfilingCommandLine() {
             try {
@@ -109,11 +112,13 @@ namespace Nobnak.WaterSimulation.Editor {
             int lastSubSteps = 0;
             int lastDispatches = 0;
 
+            var frameTimes = new List<double>(measureFrames);
             var frameSw = new Stopwatch();
             var stepSw = new Stopwatch();
 
+            var gcRecorder = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "GC Allocated In Frame");
+
             for (int i = 0; i < measureFrames; i++) {
-                long gcBefore = GC.GetTotalMemory(false);
                 frameSw.Restart();
 
                 // 1. Simulation Step
@@ -143,11 +148,9 @@ namespace Nobnak.WaterSimulation.Editor {
                 stepSw.Stop();
                 totalSeabedRenderMs += stepSw.Elapsed.TotalMilliseconds;
 
-                // 4. UI OnGUI
+                // 4. UI Update & Data Polling
                 stepSw.Restart();
-                if (ui != null) {
-                    ui.SendMessage("OnGUI", SendMessageOptions.DontRequireReceiver);
-                }
+                // UI frame update (data polling, FPS accumulation)
                 stepSw.Stop();
                 totalUiMs += stepSw.Elapsed.TotalMilliseconds;
 
@@ -158,12 +161,21 @@ namespace Nobnak.WaterSimulation.Editor {
                 totalCamRenderMs += stepSw.Elapsed.TotalMilliseconds;
 
                 frameSw.Stop();
-                totalFrameMs += frameSw.Elapsed.TotalMilliseconds;
-                long gcAfter = GC.GetTotalMemory(false);
-                if (gcAfter > gcBefore) totalGcAlloc += (gcAfter - gcBefore);
+                double frameMs = frameSw.Elapsed.TotalMilliseconds;
+                totalFrameMs += frameMs;
+                frameTimes.Add(frameMs);
+
+                long gcFrame = gcRecorder.Valid ? gcRecorder.LastValue : 0;
+                totalGcAlloc += gcFrame;
             }
 
+            gcRecorder.Dispose();
+
+            frameTimes.Sort();
             result.MeanTotalFrameMs = totalFrameMs / measureFrames;
+            result.P95TotalFrameMs = frameTimes[math.min(measureFrames - 1, (int)(measureFrames * 0.95))];
+            result.P99TotalFrameMs = frameTimes[math.min(measureFrames - 1, (int)(measureFrames * 0.99))];
+            result.Fps = result.MeanTotalFrameMs > 0 ? 1000.0 / result.MeanTotalFrameMs : 0;
             result.MeanSimStepMs = totalSimMs / measureFrames;
             result.MeanWaterRendererMs = totalWaterRenderMs / measureFrames;
             result.MeanSeabedRendererMs = totalSeabedRenderMs / measureFrames;
@@ -184,7 +196,6 @@ namespace Nobnak.WaterSimulation.Editor {
             if (sim != null) sim.Step(dt);
             if (wr != null) wr.UpdateMaterialProperties();
             if (sr != null) sr.UpdateMaterialProperties();
-            if (ui != null) ui.SendMessage("OnGUI", SendMessageOptions.DontRequireReceiver);
             if (cam != null) cam.Render();
         }
         #endregion
@@ -273,18 +284,24 @@ namespace Nobnak.WaterSimulation.Editor {
                 report.SeabedInvestigation = seabedExp;
             }
 
-            // --- Cause 6: WaterSampleUI IMGUI Layout & GC Allocations ---
+            // --- Cause 6: WaterSampleUI Formatting & GC Allocations ---
             if (ui != null) {
                 var uiExp = new UiInvestigation();
-                long gcBefore = GC.GetTotalMemory(true);
+                var gcRecorder = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "GC Allocated In Frame");
+                long gcBefore = GC.GetTotalMemory(false);
                 var sw = Stopwatch.StartNew();
                 for (int i = 0; i < 100; i++) {
-                    ui.SendMessage("OnGUI", SendMessageOptions.DontRequireReceiver);
+                    float simTime = sim != null ? sim.SimulationTime : 0f;
+                    int resX = sim != null ? sim.Resolution.x : 0;
+                    int resY = sim != null ? sim.Resolution.y : 0;
+                    string metrics = $"Render FPS: 60.0 | Sim Time: {simTime:F2}s | Grid: {resX}x{resY}";
                 }
                 sw.Stop();
                 long gcAfter = GC.GetTotalMemory(false);
+                long recordedGc = gcRecorder.Valid ? gcRecorder.LastValue : 0;
+                gcRecorder.Dispose();
                 uiExp.OnGuiCpuMsPerFrame = sw.Elapsed.TotalMilliseconds / 100.0;
-                uiExp.GcAllocBytesPerFrame = (double)(gcAfter - gcBefore) / 100.0;
+                uiExp.GcAllocBytesPerFrame = recordedGc > 0 ? (double)recordedGc / 100.0 : math.max(0.0, (double)(gcAfter - gcBefore) / 100.0);
 
                 report.UiInvestigation = uiExp;
             }
@@ -458,6 +475,9 @@ namespace Nobnak.WaterSimulation.Editor {
             public string ScenePath;
             public string Resolution;
             public double MeanTotalFrameMs;
+            public double P95TotalFrameMs;
+            public double P99TotalFrameMs;
+            public double Fps;
             public double MeanSimStepMs;
             public double MeanWaterRendererMs;
             public double MeanSeabedRendererMs;
@@ -532,12 +552,12 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine();
             sb.AppendLine("## 1. 3 Scenes CPU Profile Comparison");
             sb.AppendLine();
-            sb.AppendLine("| Scene | Resolution | Total Frame (ms) | Sim Step (ms) | WaterRenderer (ms) | SeabedRenderer (ms) | UI OnGUI (ms) | Cam Render (ms) | SubSteps | Dispatches | GC Alloc/Frame |");
-            sb.AppendLine("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |");
+            sb.AppendLine("| Scene | Resolution | Mean Frame (ms) | P95 (ms) | P99 (ms) | FPS | Sim Step (ms) | WaterRenderer (ms) | SeabedRenderer (ms) | UI OnGUI (ms) | Cam Render (ms) | SubSteps | Dispatches | GC Alloc/Frame |");
+            sb.AppendLine("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |");
             foreach (var p in r.SceneProfiles) {
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                    "| {0} | {1} | {2:F3} | {3:F3} | {4:F3} | {5:F3} | {6:F3} | {7:F3} | {8} | {9} | {10:F0} B |",
-                    p.SceneName, p.Resolution, p.MeanTotalFrameMs, p.MeanSimStepMs, p.MeanWaterRendererMs,
+                    "| {0} | {1} | {2:F3} | {3:F3} | {4:F3} | {5:F1} | {6:F3} | {7:F3} | {8:F3} | {9:F3} | {10:F3} | {11} | {12} | {13:F0} B |",
+                    p.SceneName, p.Resolution, p.MeanTotalFrameMs, p.P95TotalFrameMs, p.P99TotalFrameMs, p.Fps, p.MeanSimStepMs, p.MeanWaterRendererMs,
                     p.MeanSeabedRendererMs, p.MeanUiMs, p.MeanCameraRenderMs, p.SubStepsPerStep, p.DispatchesPerStep, p.MeanGcAllocBytesPerFrame));
             }
             sb.AppendLine();

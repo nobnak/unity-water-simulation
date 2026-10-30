@@ -623,7 +623,7 @@
         "legacy_mass_after": 0.03906,
         "legacy_mass_gain_pct": 11.599999999999987,
         "fct_min": 0.0,
-        "fct_max": 0.035
+        "fct_max": 0.02282
       },
       "narrow_035m": {
         "mass_before": 0.35,
@@ -632,7 +632,7 @@
         "legacy_mass_after": 0.39059999999999995,
         "legacy_mass_gain_pct": 11.599999999999987,
         "fct_min": 0.0,
-        "fct_max": 0.35
+        "fct_max": 0.2282
       },
       "boundary_impulse": {
         "mass_before": 2.0,
@@ -738,6 +738,60 @@
         "damping_ratio_pct": 67.11312104245523
       },
       "theoretical_monotonicity_summary": "The 4th-order biharmonic stencil [-kappa, 4*kappa, 1-6*kappa, 4*kappa, -kappa] possesses negative side lobes (-kappa). While Fourier modes satisfy L^2 stability G(k) in [0, 1], the operator violates spatial monotonicity (TVD / Maximum Principle). Sharp gradients (sigma < 1.5 cells) and step discontinuities produce O(kappa) undershoots/overshoots (e.g. -0.058 on unit delta impulse)."
+    },
+    "fct_flux_signs_and_mode_damping": {
+      "flux_divergence_vs_direct_d4_max_diff": 4.336808689942018e-18,
+      "flux_divergence_is_exact": true,
+      "mass_conservation_sum_div_f": 1.1926223897340549e-18,
+      "all_modes_non_amplifying": true,
+      "max_overall_damping_ratio": 0.9999645562768786,
+      "mode_sweeps": [
+        {
+          "period_cells": 2,
+          "min_damping_ratio": 0.07199999999999986,
+          "max_damping_ratio": 0.6160000000000069,
+          "avg_damping_ratio": 0.3066666666666741,
+          "analytical_linear_ratio_dt004": 0.23199999999999998,
+          "is_strictly_non_amplifying": true,
+          "is_effectively_damped": true
+        },
+        {
+          "period_cells": 4,
+          "min_damping_ratio": 0.7679999999999959,
+          "max_damping_ratio": 0.904000000000001,
+          "avg_damping_ratio": 0.826666666666666,
+          "analytical_linear_ratio_dt004": 0.8079999999999999,
+          "is_strictly_non_amplifying": true,
+          "is_effectively_damped": true
+        },
+        {
+          "period_cells": 8,
+          "min_damping_ratio": 0.9800975464705591,
+          "max_damping_ratio": 0.9917645019878176,
+          "avg_damping_ratio": 0.9851303508113368,
+          "analytical_linear_ratio_dt004": 0.9835290039756343,
+          "is_strictly_non_amplifying": true,
+          "is_effectively_damped": true
+        },
+        {
+          "period_cells": 16,
+          "min_damping_ratio": 0.9986557164675978,
+          "max_damping_ratio": 0.999443744745213,
+          "avg_damping_ratio": 0.9989956502344126,
+          "analytical_linear_ratio_dt004": 0.9988874894904256,
+          "is_strictly_non_amplifying": true,
+          "is_effectively_damped": true
+        },
+        {
+          "period_cells": 32,
+          "min_damping_ratio": 0.9999143443357897,
+          "max_damping_ratio": 0.9999645562768786,
+          "avg_damping_ratio": 0.9999360043888097,
+          "analytical_linear_ratio_dt004": 0.9999291125537569,
+          "is_strictly_non_amplifying": true,
+          "is_effectively_damped": false
+        }
+      ]
     }
   },
   "wave_time_convergence": [

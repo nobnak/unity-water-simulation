@@ -196,6 +196,8 @@ namespace Nobnak.WaterSimulation.Editor {
             float prevSubstepTrackedPeak = 0f;
             float prevPrevSubstepTrackedPeak = 0f;
             float prevSubstepCapePeak = 0f;
+            int prevTrackedPeakX = -1;
+            int prevTrackedPeakY = -1;
 
             int globalParityFlips = 0;
             int trackedParityFlips = 0;
@@ -403,12 +405,10 @@ namespace Nobnak.WaterSimulation.Editor {
                             }
                         }
 
-                        // Check target switching: if global peak jumped significantly away from tracked crest
-                        bool targetSwitched = false;
-                        if (math.abs(globalPeakY - trackedPeakY) > 10 || math.abs(globalPeakX - trackedPeakX) > 30) {
-                            targetSwitched = true;
-                            totalTargetSwitchCount++;
-                        }
+                        // Check target switching: true discontinuous jump in tracked crest trajectory
+                        bool targetSwitched = (prevTrackedPeakY >= 0 && math.abs(trackedPeakY - prevTrackedPeakY) > 8);
+                        if (targetSwitched) totalTargetSwitchCount++;
+                        bool isGlobalPeak = (math.abs(globalPeakY - trackedPeakY) <= 10 && math.abs(globalPeakX - trackedPeakX) <= 30);
 
                         // Along-crest sawtooth d2 (2dx mode)
                         float crestSawtoothMax = 0f;
@@ -419,12 +419,15 @@ namespace Nobnak.WaterSimulation.Editor {
                             }
                         }
 
-                        // Cape along-crest sawtooth d2
+                        // Cape along-crest sawtooth d2: only evaluate if tracked crest is inside Cape latitude [capeMinY, capeMaxY]
                         float capeSawtoothMax = 0f;
                         for (int x = capeMinX + 1; x < capeMaxX - 1; x++) {
                             if (isValidCrest[x - 1] && isValidCrest[x] && isValidCrest[x + 1]) {
-                                float d2 = math.abs(crestEta[x + 1] - 2f * crestEta[x] + crestEta[x - 1]);
-                                if (d2 > capeSawtoothMax) capeSawtoothMax = d2;
+                                int cy = crestY[x];
+                                if (cy >= capeMinY && cy <= capeMaxY) {
+                                    float d2 = math.abs(crestEta[x + 1] - 2f * crestEta[x] + crestEta[x - 1]);
+                                    if (d2 > capeSawtoothMax) capeSawtoothMax = d2;
+                                }
                             }
                         }
                         if (capeSawtoothMax > maxCapeSawtoothD2) maxCapeSawtoothD2 = capeSawtoothMax;
@@ -453,6 +456,8 @@ namespace Nobnak.WaterSimulation.Editor {
                         prevPrevSubstepTrackedPeak = prevSubstepTrackedPeak;
                         prevSubstepTrackedPeak = trackedCrestMaxEta;
                         prevSubstepCapePeak = capeMaxPeak;
+                        prevTrackedPeakX = trackedPeakX;
+                        prevTrackedPeakY = trackedPeakY;
 
                         float peakH = depthGrid[globalPeakY * W + globalPeakX];
                         float c = math.sqrt(g * math.max(0.01f, peakH + globalMaxPeak));
@@ -556,6 +561,7 @@ namespace Nobnak.WaterSimulation.Editor {
                             cape_jump = capeJump,
                             cfl = cfl,
                             target_switched = targetSwitched,
+                            is_global_peak = isGlobalPeak,
                             split_count = frameSplitCount,
                             lost_count = frameLostCount
                         });
@@ -979,6 +985,7 @@ namespace Nobnak.WaterSimulation.Editor {
             public float cape_jump;
             public float cfl;
             public bool target_switched;
+            public bool is_global_peak;
             public int split_count;
             public int lost_count;
         }

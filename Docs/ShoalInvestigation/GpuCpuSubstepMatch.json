@@ -1,8 +1,8 @@
 ﻿{
     "test": "GPU Compute Shader vs CPU Continuum Solver Verification Suite",
-    "git_commit": "92e56d86b57a13507a56a2ae08babe5678498b92",
+    "git_commit": "9427acc86f8b3f9429e7d9dbeaec66a99637ffa3",
     "is_dirty": true,
-    "shader_hash": "230b7b7ef548151cc39fac00d7f106c3630e1cb8a1924c74a0c64c3123842425",
+    "shader_hash": "7cc906750fa25ee5de7942c20e6cfdde171cdab7c7bda4120bf1399c143eac86",
     "grid_size": 32,
     "dx": 1.5625,
     "dz": 1.5625,
@@ -108,37 +108,37 @@
                 },
                 {
                     "stage": "7_FilterX_Eta",
-                    "max_abs_error": 7.525086402893066e-7,
+                    "max_abs_error": 3.627501428127289e-7,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "7_FilterX_U",
-                    "max_abs_error": 0.000001430511474609375,
+                    "max_abs_error": 6.351619958877564e-7,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "7_FilterX_W",
-                    "max_abs_error": 0.0000012796372175216675,
+                    "max_abs_error": 5.019828677177429e-7,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_EtaFinal",
-                    "max_abs_error": 0.000001087784767150879,
+                    "max_abs_error": 2.384185791015625e-7,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_UFinal",
-                    "max_abs_error": 0.000001730397343635559,
+                    "max_abs_error": 4.2712781578302386e-7,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_WFinal",
-                    "max_abs_error": 0.0000017825514078140259,
+                    "max_abs_error": 3.6694109439849856e-7,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 }
@@ -148,7 +148,7 @@
             "wall_velocities_strictly_zero": true,
             "mass_before": 65.1920166015625,
             "mass_after": 64.78423309326172,
-            "mass_delta": 0.40778419375419619,
+            "mass_delta": 0.4077840745449066,
             "nan_free": true,
             "all_passed": true
         },
@@ -248,37 +248,37 @@
                 },
                 {
                     "stage": "7_FilterX_Eta",
-                    "max_abs_error": 7.525086402893066e-7,
+                    "max_abs_error": 3.6135315895080569e-7,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "7_FilterX_U",
-                    "max_abs_error": 0.000001434236764907837,
+                    "max_abs_error": 6.332993507385254e-7,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "7_FilterX_W",
-                    "max_abs_error": 0.0000012777745723724366,
+                    "max_abs_error": 5.00120222568512e-7,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_EtaFinal",
-                    "max_abs_error": 0.000001080334186553955,
+                    "max_abs_error": 2.2351741790771485e-7,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_UFinal",
-                    "max_abs_error": 0.0000017285346984863282,
+                    "max_abs_error": 4.278845153748989e-7,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_WFinal",
-                    "max_abs_error": 0.000001778826117515564,
+                    "max_abs_error": 3.688037395477295e-7,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 }
@@ -288,7 +288,7 @@
             "wall_velocities_strictly_zero": true,
             "mass_before": 65.1920166015625,
             "mass_after": 64.89912414550781,
-            "mass_delta": 0.2928979992866516,
+            "mass_delta": 0.29289793968200686,
             "nan_free": true,
             "all_passed": true
         },
@@ -298,7 +298,7 @@
             "stages": [
                 {
                     "stage": "Standalone_Filter_Eta",
-                    "max_abs_error": 1.4901161193847657e-8,
+                    "max_abs_error": 2.9802322387695315e-8,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
@@ -320,7 +320,7 @@
             "wall_velocities_strictly_zero": true,
             "mass_before": 7.573747158050537,
             "mass_after": 7.573747158050537,
-            "mass_delta": 4.12655936088413e-8,
+            "mass_delta": 2.433807821944356e-9,
             "nan_free": true,
             "all_passed": true
         },
@@ -330,19 +330,19 @@
             "stages": [
                 {
                     "stage": "Equivalence_Eta",
-                    "max_abs_error": 0.000001714332029223442,
+                    "max_abs_error": 1.3969838619232178e-9,
                     "tolerance": 0.000009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "Equivalence_U",
-                    "max_abs_error": 2.0761271457558906e-7,
+                    "max_abs_error": 7.257767720147967e-10,
                     "tolerance": 0.000009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "Equivalence_W",
-                    "max_abs_error": 0.0000028418762667570265,
+                    "max_abs_error": 1.3620592653751374e-8,
                     "tolerance": 0.000009999999747378752,
                     "passed": true
                 },
@@ -373,19 +373,19 @@
                     "stages": [
                         {
                             "stage": "Substep_0_EtaFinal",
-                            "max_abs_error": 0.000001087784767150879,
+                            "max_abs_error": 2.384185791015625e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_0_UFinal",
-                            "max_abs_error": 0.000001730397343635559,
+                            "max_abs_error": 4.2712781578302386e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_0_WFinal",
-                            "max_abs_error": 0.0000017825514078140259,
+                            "max_abs_error": 3.6694109439849856e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         }
@@ -405,19 +405,19 @@
                     "stages": [
                         {
                             "stage": "Substep_1_EtaFinal",
-                            "max_abs_error": 0.000003822147846221924,
+                            "max_abs_error": 3.632158041000366e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_1_UFinal",
-                            "max_abs_error": 0.000006362795829772949,
+                            "max_abs_error": 6.413320079445839e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_1_WFinal",
-                            "max_abs_error": 0.000006970018148422241,
+                            "max_abs_error": 5.578622221946716e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         }
@@ -437,19 +437,19 @@
                     "stages": [
                         {
                             "stage": "Substep_2_EtaFinal",
-                            "max_abs_error": 0.000011578202247619629,
+                            "max_abs_error": 4.917383193969727e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_2_UFinal",
-                            "max_abs_error": 0.000020187348127365112,
+                            "max_abs_error": 7.504131644964218e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_2_WFinal",
-                            "max_abs_error": 0.00002203136682510376,
+                            "max_abs_error": 7.436610758304596e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         }
@@ -469,19 +469,19 @@
                     "stages": [
                         {
                             "stage": "Substep_3_EtaFinal",
-                            "max_abs_error": 0.00003574788570404053,
+                            "max_abs_error": 5.960464477539063e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_3_UFinal",
-                            "max_abs_error": 0.00006422214210033417,
+                            "max_abs_error": 7.478520274162293e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_3_WFinal",
-                            "max_abs_error": 0.00006486847996711731,
+                            "max_abs_error": 8.987262845039368e-7,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         }

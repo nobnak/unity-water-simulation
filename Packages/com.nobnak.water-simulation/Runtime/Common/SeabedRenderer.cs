@@ -53,6 +53,16 @@ namespace Nobnak.WaterSimulation {
         private Vector2Int lastMeshResolution;
         private bool lastIncludeBasinWalls;
         private float lastBasinBottomDepth;
+        private bool propertiesDirty = true;
+        private Texture lastBathymetryTex;
+        private Vector2 lastPropAreaSize;
+        private VisualMode lastVisualMode;
+        private Color lastShallowColor;
+        private Color lastDeepColor;
+        private Color lastWallColor;
+        private float lastContourInterval;
+        private float lastPropBottomDepth;
+        private float lastHeightExaggeration;
         #endregion
 
         #region properties
@@ -113,6 +123,10 @@ namespace Nobnak.WaterSimulation {
             UpdateMaterialProperties();
         }
 
+        private void OnValidate() {
+            propertiesDirty = true;
+        }
+
         private void OnDisable() {
             if (generatedMesh != null) {
                 DestroyImmediate(generatedMesh);
@@ -129,7 +143,7 @@ namespace Nobnak.WaterSimulation {
                 EnsureMesh();
             }
 
-            UpdateMaterialProperties();
+            UpdateMaterialProperties(false);
         }
         #endregion
 
@@ -137,23 +151,42 @@ namespace Nobnak.WaterSimulation {
         public void SetTargetSimulation(WaterSimulationBase simulation) {
             targetSimulation = simulation;
             EnsureMesh();
-            UpdateMaterialProperties();
+            UpdateMaterialProperties(true);
         }
 
         public void SetVisualMode(VisualMode mode) {
             visualizationMode = mode;
-            UpdateMaterialProperties();
+            UpdateMaterialProperties(true);
         }
 
         public void UpdateMaterialProperties() {
-            if (meshRenderer == null) return;
-            if (propBlock == null) propBlock = new MaterialPropertyBlock();
+            UpdateMaterialProperties(false);
+        }
 
+        public void UpdateMaterialProperties(bool force) {
+            if (meshRenderer == null) return;
+            var currentTex = targetSimulation != null ? targetSimulation.BathymetryTexture : null;
+            Vector2 currentAreaSize = targetSimulation != null ? targetSimulation.AreaSize : Vector2.zero;
+
+            if (!force && !propertiesDirty &&
+                currentTex == lastBathymetryTex &&
+                currentAreaSize == lastPropAreaSize &&
+                visualizationMode == lastVisualMode &&
+                shallowColor == lastShallowColor &&
+                deepColor == lastDeepColor &&
+                wallColor == lastWallColor &&
+                math.abs(contourInterval - lastContourInterval) < 1e-4f &&
+                math.abs(basinBottomDepth - lastPropBottomDepth) < 1e-4f &&
+                math.abs(heightExaggeration - lastHeightExaggeration) < 1e-4f) {
+                return;
+            }
+
+            if (propBlock == null) propBlock = new MaterialPropertyBlock();
             meshRenderer.GetPropertyBlock(propBlock);
 
-            if (targetSimulation != null && targetSimulation.BathymetryTexture != null) {
-                propBlock.SetTexture(PropBathymetryTex, targetSimulation.BathymetryTexture);
-                propBlock.SetVector(PropAreaSize, new Vector4(targetSimulation.AreaSize.x, targetSimulation.AreaSize.y, 0f, 0f));
+            if (currentTex != null) {
+                propBlock.SetTexture(PropBathymetryTex, currentTex);
+                propBlock.SetVector(PropAreaSize, new Vector4(currentAreaSize.x, currentAreaSize.y, 0f, 0f));
             }
 
             propBlock.SetFloat(PropVisualMode, (float)visualizationMode);
@@ -165,6 +198,17 @@ namespace Nobnak.WaterSimulation {
             propBlock.SetFloat(PropHeightExaggeration, heightExaggeration);
 
             meshRenderer.SetPropertyBlock(propBlock);
+
+            lastBathymetryTex = currentTex;
+            lastPropAreaSize = currentAreaSize;
+            lastVisualMode = visualizationMode;
+            lastShallowColor = shallowColor;
+            lastDeepColor = deepColor;
+            lastWallColor = wallColor;
+            lastContourInterval = contourInterval;
+            lastPropBottomDepth = basinBottomDepth;
+            lastHeightExaggeration = heightExaggeration;
+            propertiesDirty = false;
         }
         #endregion
 

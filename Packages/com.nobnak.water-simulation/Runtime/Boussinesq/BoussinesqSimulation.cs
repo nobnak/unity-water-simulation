@@ -107,6 +107,10 @@ namespace Nobnak.WaterSimulation {
         private int kernelCorrect;
         private int kernelTridiagonalX;
         private int kernelTridiagonalZ;
+        private int kernelTridiagonalX_128;
+        private int kernelTridiagonalZ_128;
+        private int kernelTridiagonalX_256;
+        private int kernelTridiagonalZ_256;
         private int kernelApplyPredictedDispersion;
         private int kernelApplyDispersion;
         private int kernelImpulse;
@@ -336,7 +340,7 @@ namespace Nobnak.WaterSimulation {
         }
 
         public RenderTexture CurrentStateTexture => CurrentStateTex;
-        public RenderTexture BathymetryTexture => bathymetryTex;
+        public override RenderTexture BathymetryTexture => bathymetryTex;
         public bool CurrentPingPong => pingPong;
         public void BindFrameConstants(float subDt) {
             float dx = areaSize.x / resolution.x;
@@ -411,6 +415,10 @@ namespace Nobnak.WaterSimulation {
             kernelCorrect = boussinesqShader.FindKernel("CSCorrect");
             kernelTridiagonalX = boussinesqShader.FindKernel("CSTridiagonalX");
             kernelTridiagonalZ = boussinesqShader.FindKernel("CSTridiagonalZ");
+            kernelTridiagonalX_128 = boussinesqShader.FindKernel("CSTridiagonalX_128");
+            kernelTridiagonalZ_128 = boussinesqShader.FindKernel("CSTridiagonalZ_128");
+            kernelTridiagonalX_256 = boussinesqShader.FindKernel("CSTridiagonalX_256");
+            kernelTridiagonalZ_256 = boussinesqShader.FindKernel("CSTridiagonalZ_256");
             kernelApplyPredictedDispersion = boussinesqShader.FindKernel("CSApplyPredictedDispersion");
             kernelApplyDispersion = boussinesqShader.FindKernel("CSApplyDispersion");
             kernelImpulse = boussinesqShader.FindKernel("CSAddImpulse");
@@ -607,6 +615,11 @@ namespace Nobnak.WaterSimulation {
             int rowsZ = math.max(1, resolution.y);
             int colsX = math.max(1, resolution.x);
 
+            int kTridiagX = (resolution.x == 128 && kernelTridiagonalX_128 >= 0) ? kernelTridiagonalX_128 :
+                            ((resolution.x == 256 && kernelTridiagonalX_256 >= 0) ? kernelTridiagonalX_256 : kernelTridiagonalX);
+            int kTridiagZ = (resolution.y == 128 && kernelTridiagonalZ_128 >= 0) ? kernelTridiagonalZ_128 :
+                            ((resolution.y == 256 && kernelTridiagonalZ_256 >= 0) ? kernelTridiagonalZ_256 : kernelTridiagonalZ);
+
             int sweeps = math.clamp(dispersionSweeps, 1, 4);
             for (int s = 0; s < sweeps; s++) {
                 if (s > 0) {
@@ -619,17 +632,17 @@ namespace Nobnak.WaterSimulation {
                 }
 
                 // Pass 1: CSTridiagonalX along rows (solves (I - beta_x d_x^2) a* = f)
-                boussinesqShader.SetTexture(kernelTridiagonalX, PropBathymetryTex, bathymetryTex);
-                boussinesqShader.SetTexture(kernelTridiagonalX, PropForceTex, forceTex);
-                boussinesqShader.SetTexture(kernelTridiagonalX, PropAccelPong, accelTexB);
-                boussinesqShader.Dispatch(kernelTridiagonalX, rowsZ, 1, 1);
+                boussinesqShader.SetTexture(kTridiagX, PropBathymetryTex, bathymetryTex);
+                boussinesqShader.SetTexture(kTridiagX, PropForceTex, forceTex);
+                boussinesqShader.SetTexture(kTridiagX, PropAccelPong, accelTexB);
+                boussinesqShader.Dispatch(kTridiagX, rowsZ, 1, 1);
                 lastDispatchCount++;
 
                 // Pass 2: CSTridiagonalZ along columns (solves (I - beta_z d_z^2) a = a*)
-                boussinesqShader.SetTexture(kernelTridiagonalZ, PropBathymetryTex, bathymetryTex);
-                boussinesqShader.SetTexture(kernelTridiagonalZ, PropAccelPong, accelTexB);
-                boussinesqShader.SetTexture(kernelTridiagonalZ, PropAccelPing, accelTexA);
-                boussinesqShader.Dispatch(kernelTridiagonalZ, colsX, 1, 1);
+                boussinesqShader.SetTexture(kTridiagZ, PropBathymetryTex, bathymetryTex);
+                boussinesqShader.SetTexture(kTridiagZ, PropAccelPong, accelTexB);
+                boussinesqShader.SetTexture(kTridiagZ, PropAccelPing, accelTexA);
+                boussinesqShader.Dispatch(kTridiagZ, colsX, 1, 1);
                 lastDispatchCount++;
             }
         }

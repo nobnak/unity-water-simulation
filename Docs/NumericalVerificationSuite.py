@@ -134,8 +134,10 @@ def verify_filter():
     # 1. New conservative FCT filter (mass delta == 0, TVD bounded)
     # 2. Legacy cell-wise clamp (mass creation bug demonstration)
     # 3. Raw linear biharmonic (Gibbs undershoot demonstration)
+    # 4. Independent FCT flux signs and mode damping verification
     fct_conservation_results = verify_filter_conservative_fct()
     extrema_results = verify_filter_extrema_and_monotonicity()
+    fct_mode_results = verify_fct_flux_signs_and_mode_damping()
 
     return {
         "directional_split_modes": split_modes,
@@ -146,7 +148,8 @@ def verify_filter():
         "random_field_d4_sum": float(sum(d4_rand)),
         "wall_preservation_split": wall_test_results,
         "conservative_fct_verification": fct_conservation_results,
-        "filter_extrema_and_monotonicity": extrema_results
+        "filter_extrema_and_monotonicity": extrema_results,
+        "fct_flux_signs_and_mode_damping": fct_mode_results
     }
 
 def verify_filter_conservative_fct():
@@ -431,7 +434,7 @@ def _apply_1d_conservative_fct(vals, dt=0.008, dx=1.0):
         elif i == N - 2:
             f4 = kappa4 * (-vals[N-3] + 3.0 * vals[N-2] - 2.0 * vals[N-1])
         else:
-            f4 = kappa4 * (vals[i-1] - 3.0 * vals[i] + 3.0 * vals[i+1] - vals[i+2])
+            f4 = kappa4 * (-vals[i-1] + 3.0 * vals[i] - 3.0 * vals[i+1] + vals[i+2])
         return f2, f4
 
     def get_ratio(k, f2_L, f2_R, f4_L, f4_R):
@@ -500,6 +503,112 @@ def _apply_1d_legacy_clamp(vals, dt=0.008, dx=1.0):
         filtered = max(min(c, min(cL, cR)), min(max(c, max(cL, cR)), filtered))
         out[x] = filtered
     return out
+
+def verify_fct_flux_signs_and_mode_damping():
+    """Independent verification of FCT biharmonic flux sign and mode damping.
+    Verifies:
+      1. Limiter-free flux divergence matches direct D4 biharmonic stencil to machine precision (<1e-14).
+      2. Periodic mode damping ratios G = A_out / A_in across periods (2, 4, 8, 16, 32 cells).
+      3. Parameter sweeps over dt (0.002, 0.004, 0.008), dx (0.1953125, 0.5, 1.0), amplitudes (1e-4, 1e-3, 1e-2), and phases (0, pi/4, pi/2, 3pi/4).
+      4. Strict non-amplification: G <= 1.000 for ALL test cases (elimination of the 8-cell 1.4% growth bug).
+      5. Correct Nyquist damping: period 2 cells damped to ~0.232 per step.
+    """
+    N = 64
+    dt = 0.004
+    kappa4 = min(0.058, 12.0 * dt)
+
+    # 1. Direct D4 stencil comparison (no limiter)
+    random.seed(999)
+    test_s = [0.1 * math.sin(2.0 * math.pi * x / 16.0) + 0.05 * math.cos(2.0 * math.pi * x / 4.0) + random.uniform(-0.02, 0.02) for x in range(N)]
+
+    d4_ref = [0.0] * N
+    d4_ref[0] = 2.0 * test_s[0] - 3.0 * test_s[1] + test_s[2]
+    d4_ref[1] = -3.0 * test_s[0] + 6.0 * test_s[1] - 4.0 * test_s[2] + test_s[3]
+    for x in range(2, N - 2):
+        d4_ref[x] = test_s[x-2] - 4.0 * test_s[x-1] + 6.0 * test_s[x] - 4.0 * test_s[x+1] + test_s[x+2]
+    d4_ref[N-2] = test_s[N-4] - 4.0 * test_s[N-3] + 6.0 * test_s[N-2] - 3.0 * test_s[N-1]
+    d4_ref[N-1] = test_s[N-3] - 3.0 * test_s[N-2] + 2.0 * test_s[N-1]
+
+    f4 = [0.0] * (N - 1)
+    f4[0] = kappa4 * (2.0 * test_s[0] - 3.0 * test_s[1] + test_s[2])
+    f4[N-2] = kappa4 * (-test_s[N-3] + 3.0 * test_s[N-2] - 2.0 * test_s[N-1])
+    for i in range(1, N - 2):
+        f4[i] = kappa4 * (-test_s[i-1] + 3.0 * test_s[i] - 3.0 * test_s[i+1] + test_s[i+2])
+
+    div_F = [0.0] * N
+    div_F[0] = f4[0]
+    for x in range(1, N - 1):
+        div_F[x] = f4[x] - f4[x-1]
+    div_F[N-1] = -f4[N-2]
+
+    max_d4_diff = max(abs(div_F[x] - kappa4 * d4_ref[x]) for x in range(N))
+    mass_divergence_sum = abs(sum(div_F))
+
+    # 2. Mode damping sweeps (with full FCT limiter)
+    periods = [2, 4, 8, 16, 32]
+    dts = [0.002, 0.004, 0.008]
+    dxs = [100.0 / 512.0, 0.5, 1.0]
+    amplitudes = [0.0001, 0.001, 0.01]
+    phases = [0.0, math.pi / 4.0, math.pi / 2.0, 3.0 * math.pi / 4.0]
+
+    mode_results = []
+    max_overall_ratio = 0.0
+    all_non_amplifying = True
+
+    for period in periods:
+        k_val = 2.0 * math.pi / period
+        ratio_sum = 0.0
+        ratio_count = 0
+        min_ratio = 1e9
+        max_ratio = -1e9
+
+        for dt_val in dts:
+            for dx_val in dxs:
+                for amp in amplitudes:
+                    for phi in phases:
+                        dom_len = 128
+                        wave_in = [amp * math.cos(k_val * x + phi) for x in range(dom_len)]
+                        wave_out = _apply_1d_conservative_fct(wave_in, dt=dt_val, dx=dx_val)
+
+                        sub_in = wave_in[4:dom_len-4]
+                        sub_out = wave_out[4:dom_len-4]
+
+                        amp_in = (max(sub_in) - min(sub_in)) * 0.5
+                        amp_out = (max(sub_out) - min(sub_out)) * 0.5
+
+                        if amp_in > 1e-12:
+                            ratio = amp_out / amp_in
+                            ratio_sum += ratio
+                            ratio_count += 1
+                            min_ratio = min(min_ratio, ratio)
+                            max_ratio = max(max_ratio, ratio)
+                            if ratio > max_overall_ratio:
+                                max_overall_ratio = ratio
+                            if ratio > 1.0000001:
+                                all_non_amplifying = False
+
+        avg_ratio = ratio_sum / ratio_count if ratio_count > 0 else 0.0
+        k4_ref = min(0.058, 12.0 * 0.004)
+        g_analytical = 1.0 - 16.0 * k4_ref * (math.sin(k_val / 2.0) ** 4)
+
+        mode_results.append({
+            "period_cells": period,
+            "min_damping_ratio": float(min_ratio),
+            "max_damping_ratio": float(max_ratio),
+            "avg_damping_ratio": float(avg_ratio),
+            "analytical_linear_ratio_dt004": float(g_analytical),
+            "is_strictly_non_amplifying": bool(max_ratio <= 1.0000001),
+            "is_effectively_damped": bool(avg_ratio < 0.9999)
+        })
+
+    return {
+        "flux_divergence_vs_direct_d4_max_diff": float(max_d4_diff),
+        "flux_divergence_is_exact": bool(max_d4_diff < 1e-14),
+        "mass_conservation_sum_div_f": float(mass_divergence_sum),
+        "all_modes_non_amplifying": bool(all_non_amplifying),
+        "max_overall_damping_ratio": float(max_overall_ratio),
+        "mode_sweeps": mode_results
+    }
 
 def _apply_1d_biharmonic(f, kappa):
     n = len(f)
@@ -1120,6 +1229,10 @@ if __name__ == "__main__":
     print(f"Filter Directional-Split Wall Normal Vel U: {wall_split['max_lateral_wall_u']:.8f}, W: {wall_split['max_transverse_wall_w']:.8f} (strictly zero: {wall_split['walls_strictly_zero']})")
     extrema = suite['filter']['filter_extrema_and_monotonicity']
     print(f"Filter Monotonicity Check: Impulse Dip={extrema['impulse_test']['undershoot_depth']:.4f}, Step Overshoot={extrema['step_test']['overshoot']:.4f}, Corrugation Damping={extrema['corrugation_damping_test']['damping_ratio_pct']:.1f}%")
+    fct_modes = suite['filter']['fct_flux_signs_and_mode_damping']
+    print(f"FCT Flux Sign & Mode Damping: Exact D4 Divergence={fct_modes['flux_divergence_is_exact']}, All Modes Non-Amplifying={fct_modes['all_modes_non_amplifying']}, Max Ratio={fct_modes['max_overall_damping_ratio']:.6f}")
+    for m in fct_modes['mode_sweeps']:
+        print(f"  Period {m['period_cells']:2d} cells: min={m['min_damping_ratio']:.4f}, avg={m['avg_damping_ratio']:.4f}, max={m['max_damping_ratio']:.4f}, analytical(dt=0.004)={m['analytical_linear_ratio_dt004']:.4f}, non-amplifying={m['is_strictly_non_amplifying']}")
     full_sub = suite["full_substep_simulation_boundary"]
     print("Full Substep Simulation Boundary:")
     print(f"  All solid walls strictly zero: {full_sub['all_solid_walls_strictly_zero']}")

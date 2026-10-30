@@ -39,7 +39,7 @@ namespace Nobnak.WaterSimulation {
         protected int lastSubStepCount = 1;
         protected int lastDispatchCount;
         protected double lastStepCpuTimeMs;
-        private float accumulator;
+        protected float accumulator;
         #endregion
 
         #region properties

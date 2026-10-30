@@ -980,7 +980,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 int idx_ip2 = y * N + (i + 2);
                 float3 s_im1 = new float3(eta[idx_im1], u[idx_im1], w[idx_im1]);
                 float3 s_ip2 = new float3(eta[idx_ip2], u[idx_ip2], w[idx_ip2]);
-                res.f4 = kappa4X * (s_im1 - 3f * s_i + 3f * s_ip1 - s_ip2);
+                res.f4 = kappa4X * (-s_im1 + 3f * s_i - 3f * s_ip1 + s_ip2);
             }
             return res;
         }
@@ -1086,7 +1086,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 int idx_jp2 = (j + 2) * N + x;
                 float3 s_jm1 = new float3(eta[idx_jm1], u[idx_jm1], w[idx_jm1]);
                 float3 s_jp2 = new float3(eta[idx_jp2], u[idx_jp2], w[idx_jp2]);
-                res.f4 = kappa4Z * (s_jm1 - 3f * s_j + 3f * s_jp1 - s_jp2);
+                res.f4 = kappa4Z * (-s_jm1 + 3f * s_j - 3f * s_jp1 + s_jp2);
             }
             return res;
         }

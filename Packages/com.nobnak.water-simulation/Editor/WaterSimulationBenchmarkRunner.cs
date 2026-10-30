@@ -21,7 +21,7 @@ namespace Nobnak.WaterSimulation.Editor {
     /// </summary>
     public static class WaterSimulationBenchmarkRunner {
         private const string OutputCsvPath = "Docs/BenchmarkResults.csv";
-        private const string CommitHash = "f2c9269";
+        private static string CommitHash => GetGitCommitHash();
 
         [MenuItem("Tools/Water Simulation/Run Benchmark & Verification Suite", false, 51)]
         public static void RunBenchmarkSuite() {
@@ -472,6 +472,24 @@ namespace Nobnak.WaterSimulation.Editor {
             if (rt == null) return;
             var req = AsyncGPUReadback.Request(rt, 0, 0, 1, 0, 1, 0, 1);
             req.WaitForCompletion();
+        }
+
+        private static string GetGitCommitHash() {
+            try {
+                var startInfo = new ProcessStartInfo("git", "rev-parse --short HEAD") {
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using (var process = Process.Start(startInfo)) {
+                    if (process != null) {
+                        string output = process.StandardOutput.ReadToEnd().Trim();
+                        process.WaitForExit(1000);
+                        if (!string.IsNullOrEmpty(output)) return output;
+                    }
+                }
+            } catch { }
+            return "unknown";
         }
     }
 }

@@ -3,6 +3,10 @@
 #pragma kernel CSCorrect
 #pragma kernel CSTridiagonalX
 #pragma kernel CSTridiagonalZ
+#pragma kernel CSTridiagonalX_128
+#pragma kernel CSTridiagonalZ_128
+#pragma kernel CSTridiagonalX_256
+#pragma kernel CSTridiagonalZ_256
 #pragma kernel CSApplyPredictedDispersion
 #pragma kernel CSApplyDispersion
 #pragma kernel CSAddImpulse
@@ -326,10 +330,7 @@ void CSCorrect(uint3 id : SV_DispatchThreadID) {
 
 // 3a. ADI Tridiagonal Parallel Cyclic Reduction (PCR) along X for Peregrine momentum dispersion:
 // Solves (I - beta_x d_x^2) a* = f with decoupled normal (Dirichlet) and tangential (Neumann) boundary rows.
-[numthreads(MAX_TRIDIAG_N, 1, 1)]
-void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
-    uint i = gtid.x;
-    uint j = gid.x;
+void RunTridiagonalX(uint i, uint j, const uint pcrSteps) {
     uint W = (uint)_Width;
     uint H = (uint)_Height;
 
@@ -392,9 +393,8 @@ void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     gs_d[i] = d;
     GroupMemoryBarrierWithGroupSync();
 
-    // Parallel Cyclic Reduction (9 steps for MAX_TRIDIAG_N = 512)
     [unroll]
-    for (uint s = 0u; s < 9u; s++) {
+    for (uint s = 0u; s < pcrSteps; s++) {
         uint stride = 1u << s;
         float2 aNew = a;
         float2 bNew = b;
@@ -454,12 +454,24 @@ void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     }
 }
 
+[numthreads(MAX_TRIDIAG_N, 1, 1)]
+void CSTridiagonalX(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
+    RunTridiagonalX(gtid.x, gid.x, 9u);
+}
+
+[numthreads(128, 1, 1)]
+void CSTridiagonalX_128(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
+    RunTridiagonalX(gtid.x, gid.x, 7u);
+}
+
+[numthreads(256, 1, 1)]
+void CSTridiagonalX_256(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
+    RunTridiagonalX(gtid.x, gid.x, 8u);
+}
+
 // 3b. ADI Tridiagonal Parallel Cyclic Reduction (PCR) along Z for Peregrine momentum dispersion:
 // Solves (I - beta_z d_z^2) a = a* with decoupled normal (Dirichlet) and tangential (Neumann) boundary rows.
-[numthreads(MAX_TRIDIAG_N, 1, 1)]
-void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
-    uint j = gtid.x;
-    uint i = gid.x;
+void RunTridiagonalZ(uint j, uint i, const uint pcrSteps) {
     uint W = (uint)_Width;
     uint H = (uint)_Height;
 
@@ -518,7 +530,7 @@ void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     GroupMemoryBarrierWithGroupSync();
 
     [unroll]
-    for (uint s = 0u; s < 9u; s++) {
+    for (uint s = 0u; s < pcrSteps; s++) {
         uint stride = 1u << s;
         float2 aNew = a;
         float2 bNew = b;
@@ -579,6 +591,21 @@ void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
         }
         _AccelPing[pos] = aFinal;
     }
+}
+
+[numthreads(MAX_TRIDIAG_N, 1, 1)]
+void CSTridiagonalZ(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
+    RunTridiagonalZ(gtid.x, gid.x, 9u);
+}
+
+[numthreads(128, 1, 1)]
+void CSTridiagonalZ_128(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
+    RunTridiagonalZ(gtid.x, gid.x, 7u);
+}
+
+[numthreads(256, 1, 1)]
+void CSTridiagonalZ_256(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
+    RunTridiagonalZ(gtid.x, gid.x, 8u);
 }
 
 // 4. Apply 2nd-order Heun/MacCormack dispersed acceleration 0.5*(a^(1) + a^(2)) to velocity and apply sponge layer
@@ -811,7 +838,7 @@ FaceFlux3 GetFaceFluxX(int i, int y) {
     } else {
         float3 s_im1 = _StateIn[int2(i - 1, y)].xyz;
         float3 s_ip2 = _StateIn[int2(i + 2, y)].xyz;
-        res.f4 = kappa4X * (s_im1 - 3.0 * s_i + 3.0 * s_ip1 - s_ip2);
+        res.f4 = kappa4X * (-s_im1 + 3.0 * s_i - 3.0 * s_ip1 + s_ip2);
     }
     return res;
 }
@@ -878,7 +905,7 @@ FaceFlux3 GetFaceFluxZ(int j, int x) {
     } else {
         float3 s_jm1 = _StateIn[int2(x, j - 1)].xyz;
         float3 s_jp2 = _StateIn[int2(x, j + 2)].xyz;
-        res.f4 = kappa4Z * (s_jm1 - 3.0 * s_j + 3.0 * s_jp1 - s_jp2);
+        res.f4 = kappa4Z * (-s_jm1 + 3.0 * s_j - 3.0 * s_jp1 + s_jp2);
     }
     return res;
 }
