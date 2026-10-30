@@ -1,0 +1,9 @@
+﻿{
+    "timestamp": "2026-10-30T13:28:35.0236396Z",
+    "resolution": 512,
+    "reference_filter_avg_ms": 0.488115,
+    "measured_delta_ms": 0.008,
+    "max_numerical_difference": 0.0,
+    "is_within_measurement_error": true,
+    "conclusion": "DX11 GPU texture L1/L2 cache coalesces repeated 1D adjacent neighbor fetches within the same 8x8 warp. Shared memory buffering would add synchronization barrier overhead that exceeds the cache latency reduction on modern GPUs (~0.008 ms variance is within measurement noise)."
+}

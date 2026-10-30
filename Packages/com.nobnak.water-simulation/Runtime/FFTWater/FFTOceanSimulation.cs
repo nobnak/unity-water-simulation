@@ -166,8 +166,12 @@ namespace Nobnak.WaterSimulation {
                     accumulator -= fixedTimeStep;
                     count++;
                 }
-                if (totalDt > 0f) {
+                if (count > 0) {
                     Step(totalDt);
+                    if (count > 1) {
+                        stepCount += (count - 1);
+                        lastSubStepCount = count;
+                    }
                 }
             } else {
                 Step(dt);
@@ -312,6 +316,7 @@ namespace Nobnak.WaterSimulation {
             lastSubStepCount = 1;
             FlushInitialSpectrumIfDirty();
 
+            float targetTime = simulationTime + dt;
             int n = resolution.x;
             float radW = windDirectionDegrees * Mathf.Deg2Rad;
             Vector2 windDir = new Vector2(math.cos(radW), math.sin(radW));
@@ -320,7 +325,7 @@ namespace Nobnak.WaterSimulation {
 
             fftShader.SetInt(PropN, n);
             fftShader.SetFloat(PropLengthScale1, areaSize.x);
-            fftShader.SetFloat(PropTime, simulationTime);
+            fftShader.SetFloat(PropTime, targetTime);
             fftShader.SetFloat(PropWindSpeed, windSpeed);
             fftShader.SetVector(PropWindDir, new Vector4(windDir.x, windDir.y, 0, 0));
             fftShader.SetFloat(PropSwellStrength, swellStrength);

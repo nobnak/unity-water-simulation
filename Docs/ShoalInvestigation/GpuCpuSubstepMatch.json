@@ -1,8 +1,11 @@
 ﻿{
     "test": "GPU Compute Shader vs CPU Continuum Solver Verification Suite",
-    "git_commit": "9427acc86f8b3f9429e7d9dbeaec66a99637ffa3",
+    "git_commit": "d5446df54a4190ada77c30a90e7395949bf0ade0",
     "is_dirty": true,
     "shader_hash": "7cc906750fa25ee5de7942c20e6cfdde171cdab7c7bda4120bf1399c143eac86",
+    "csharp_boussinesq_sim_hash": "63345327df368596da70242f95158e69337c07d9877602a34154603d19eda3bb",
+    "csharp_probe_hash": "0a3312069b4418ce29db7e1e85777a94b208d2acc70a470a3413886fb82d5719",
+    "csharp_verifier_hash": "f275d182868ed57907b4b3a41ec23eed5ae59294d90795fdd317a160bed69a4f",
     "grid_size": 32,
     "dx": 1.5625,
     "dz": 1.5625,

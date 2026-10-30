@@ -1,50 +1,34 @@
-﻿# CPU Bottleneck Profiling & Causal Investigation Report
+﻿# CPU Bottleneck Profiling & Real Frame Performance Report
 
-- **Timestamp**: 2026-10-30 21:08:56
-- **CPU**: Intel(R) Core(TM) Ultra 7 258V (8 cores)
-- **GPU / API**: Intel(R) Arc(TM) 140V GPU (16GB) / Direct3D11
-- **Unity**: 6000.3.27f1
+- **Timestamp**: `2026-10-30 22:34:25`
+- **GPU**: `Intel(R) Arc(TM) 140V GPU (16GB)` (Direct3D11)
+- **CPU**: `Intel(R) Core(TM) Ultra 7 258V` (8 logical cores)
+- **Unity Version**: `6000.3.27f1`
 
-## 1. 3 Scenes CPU Profile Comparison
+## 1. Real Frame Performance Across Sample Scenes
 
-| Scene | Resolution | Mean Frame (ms) | P95 (ms) | P99 (ms) | FPS | Sim Step (ms) | WaterRenderer (ms) | SeabedRenderer (ms) | UI OnGUI (ms) | Cam Render (ms) | SubSteps | Dispatches | GC Alloc/Frame |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Scene 01 (WaveEquation) | 512x512 | 0.666 | 1.044 | 3.425 | 1500.7 | 0.024 | 0.002 | 0.000 | 0.000 | 0.637 | 3 | 4 | 0 B |
-| Scene 02 (Boussinesq) | 512x512 | 0.809 | 1.191 | 1.745 | 1236.4 | 0.123 | 0.003 | 0.001 | 0.000 | 0.681 | 4 | 41 | 0 B |
-| Scene 03 (FFTOcean) | 256x256 | 0.698 | 0.946 | 1.119 | 1433.1 | 0.025 | 0.003 | 0.000 | 0.000 | 0.669 | 1 | 4 | 0 B |
+| Scene | Resolution | SubSteps | Total Frame (Mean) | P95 | P99 | FPS | UI Off (Mean) | UI Overhead | CPU Main Thread | GPU Frame | Sync Wait | GC Alloc (UI On) | GC Alloc (UI Off) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Scene 01 (WaveEquation) | 512x512 | 3 | 8.820 ms | 22.444 ms | 41.357 ms | 113.4 | 7.689 ms | 1.131 ms | 取得不可 | 取得不可 (batchmode/platform unexposed) | 取得不可 | 0.0 B | 0.0 B |
+| Scene 02 (Boussinesq) | 512x512 | 4 | 19.355 ms | 19.832 ms | 301.186 ms | 51.7 | 13.984 ms | 5.371 ms | 取得不可 | 取得不可 (batchmode/platform unexposed) | 取得不可 | 0.0 B | 0.0 B |
+| Scene 03 (FFTOcean) | 256x256 | 1 | 4.657 ms | 4.989 ms | 14.119 ms | 214.7 | 4.646 ms | 0.011 ms | 取得不可 | 取得不可 (batchmode/platform unexposed) | 取得不可 | 0.0 B | 0.0 B |
 
-## 2. Scene 02 Multi-Cause Investigation
+## 2. In-Depth Scene 02 Causal Breakdown
 
-### Cause A: CFL Substepping & Step Count
-- 4 SubSteps (Current default, dt=0.016s): **0.325 ms** (41 dispatches)
-- 2 SubSteps (dt=0.008s x2): **0.116 ms**
-- 1 SubStep (dt=0.004s x4): **0.239 ms**
+### Cause 1: CFL Substep Count
+- 4 substeps (default): `0.223 ms/step` (Dispatches: 41)
+- 2 substeps: `0.088 ms/step`
+- 1 substep: `0.168 ms/step`
 
-### Cause B: FixedTimeStep Accumulator Catch-Up (Spiral of Death)
-- 60 FPS (dt=0.016s, 1 step): **0.325 ms**
-- 30 FPS drop (dt=0.033s, 2 steps): **0.650 ms** (8 substeps, 82 dispatches)
-- 20 FPS drop (dt=0.050s, 3 steps): **0.975 ms** (12 substeps, 123 dispatches)
-- Max Lag Clamp (4 steps): **1.300 ms** (16 substeps, 164 dispatches)
+### Cause 2: Compute Dispatch Overhead inside StepPhysics
+- Predictor Dispatch (8x8 threadgroups): `0.0022 ms`
+- CSTridiagonalX Dispatch (rows): `0.0016 ms`
+- CSTridiagonalZ Dispatch (cols): `0.0024 ms`
+- Filter 2-Pass Dispatch: `0.0032 ms`
 
-### Cause C: Compute Shader Dispatch Overhead
-- CSPredict Dispatch: 0.0036 ms
-- CSTridiagonalX Dispatch (512 threadgroups): 0.0023 ms
-- CSTridiagonalZ Dispatch (512 threadgroups): 0.0022 ms
-- CSFilter 2-Pass Dispatch: 0.0043 ms
-
-### Cause D: Redundant Uniform & Constant Bindings
-- 16 Constant Set* calls per substep: 0.0016 ms
-- Over 4 substeps (64 API calls): 0.0066 ms
-
-### Cause E: Graphics.CopyTexture Overhead
-- Single CopyTexture: 0.0020 ms
-- Over 4 substeps (4 copies): 0.0080 ms
-
-### Cause F: SeabedRenderer SharedMaterial Mutation vs PropertyBlock
-- Current Full Update (sharedMaterial mutation): 0.0002 ms
-- PropertyBlock Only: 0.0006 ms
-
-### Cause G: WaterSampleUI IMGUI Overhead & GC Allocations
-- UI OnGUI CPU Time: 0.013 ms/frame
-- UI GC Allocations: 3604 bytes/frame
+### Cause 6: UI OnGUI & GC Allocations
+- Real Frame UI Overhead: `0.3339 ms/frame`
+- GC Allocated In Frame (UI ON): `0 B/frame`
+- GC Allocated In Frame (UI OFF): `0 B/frame`
+- Note: UI ON allocations originate from IMGUI dynamic layout tree (GUI.Box/GUILayout.Label). UI OFF allocates 0 B due to string caching.
 

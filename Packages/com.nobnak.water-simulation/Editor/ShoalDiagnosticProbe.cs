@@ -113,6 +113,9 @@ namespace Nobnak.WaterSimulation.Editor {
             string gitCommit = QueryGitCommit();
             bool isDirty = QueryGitDirty();
             string shaderHash = ComputeShaderSha256(ShaderPath);
+            string csSimHash = ComputeShaderSha256("Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs");
+            string csProbeHash = ComputeShaderSha256("Packages/com.nobnak.water-simulation/Editor/ShoalDiagnosticProbe.cs");
+            string csVerifierHash = ComputeShaderSha256("Packages/com.nobnak.water-simulation/Editor/ShoalGpuCpuVerifier.cs");
 
             Debug.Log($"[ShoalDiagnosticProbe] Initialized Scene 02: {W}x{H}, dx={dx:F4}m, dz={dz:F4}m\n" +
                       $"  Git: {gitCommit} (Dirty: {isDirty}), Shader SHA: {shaderHash}\n" +
@@ -750,6 +753,9 @@ namespace Nobnak.WaterSimulation.Editor {
                 git_commit = gitCommit,
                 is_dirty = isDirty,
                 shader_hash = shaderHash,
+                csharp_boussinesq_sim_hash = csSimHash,
+                csharp_probe_hash = csProbeHash,
+                csharp_verifier_hash = csVerifierHash,
                 filter_mode = filterMode.ToString(),
                 resolution = W,
                 dt = dt,
@@ -895,6 +901,9 @@ namespace Nobnak.WaterSimulation.Editor {
             public string git_commit;
             public bool is_dirty;
             public string shader_hash;
+            public string csharp_boussinesq_sim_hash;
+            public string csharp_probe_hash;
+            public string csharp_verifier_hash;
             public string filter_mode;
             public int resolution;
             public float dt;

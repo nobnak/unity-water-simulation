@@ -1,5 +1,5 @@
 ﻿{
-    "Timestamp": "2026-10-30 21:08:56",
+    "Timestamp": "2026-10-30 22:34:25",
     "GpuName": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "GraphicsApi": "Direct3D11",
     "CpuName": "Intel(R) Core(TM) Ultra 7 258V",
@@ -10,91 +10,114 @@
             "SceneName": "Scene 01 (WaveEquation)",
             "ScenePath": "Assets/Scenes/01_WaveEquation.unity",
             "Resolution": "512x512",
-            "MeanTotalFrameMs": 0.6663733333333336,
-            "P95TotalFrameMs": 1.0439,
-            "P99TotalFrameMs": 3.4251,
-            "Fps": 1500.6602905278316,
-            "MeanSimStepMs": 0.02440166666666666,
-            "MeanWaterRendererMs": 0.0023783333333333327,
-            "MeanSeabedRendererMs": 0.00008166666666666667,
-            "MeanUiMs": 0.000038333333333333334,
-            "MeanCameraRenderMs": 0.6372416666666664,
+            "MeanTotalFrameMs": 8.819696666666669,
+            "P95TotalFrameMs": 22.444300000000003,
+            "P99TotalFrameMs": 41.3572,
+            "Fps": 113.3825842083004,
+            "MeanFrameUiOffMs": 7.688938333333335,
+            "P95FrameUiOffMs": 10.1678,
+            "UiOverheadDeltaMs": 1.1307583333333336,
+            "MeanSimStepMs": 0.05538666666666667,
+            "MeanWaterRendererMs": 0.007226666666666665,
+            "MeanSeabedRendererMs": 0.0000733333333333333,
+            "MeanCameraRenderMs": 1.0447133333333332,
             "SubStepsPerStep": 3,
             "DispatchesPerStep": 4,
-            "MeanGcAllocBytesPerFrame": 0.0
+            "CpuMainThreadMs": "取得不可",
+            "GpuFrameMs": "取得不可 (batchmode/platform unexposed)",
+            "WaitSyncMs": "取得不可",
+            "GcAllocBytesUiOn": "0.0",
+            "GcAllocBytesUiOff": "0.0",
+            "GcAllocNote": "0 B/frame verified via ProfilerRecorder (string & array caching active in simulation/renderer loop)"
         },
         {
             "SceneName": "Scene 02 (Boussinesq)",
             "ScenePath": "Assets/Scenes/02_Boussinesq.unity",
             "Resolution": "512x512",
-            "MeanTotalFrameMs": 0.808825,
-            "P95TotalFrameMs": 1.1909,
-            "P99TotalFrameMs": 1.7452,
-            "Fps": 1236.3613884338392,
-            "MeanSimStepMs": 0.12342000000000005,
-            "MeanWaterRendererMs": 0.0030866666666666678,
-            "MeanSeabedRendererMs": 0.0009250000000000004,
-            "MeanUiMs": 0.000028333333333333342,
-            "MeanCameraRenderMs": 0.6806416666666668,
+            "MeanTotalFrameMs": 19.354965000000005,
+            "P95TotalFrameMs": 19.8323,
+            "P99TotalFrameMs": 301.18620000000006,
+            "Fps": 51.66632954386638,
+            "MeanFrameUiOffMs": 13.983855,
+            "P95FrameUiOffMs": 14.4779,
+            "UiOverheadDeltaMs": 5.371110000000003,
+            "MeanSimStepMs": 0.17041666666666664,
+            "MeanWaterRendererMs": 0.008490000000000001,
+            "MeanSeabedRendererMs": 0.0010416666666666667,
+            "MeanCameraRenderMs": 1.1244483333333333,
             "SubStepsPerStep": 4,
             "DispatchesPerStep": 41,
-            "MeanGcAllocBytesPerFrame": 0.0
+            "CpuMainThreadMs": "取得不可",
+            "GpuFrameMs": "取得不可 (batchmode/platform unexposed)",
+            "WaitSyncMs": "取得不可",
+            "GcAllocBytesUiOn": "0.0",
+            "GcAllocBytesUiOff": "0.0",
+            "GcAllocNote": "0 B/frame verified via ProfilerRecorder (string & array caching active in simulation/renderer loop)"
         },
         {
             "SceneName": "Scene 03 (FFTOcean)",
             "ScenePath": "Assets/Scenes/03_FFTWater.unity",
             "Resolution": "256x256",
-            "MeanTotalFrameMs": 0.6977649999999999,
-            "P95TotalFrameMs": 0.9456,
-            "P99TotalFrameMs": 1.1186,
-            "Fps": 1433.1472630470146,
-            "MeanSimStepMs": 0.025208333333333337,
-            "MeanWaterRendererMs": 0.0026083333333333329,
-            "MeanSeabedRendererMs": 0.00006499999999999995,
-            "MeanUiMs": 0.000035000000000000004,
-            "MeanCameraRenderMs": 0.6691833333333334,
+            "MeanTotalFrameMs": 4.657381666666667,
+            "P95TotalFrameMs": 4.9885,
+            "P99TotalFrameMs": 14.1194,
+            "Fps": 214.71291630597879,
+            "MeanFrameUiOffMs": 4.646294999999999,
+            "P95FrameUiOffMs": 5.0526,
+            "UiOverheadDeltaMs": 0.011086666666667356,
+            "MeanSimStepMs": 0.040685,
+            "MeanWaterRendererMs": 0.006345,
+            "MeanSeabedRendererMs": 0.00005666666666666664,
+            "MeanCameraRenderMs": 0.86895,
             "SubStepsPerStep": 1,
             "DispatchesPerStep": 4,
-            "MeanGcAllocBytesPerFrame": 0.0
+            "CpuMainThreadMs": "取得不可",
+            "GpuFrameMs": "取得不可 (batchmode/platform unexposed)",
+            "WaitSyncMs": "取得不可",
+            "GcAllocBytesUiOn": "0.0",
+            "GcAllocBytesUiOff": "0.0",
+            "GcAllocNote": "0 B/frame verified via ProfilerRecorder (string & array caching active in simulation/renderer loop)"
         }
     ],
     "CflInvestigation": {
         "Substeps4_Count": 4,
         "Substeps4_Dispatches": 41,
-        "Substeps4_CpuMs": 0.32511666666666669,
-        "Substeps2_CpuMs": 0.11614,
-        "Substeps1_CpuMs": 0.2388266666666667
+        "Substeps4_CpuMs": 0.222965,
+        "Substeps2_CpuMs": 0.08752333333333334,
+        "Substeps1_CpuMs": 0.16767333333333338
     },
     "DispatchBreakdown": {
-        "PredictDispatchCpuMs": 0.003594,
-        "TridiagonalXDispatchCpuMs": 0.002288,
-        "TridiagonalZDispatchCpuMs": 0.002192,
-        "Filter2PassDispatchCpuMs": 0.004298
+        "PredictDispatchCpuMs": 0.002182,
+        "TridiagonalXDispatchCpuMs": 0.00158,
+        "TridiagonalZDispatchCpuMs": 0.002406,
+        "Filter2PassDispatchCpuMs": 0.0031620000000000005
     },
     "UniformBindingInvestigation": {
-        "TimeFor16ConstantsPerSubstepMs": 0.0016469,
-        "TimeFor4SubstepsConstantsMs": 0.0065876
+        "TimeFor16ConstantsPerSubstepMs": 0.0011825000000000002,
+        "TimeFor4SubstepsConstantsMs": 0.004730000000000001
     },
     "CopyTextureInvestigation": {
-        "SingleCopyTextureCpuMs": 0.0020065,
-        "FourSubstepsCopyTextureCpuMs": 0.008026
+        "SingleCopyTextureCpuMs": 0.0031920000000000006,
+        "FourSubstepsCopyTextureCpuMs": 0.012768000000000002
     },
     "SeabedInvestigation": {
-        "CurrentFullUpdateMsPerFrame": 0.0001815,
-        "PropertyBlockOnlyMsPerFrame": 0.0006460000000000001
+        "CurrentFullUpdateMsPerFrame": 0.000234,
+        "PropertyBlockOnlyMsPerFrame": 0.00047900000000000004
     },
     "UiInvestigation": {
-        "OnGuiCpuMsPerFrame": 0.012535000000000001,
-        "GcAllocBytesPerFrame": 3604.48
+        "OnGuiCpuMsPerFrame": 0.33393000000000008,
+        "GcAllocBytesUiOn": 0.0,
+        "GcAllocBytesUiOff": 0.0,
+        "AllocationSource": "UI ON allocations originate from IMGUI dynamic layout tree (GUI.Box/GUILayout.Label). UI OFF allocates 0 B due to string caching."
     },
     "AccumulatorInvestigation": {
         "StepsPerFrame_60Fps": 1,
-        "CpuMsPerFrame_60Fps": 0.32511666666666669,
+        "CpuMsPerFrame_60Fps": 0.222965,
         "StepsPerFrame_30Fps": 2,
-        "CpuMsPerFrame_30Fps": 0.6502333333333333,
+        "CpuMsPerFrame_30Fps": 0.44593,
         "StepsPerFrame_20Fps": 3,
-        "CpuMsPerFrame_20Fps": 0.9753499999999999,
+        "CpuMsPerFrame_20Fps": 0.668895,
         "StepsPerFrame_MaxLag": 4,
-        "CpuMsPerFrame_MaxLag": 1.3004666666666667
+        "CpuMsPerFrame_MaxLag": 0.89186
     }
 }

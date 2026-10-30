@@ -1,0 +1,56 @@
+﻿{
+    "timestamp": "2026-10-30T13:28:01.7801904Z",
+    "git_commit": "d5446df",
+    "is_dirty": true,
+    "shader_hash": "7cc906750fa25ee5de7942c20e6cfdde171cdab7c7bda4120bf1399c143eac86",
+    "overall_passed": true,
+    "case_128_flat": {
+        "test_name": "128x128_Flat",
+        "width": 128,
+        "height": 128,
+        "bathymetry_type": "Flat",
+        "passed": true,
+        "max_x_diff": 0.0,
+        "max_z_diff": 0.0,
+        "max_combined_diff": 0.0
+    },
+    "case_128_shoal": {
+        "test_name": "128x128_Shoal",
+        "width": 128,
+        "height": 128,
+        "bathymetry_type": "Shoal",
+        "passed": true,
+        "max_x_diff": 0.0,
+        "max_z_diff": 0.0,
+        "max_combined_diff": 0.0
+    },
+    "case_256_shoal": {
+        "test_name": "256x256_Shoal",
+        "width": 256,
+        "height": 256,
+        "bathymetry_type": "Shoal",
+        "passed": true,
+        "max_x_diff": 0.0,
+        "max_z_diff": 0.0,
+        "max_combined_diff": 0.0
+    },
+    "case_nonsquare_128x256": {
+        "test_name": "128x256_NonSquare_Shoal",
+        "width": 128,
+        "height": 256,
+        "bathymetry_type": "Shoal",
+        "passed": true,
+        "max_x_diff": 0.0,
+        "max_z_diff": 0.0,
+        "max_combined_diff": 0.0
+    },
+    "perf_comparison": {
+        "generic_128_avg_ms": 0.49565000000000006,
+        "specialized_128_avg_ms": 0.14741800000000003,
+        "speedup_128": 3.362208142831947,
+        "generic_256_avg_ms": 0.69259,
+        "specialized_256_avg_ms": 0.36205800000000007,
+        "speedup_256": 1.9129255533643779,
+        "note": "Benchmarked across 50 trials with GPU synchronization. Specialization eliminates redundant synchronization barriers (7 steps for N=128 vs 9 steps for generic, 8 steps for N=256)."
+    }
+}

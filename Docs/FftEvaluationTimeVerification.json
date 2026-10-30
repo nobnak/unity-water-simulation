@@ -1,0 +1,35 @@
+﻿{
+    "timestamp": "2026-10-30T13:27:39.2461699Z",
+    "overall_passed": true,
+    "step_equivalence": {
+        "passed": true,
+        "final_time_sequential": 0.03200000151991844,
+        "final_time_batched": 0.03200000151991844,
+        "step_count_sequential": 2,
+        "step_count_batched": 1,
+        "max_displacement_diff": 0.0,
+        "max_normal_diff": 0.0,
+        "max_foam_diff": 0.0
+    },
+    "catchup_batch": {
+        "passed": true,
+        "target_time": 0.03200000151991844,
+        "evaluated_time": 0.03200000151991844,
+        "expected_step_count": 2,
+        "actual_step_count": 2,
+        "last_substep_count": 2,
+        "max_diff_vs_sequential": 0.0
+    },
+    "pause_param_change": {
+        "passed": true,
+        "time_before_pause": 0.05000000074505806,
+        "time_after_param_change": 0.05000000074505806,
+        "textures_updated_without_time_advance": true
+    },
+    "reset_semantics": {
+        "passed": true,
+        "time_after_reset": 0.0,
+        "step_count_after_reset": 0,
+        "max_diff_vs_t0": 0.0
+    }
+}
