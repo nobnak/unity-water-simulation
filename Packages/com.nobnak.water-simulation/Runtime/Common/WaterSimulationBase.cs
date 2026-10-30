@@ -56,6 +56,7 @@ namespace Nobnak.WaterSimulation {
         public int LastDispatchCount => lastDispatchCount;
         public double LastStepCpuTimeMs => lastStepCpuTimeMs;
         public bool IsRunning => isRunning;
+        public float FixedTimeStep => fixedTimeStep;
         public float TimeScale {
             get => timeScale;
             set => timeScale = math.max(0f, value);
