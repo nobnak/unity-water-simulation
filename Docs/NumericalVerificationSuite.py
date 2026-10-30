@@ -130,7 +130,11 @@ def verify_filter():
     # Directional-split 2-pass wall boundary verification
     wall_test_results = verify_filter_wall_boundary_split()
 
-    # Extremum and monotonicity investigation (testing impulse, Gaussian, step, oblique wave)
+    # Monotonicity and mass conservation comparison:
+    # 1. New conservative FCT filter (mass delta == 0, TVD bounded)
+    # 2. Legacy cell-wise clamp (mass creation bug demonstration)
+    # 3. Raw linear biharmonic (Gibbs undershoot demonstration)
+    fct_conservation_results = verify_filter_conservative_fct()
     extrema_results = verify_filter_extrema_and_monotonicity()
 
     return {
@@ -141,7 +145,86 @@ def verify_filter():
         "impulse_d4_sum": float(sum(d4_impulse)),
         "random_field_d4_sum": float(sum(d4_rand)),
         "wall_preservation_split": wall_test_results,
+        "conservative_fct_verification": fct_conservation_results,
         "filter_extrema_and_monotonicity": extrema_results
+    }
+
+def verify_filter_conservative_fct():
+    """Point 2c: Rigorous standalone test of the new strictly conservative FCT face-flux filter.
+    Verifies machine-precision mass conservation and TVD monotonicity on:
+    - Narrow solitary peak (0.035m and 0.35m)
+    - Single delta impulse at interior and domain boundaries
+    - Heaviside step discontinuity
+    - Random fields
+    - Comparison against legacy cell-wise clamp (confirming elimination of mass creation bug).
+    """
+    dt = 0.008
+    dx = 1.0
+    N = 32
+
+    # 1. Narrow solitary peaks (0.035m and 0.35m)
+    narrow_0035 = [0.0] * N
+    narrow_0035[N // 2] = 0.035
+    fct_0035 = _apply_1d_conservative_fct(narrow_0035, dt, dx)
+    legacy_0035 = _apply_1d_legacy_clamp(narrow_0035, dt, dx)
+
+    narrow_035 = [0.0] * N
+    narrow_035[N // 2] = 0.35
+    fct_035 = _apply_1d_conservative_fct(narrow_035, dt, dx)
+    legacy_035 = _apply_1d_legacy_clamp(narrow_035, dt, dx)
+
+    # 2. Boundary impulses (x=0, x=N-1)
+    boundary_imp = [0.0] * N
+    boundary_imp[0] = 1.0
+    boundary_imp[N - 1] = 1.0
+    fct_bound = _apply_1d_conservative_fct(boundary_imp, dt, dx)
+
+    # 3. Random field
+    random.seed(77)
+    rand_f = [random.uniform(-5.0, 5.0) for _ in range(N)]
+    fct_rand = _apply_1d_conservative_fct(rand_f, dt, dx)
+
+    # 4. Heaviside step
+    step_f = [1.0 if x >= N // 2 else 0.0 for x in range(N)]
+    fct_step = _apply_1d_conservative_fct(step_f, dt, dx)
+
+    return {
+        "narrow_0035m": {
+            "mass_before": float(sum(narrow_0035)),
+            "fct_mass_after": float(sum(fct_0035)),
+            "fct_mass_delta": float(sum(fct_0035) - sum(narrow_0035)),
+            "legacy_mass_after": float(sum(legacy_0035)),
+            "legacy_mass_gain_pct": float((sum(legacy_0035) / sum(narrow_0035) - 1.0) * 100.0),
+            "fct_min": float(min(fct_0035)),
+            "fct_max": float(max(fct_0035))
+        },
+        "narrow_035m": {
+            "mass_before": float(sum(narrow_035)),
+            "fct_mass_after": float(sum(fct_035)),
+            "fct_mass_delta": float(sum(fct_035) - sum(narrow_035)),
+            "legacy_mass_after": float(sum(legacy_035)),
+            "legacy_mass_gain_pct": float((sum(legacy_035) / sum(narrow_035) - 1.0) * 100.0),
+            "fct_min": float(min(fct_035)),
+            "fct_max": float(max(fct_035))
+        },
+        "boundary_impulse": {
+            "mass_before": float(sum(boundary_imp)),
+            "mass_after": float(sum(fct_bound)),
+            "mass_delta": float(sum(fct_bound) - sum(boundary_imp)),
+            "min_val": float(min(fct_bound))
+        },
+        "random_field": {
+            "mass_before": float(sum(rand_f)),
+            "mass_after": float(sum(fct_rand)),
+            "mass_delta": float(sum(fct_rand) - sum(rand_f))
+        },
+        "step_discontinuity": {
+            "mass_before": float(sum(step_f)),
+            "mass_after": float(sum(fct_step)),
+            "mass_delta": float(sum(fct_step) - sum(step_f)),
+            "step_min": float(min(fct_step)),
+            "step_max": float(max(fct_step))
+        }
     }
 
 def verify_filter_wall_boundary_split():
@@ -328,6 +411,95 @@ def verify_filter_extrema_and_monotonicity():
             "undershoots/overshoots (e.g. -0.058 on unit delta impulse)."
         )
     }
+
+def _apply_1d_conservative_fct(vals, dt=0.008, dx=1.0):
+    N = len(vals)
+    kappa4 = min(0.058, 12.0 * dt)
+
+    def get_flux(i):
+        if i < 0 or i >= N - 1:
+            return 0.0, 0.0
+        d_val = vals[i+1] - vals[i]
+        slope = abs(d_val) / dx
+        excess = max(0.0, slope - 0.40)
+        weight = min(1.0, max(0.0, excess * 3.0))
+        k2 = weight * min(0.20, 30.0 * dt)
+        f2 = -k2 * d_val
+
+        if i == 0:
+            f4 = kappa4 * (2.0 * vals[0] - 3.0 * vals[1] + vals[2])
+        elif i == N - 2:
+            f4 = kappa4 * (-vals[N-3] + 3.0 * vals[N-2] - 2.0 * vals[N-1])
+        else:
+            f4 = kappa4 * (vals[i-1] - 3.0 * vals[i] + 3.0 * vals[i+1] - vals[i+2])
+        return f2, f4
+
+    def get_ratio(k, f2_L, f2_R, f4_L, f4_R):
+        v_L = vals[k] - (f2_R - f2_L)
+        v_min = min(vals[max(0, k-1)], min(vals[k], vals[min(N-1, k+1)]))
+        v_max = max(vals[max(0, k-1)], max(vals[k], vals[min(N-1, k+1)]))
+
+        p_plus = max(0.0, -f4_R) + max(0.0, f4_L)
+        p_minus = max(0.0, f4_R) + max(0.0, -f4_L)
+        q_plus = max(0.0, v_max - v_L)
+        q_minus = max(0.0, v_L - v_min)
+
+        rp = min(1.0, q_plus / p_plus) if p_plus > 1e-12 else 1.0
+        rm = min(1.0, q_minus / p_minus) if p_minus > 1e-12 else 1.0
+        return rp, rm
+
+    def limit(f2, f4, rm_L, rp_L, rm_R, rp_R):
+        c = min(rm_L, rp_R) if f4 > 0.0 else min(rp_L, rm_R)
+        return f2 + c * f4
+
+    out = [0.0] * N
+    for x in range(N):
+        f2_m3, f4_m3 = get_flux(x - 2)
+        f2_m1, f4_m1 = get_flux(x - 1)
+        f2_p1, f4_p1 = get_flux(x)
+        f2_p3, f4_p3 = get_flux(x + 1)
+
+        rp_m1, rm_m1 = get_ratio(x - 1, f2_m3, f2_m1, f4_m3, f4_m1) if x > 0 else (1.0, 1.0)
+        rp_0,  rm_0  = get_ratio(x, f2_m1, f2_p1, f4_m1, f4_p1)
+        rp_p1, rm_p1 = get_ratio(x + 1, f2_p1, f2_p3, f4_p1, f4_p3) if x < N - 1 else (1.0, 1.0)
+
+        f_L = 0.0 if x == 0 else limit(f2_m1, f4_m1, rm_m1, rp_m1, rm_0, rp_0)
+        f_R = 0.0 if x == N - 1 else limit(f2_p1, f4_p1, rm_0, rp_0, rm_p1, rp_p1)
+
+        out[x] = vals[x] - (f_R - f_L)
+    return out
+
+def _apply_1d_legacy_clamp(vals, dt=0.008, dx=1.0):
+    """Historical implementation in 5a0c12e showing cell-wise clamp mass leak."""
+    N = len(vals)
+    kappa4 = min(0.058, 12.0 * dt)
+    out = [0.0] * N
+    for x in range(N):
+        if x == 0:
+            d4 = 2.0 * vals[0] - 3.0 * vals[1] + vals[2]
+        elif x == 1:
+            d4 = -3.0 * vals[0] + 6.0 * vals[1] - 4.0 * vals[2] + vals[3]
+        elif x == N - 2:
+            d4 = vals[N-4] - 4.0 * vals[N-3] + 6.0 * vals[N-2] - 3.0 * vals[N-1]
+        elif x == N - 1:
+            d4 = vals[N-3] - 3.0 * vals[N-2] + 2.0 * vals[N-1]
+        else:
+            d4 = vals[x-2] - 4.0 * vals[x-1] + 6.0 * vals[x] - 4.0 * vals[x+1] + vals[x+2]
+
+        cL = vals[max(0, x - 1)]
+        cR = vals[min(N - 1, x + 1)]
+        c = vals[x]
+
+        d2 = cL - 2.0 * c + cR
+        slope = abs(cR - cL) / (2.0 * dx)
+        excess = max(0.0, slope - 0.40)
+        weight = min(1.0, max(0.0, excess * 3.0))
+        kappa2 = weight * min(0.20, 30.0 * dt)
+
+        filtered = c - kappa4 * d4 + kappa2 * d2
+        filtered = max(min(c, min(cL, cR)), min(max(c, max(cL, cR)), filtered))
+        out[x] = filtered
+    return out
 
 def _apply_1d_biharmonic(f, kappa):
     n = len(f)

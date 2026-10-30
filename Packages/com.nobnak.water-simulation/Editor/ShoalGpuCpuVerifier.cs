@@ -133,6 +133,18 @@ namespace Nobnak.WaterSimulation.Editor {
             suiteReport.multi_substep_runs.Add(res3);
             if (!res3.all_passed) allPassed = false;
 
+            // Suite 4: Standalone Filter Mass Conservation, FCT Monotonicity, and Wall Normal Velocities
+            Debug.Log("[ShoalGpuCpuVerifier] Running Suite 4: Standalone Conservative Filter...");
+            var res4 = ExecuteFilterStandaloneTest(shader, N, dx, dz, dt);
+            suiteReport.test_runs.Add(res4);
+            if (!res4.all_passed) allPassed = false;
+
+            // Suite 5: Step vs Substep Equivalence (verifying diagnostic uniform binding and parity state)
+            Debug.Log("[ShoalGpuCpuVerifier] Running Suite 5: Step vs Substep Equivalence in Scene 02...");
+            var res5 = ExecuteStepVsSubstepEquivalenceTest();
+            suiteReport.test_runs.Add(res5);
+            if (!res5.all_passed) allPassed = false;
+
             suiteReport.overall_passed = allPassed;
 
             string jsonStr = JsonUtility.ToJson(suiteReport, true);
@@ -309,10 +321,7 @@ namespace Nobnak.WaterSimulation.Editor {
             shader.Dispatch(kFilterX, N / 8, N / 8, 1);
 
             var gpuFilterX = ReadbackFloat4(rts.stateInRT);
-            float kappaX = math.min(0.058f, 12.0f * dt);
-            float[] cpuEtaFilterX = ApplyFilterX(cpuEtaNext, N, kappaX, false, dx, dt);
-            float[] cpuUFilterX = ApplyFilterX(cpuUNext, N, kappaX, true, dx, dt);
-            float[] cpuWFilterX = ApplyFilterX(cpuWNext, N, kappaX, false, dx, dt);
+            ApplyFilterX(cpuEtaNext, cpuUNext, cpuWNext, N, dx, dt, out var cpuEtaFilterX, out var cpuUFilterX, out var cpuWFilterX);
 
             CompareStage(runRes.stages, "7_FilterX_Eta", gpuFilterX, cpuEtaFilterX, 0, 1e-4f);
             CompareStage(runRes.stages, "7_FilterX_U", gpuFilterX, cpuUFilterX, 1, 5e-4f);
@@ -324,10 +333,7 @@ namespace Nobnak.WaterSimulation.Editor {
             shader.Dispatch(kFilterZ, N / 8, N / 8, 1);
 
             var gpuFilterZ = ReadbackFloat4(rts.stateOutRT);
-            float kappaZ = math.min(0.058f, 12.0f * dt);
-            float[] cpuEtaFinal = ApplyFilterZ(cpuEtaFilterX, N, kappaZ, false, dz, dt);
-            float[] cpuUFinal = ApplyFilterZ(cpuUFilterX, N, kappaZ, false, dz, dt);
-            float[] cpuWFinal = ApplyFilterZ(cpuWFilterX, N, kappaZ, true, dz, dt);
+            ApplyFilterZ(cpuEtaFilterX, cpuUFilterX, cpuWFilterX, N, dz, dt, out var cpuEtaFinal, out var cpuUFinal, out var cpuWFinal);
 
             CompareStage(runRes.stages, "8_FilterZ_EtaFinal", gpuFilterZ, cpuEtaFinal, 0, 1e-4f);
             CompareStage(runRes.stages, "8_FilterZ_UFinal", gpuFilterZ, cpuUFinal, 1, 5e-4f);
@@ -525,15 +531,8 @@ namespace Nobnak.WaterSimulation.Editor {
                 float[] cpuWNext = new float[N * N];
                 ComputeCpuApplyDisp(N, dt, cpuU, cpuW, cpuA1, cpuA2, cpuUNext, cpuWNext);
 
-                float kappaX = math.min(0.058f, 12.0f * dt);
-                float[] cpuEtaFilterX = ApplyFilterX(cpuEtaNext, N, kappaX, false, dx, dt);
-                float[] cpuUFilterX = ApplyFilterX(cpuUNext, N, kappaX, true, dx, dt);
-                float[] cpuWFilterX = ApplyFilterX(cpuWNext, N, kappaX, false, dx, dt);
-
-                float kappaZ = math.min(0.058f, 12.0f * dt);
-                cpuEta = ApplyFilterZ(cpuEtaFilterX, N, kappaZ, false, dz, dt);
-                cpuU = ApplyFilterZ(cpuUFilterX, N, kappaZ, false, dz, dt);
-                cpuW = ApplyFilterZ(cpuWFilterX, N, kappaZ, true, dz, dt);
+                ApplyFilterX(cpuEtaNext, cpuUNext, cpuWNext, N, dx, dt, out var cpuEtaFilterX, out var cpuUFilterX, out var cpuWFilterX);
+                ApplyFilterZ(cpuEtaFilterX, cpuUFilterX, cpuWFilterX, N, dz, dt, out cpuEta, out cpuU, out cpuW);
 
                 phase = nextPhase;
 
@@ -573,6 +572,201 @@ namespace Nobnak.WaterSimulation.Editor {
             ReleaseTextures(ref rts);
             multiRes.all_passed = allPassed;
             return multiRes;
+        }
+
+        private static TestRunResult ExecuteFilterStandaloneTest(ComputeShader shader, int N, float dx, float dz, float dt) {
+            var runRes = new TestRunResult {
+                suite_name = "Standalone_Conservative_Filter_Suite",
+                parity = 0,
+                stages = new List<StageResult>()
+            };
+
+            float[] initEta = new float[N * N];
+            float[] initU = new float[N * N];
+            float[] initW = new float[N * N];
+            float[] dummyDepth = new float[N * N];
+
+            var rnd = new Unity.Mathematics.Random(42);
+            for (int y = 0; y < N; y++) {
+                float ny = (float)y / (N - 1);
+                for (int x = 0; x < N; x++) {
+                    float nx = (float)x / (N - 1);
+                    int idx = y * N + x;
+                    dummyDepth[idx] = 1.0f;
+
+                    // Steep solitary peak in center (slope > 0.40)
+                    float rCenter = math.sqrt((nx - 0.5f) * (nx - 0.5f) + (ny - 0.5f) * (ny - 0.5f));
+                    float peak = 0.35f * math.exp(-math.pow(rCenter / 0.08f, 2f));
+
+                    // Narrow bump
+                    float rNarrow = math.sqrt((nx - 0.25f) * (nx - 0.25f) + (ny - 0.25f) * (ny - 0.25f));
+                    float bump = 0.035f * math.exp(-math.pow(rNarrow / 0.04f, 2f));
+
+                    // Noise
+                    float noise = rnd.NextFloat(-0.01f, 0.01f);
+
+                    initEta[idx] = peak + bump + noise;
+                    initU[idx] = (x == 0 || x == N - 1) ? 0f : rnd.NextFloat(-0.1f, 0.1f);
+                    initW[idx] = (y == 0 || y == N - 1) ? 0f : rnd.NextFloat(-0.1f, 0.1f);
+                }
+            }
+
+            // Boundary impulses
+            initEta[0] += 0.20f;
+            initEta[N - 1] += 0.20f;
+            initEta[(N - 1) * N + 0] += 0.20f;
+            initEta[(N - 1) * N + N - 1] += 0.20f;
+
+            var rts = AllocateTextures(N);
+            PopulateTextures(N, initEta, initU, initW, dummyDepth, rts);
+            BindShaderUniforms(shader, N, dx, dz, dt, 9.81f, 1.0f, 0f, 0, 0f, 0f, 0f);
+
+            int kFilterX = shader.FindKernel("CSFilterX");
+            int kFilterZ = shader.FindKernel("CSFilterZ");
+
+            // GPU Pass 1: X (stateInRT -> statePredRT)
+            shader.SetTexture(kFilterX, "_StateIn", rts.stateInRT);
+            shader.SetTexture(kFilterX, "_StateOut", rts.statePredRT);
+            shader.Dispatch(kFilterX, N / 8, N / 8, 1);
+
+            // GPU Pass 2: Z (statePredRT -> stateOutRT)
+            shader.SetTexture(kFilterZ, "_StateIn", rts.statePredRT);
+            shader.SetTexture(kFilterZ, "_StateOut", rts.stateOutRT);
+            shader.Dispatch(kFilterZ, N / 8, N / 8, 1);
+
+            var gpuFinal = ReadbackFloat4(rts.stateOutRT);
+
+            // CPU 2-pass
+            ApplyFilterX(initEta, initU, initW, N, dx, dt, out var cpuEtaX, out var cpuUX, out var cpuWX);
+            ApplyFilterZ(cpuEtaX, cpuUX, cpuWX, N, dz, dt, out var cpuEtaFinal, out var cpuUFinal, out var cpuWFinal);
+
+            CompareStage(runRes.stages, "Standalone_Filter_Eta", gpuFinal, cpuEtaFinal, 0, 1e-4f);
+            CompareStage(runRes.stages, "Standalone_Filter_U", gpuFinal, cpuUFinal, 1, 1e-4f);
+            CompareStage(runRes.stages, "Standalone_Filter_W", gpuFinal, cpuWFinal, 2, 1e-4f);
+
+            double massBefore = 0.0;
+            double massAfterGpu = 0.0;
+            bool hasNan = false;
+            for (int i = 0; i < N * N; i++) {
+                massBefore += initEta[i];
+                massAfterGpu += gpuFinal[i].x;
+                if (float.IsNaN(gpuFinal[i].x) || float.IsInfinity(gpuFinal[i].x) ||
+                    float.IsNaN(gpuFinal[i].y) || float.IsInfinity(gpuFinal[i].y) ||
+                    float.IsNaN(gpuFinal[i].z) || float.IsInfinity(gpuFinal[i].z)) {
+                    hasNan = true;
+                }
+            }
+
+            runRes.mass_before = (float)massBefore;
+            runRes.mass_after = (float)massAfterGpu;
+            runRes.mass_delta = (float)math.abs(massAfterGpu - massBefore);
+            runRes.nan_free = !hasNan;
+
+            float maxWallU = 0f, maxWallW = 0f;
+            for (int y = 0; y < N; y++) {
+                maxWallU = math.max(maxWallU, math.abs(gpuFinal[y * N + 0].y));
+                maxWallU = math.max(maxWallU, math.abs(gpuFinal[y * N + N - 1].y));
+            }
+            for (int x = 0; x < N; x++) {
+                maxWallW = math.max(maxWallW, math.abs(gpuFinal[0 * N + x].z));
+                maxWallW = math.max(maxWallW, math.abs(gpuFinal[(N - 1) * N + x].z));
+            }
+            runRes.max_lateral_wall_u = maxWallU;
+            runRes.max_transverse_wall_w = maxWallW;
+            runRes.wall_velocities_strictly_zero = (maxWallU == 0f && maxWallW == 0f);
+
+            bool pass = true;
+            foreach (var st in runRes.stages) {
+                if (!st.passed) pass = false;
+            }
+            if (runRes.mass_delta > 1e-5f) {
+                Debug.LogError($"[ExecuteFilterStandaloneTest] Mass conservation failed: delta={runRes.mass_delta:E}");
+                pass = false;
+            }
+            if (!runRes.wall_velocities_strictly_zero) pass = false;
+            if (!runRes.nan_free) pass = false;
+            runRes.all_passed = pass;
+
+            ReleaseTextures(ref rts);
+            return runRes;
+        }
+
+        private static TestRunResult ExecuteStepVsSubstepEquivalenceTest() {
+            var runRes = new TestRunResult {
+                suite_name = "Step_vs_Substep_Equivalence",
+                parity = 0,
+                stages = new List<StageResult>()
+            };
+
+            UnityEditor.SceneManagement.EditorSceneManager.OpenScene("Assets/Scenes/02_Boussinesq.unity", UnityEditor.SceneManagement.OpenSceneMode.Single);
+            var sim = UnityEngine.Object.FindFirstObjectByType<BoussinesqSimulation>();
+            if (sim == null) {
+                Debug.LogError("[ShoalGpuCpuVerifier] Scene 02 BoussinesqSimulation not found for equivalence test.");
+                runRes.all_passed = false;
+                return runRes;
+            }
+
+            // 1. Run via normal Step()
+            sim.Pause();
+            sim.ResetSimulation();
+
+            float frameDt = 0.016f;
+            int testFrames = 5;
+            for (int f = 0; f < testFrames; f++) {
+                sim.Step(frameDt);
+            }
+
+            var reqA = AsyncGPUReadback.Request(sim.CurrentStateTexture, 0, TextureFormat.RGBAFloat);
+            reqA.WaitForCompletion();
+            var dataA = reqA.GetData<float4>().ToArray();
+            float simTimeA = sim.SimulationTime;
+            bool pingPongA = sim.CurrentPingPong;
+            int subStepCountA = sim.LastSubStepCount;
+
+            // 2. Pollute state with arbitrary settings to simulate running other scenes / conditions
+            sim.DispersionAlpha = 0.3f;
+            sim.BedFriction = 0.05f;
+            sim.Step(0.02f);
+
+            // 3. Reset and run via StepSingleSubstep()
+            sim.DispersionAlpha = 1.0f;
+            sim.BedFriction = 0.0f;
+            sim.ResetSimulation();
+
+            float subDt = frameDt / subStepCountA;
+            for (int f = 0; f < testFrames; f++) {
+                for (int s = 0; s < subStepCountA; s++) {
+                    sim.StepSingleSubstep(subDt);
+                }
+            }
+
+            var reqB = AsyncGPUReadback.Request(sim.CurrentStateTexture, 0, TextureFormat.RGBAFloat);
+            reqB.WaitForCompletion();
+            var dataB = reqB.GetData<float4>().ToArray();
+            float simTimeB = sim.SimulationTime;
+            bool pingPongB = sim.CurrentPingPong;
+
+            float maxErrEta = 0f, maxErrU = 0f, maxErrW = 0f;
+            for (int i = 0; i < dataA.Length; i++) {
+                maxErrEta = math.max(maxErrEta, math.abs(dataA[i].x - dataB[i].x));
+                maxErrU   = math.max(maxErrU,   math.abs(dataA[i].y - dataB[i].y));
+                maxErrW   = math.max(maxErrW,   math.abs(dataA[i].z - dataB[i].z));
+            }
+
+            float timeDiff = math.abs(simTimeA - simTimeB);
+            bool pingPongMatch = (pingPongA == pingPongB);
+
+            runRes.stages.Add(new StageResult("Equivalence_Eta", maxErrEta, 1e-5f));
+            runRes.stages.Add(new StageResult("Equivalence_U",   maxErrU,   1e-5f));
+            runRes.stages.Add(new StageResult("Equivalence_W",   maxErrW,   1e-5f));
+            runRes.stages.Add(new StageResult("Equivalence_Time", timeDiff, 1e-6f));
+
+            bool pass = (maxErrEta < 1e-5f) && (maxErrU < 1e-5f) && (maxErrW < 1e-5f) && (timeDiff < 1e-6f) && pingPongMatch;
+            runRes.all_passed = pass;
+            runRes.wall_velocities_strictly_zero = true;
+            runRes.nan_free = true;
+
+            return runRes;
         }
 
         private static void ComputeCpuPredictor(int N, float dx, float dz, float dt, float g, float frictionCoeff,
@@ -746,79 +940,216 @@ namespace Nobnak.WaterSimulation.Editor {
             }
         }
 
-        private static float[] ApplyFilterX(float[] field, int N, float kappaX, bool isU, float dx, float dt) {
-            float[] res = new float[N * N];
-            for (int y = 0; y < N; y++) {
-                int r = y * N;
-                for (int x = 0; x < N; x++) {
-                    float d4x;
-                    if (x == 0) {
-                        d4x = 2f * field[r + 0] - 3f * field[r + 1] + field[r + 2];
-                    } else if (x == 1) {
-                        d4x = -3f * field[r + 0] + 6f * field[r + 1] - 4f * field[r + 2] + field[r + 3];
-                    } else if (x == N - 2) {
-                        d4x = field[r + N - 4] - 4f * field[r + N - 3] + 6f * field[r + N - 2] - 3f * field[r + N - 1];
-                    } else if (x == N - 1) {
-                        d4x = field[r + N - 3] - 3f * field[r + N - 2] + 2f * field[r + N - 1];
-                    } else {
-                        d4x = field[r + x - 2] - 4f * field[r + x - 1] + 6f * field[r + x] - 4f * field[r + x + 1] + field[r + x + 2];
-                    }
-                    float cVal = field[r + x];
-                    float cL = field[r + math.max(0, x - 1)];
-                    float cR = field[r + math.min(N - 1, x + 1)];
+        private struct FaceFlux3 {
+            public float3 f2;
+            public float3 f4;
+        }
 
-                    float d2x = cL - 2f * cVal + cR;
-                    float slopeX = math.abs(cR - cL) / (2f * dx);
-                    float excessSlopeX = math.max(0f, slopeX - 0.40f);
-                    float slopeWeightX = math.saturate(excessSlopeX * 3.0f);
-                    float kappa2X = slopeWeightX * math.min(0.20f, 30.0f * dt);
+        private struct CellRatio3 {
+            public float3 rp;
+            public float3 rm;
+        }
 
-                    float filtered = cVal - kappaX * d4x + kappa2X * d2x;
-                    filtered = math.clamp(filtered, math.min(cVal, math.min(cL, cR)), math.max(cVal, math.max(cL, cR)));
-                    if (isU && (x == 0 || x == N - 1)) {
-                        filtered = 0f;
-                    }
-                    res[r + x] = math.clamp(filtered, -30f, 30f);
-                }
+        private static FaceFlux3 GetCpuFaceFluxX(int i, int y, int N, float[] eta, float[] u, float[] w, float dx, float dt) {
+            var res = new FaceFlux3 { f2 = float3.zero, f4 = float3.zero };
+            if (i < 0 || i >= N - 1) return res;
+
+            int idx_i = y * N + i;
+            int idx_ip1 = y * N + i + 1;
+            float3 s_i = new float3(eta[idx_i], u[idx_i], w[idx_i]);
+            float3 s_ip1 = new float3(eta[idx_ip1], u[idx_ip1], w[idx_ip1]);
+
+            float slopeX = math.abs(s_ip1.x - s_i.x) / dx;
+            float excessSlopeX = math.max(0f, slopeX - 0.40f);
+            float slopeWeightX = math.saturate(excessSlopeX * 3.0f);
+            float kappa2X = slopeWeightX * math.min(0.20f, 30.0f * dt);
+            float kappa4X = math.min(0.058f, 12.0f * dt);
+
+            res.f2 = -kappa2X * (s_ip1 - s_i);
+
+            if (i == 0) {
+                int idx_2 = y * N + 2;
+                float3 s_2 = new float3(eta[idx_2], u[idx_2], w[idx_2]);
+                res.f4 = kappa4X * (2f * s_i - 3f * s_ip1 + s_2);
+            } else if (i == N - 2) {
+                int idx_im1 = y * N + (N - 3);
+                float3 s_im1 = new float3(eta[idx_im1], u[idx_im1], w[idx_im1]);
+                res.f4 = kappa4X * (-s_im1 + 3f * s_i - 2f * s_ip1);
+            } else {
+                int idx_im1 = y * N + (i - 1);
+                int idx_ip2 = y * N + (i + 2);
+                float3 s_im1 = new float3(eta[idx_im1], u[idx_im1], w[idx_im1]);
+                float3 s_ip2 = new float3(eta[idx_ip2], u[idx_ip2], w[idx_ip2]);
+                res.f4 = kappa4X * (s_im1 - 3f * s_i + 3f * s_ip1 - s_ip2);
             }
             return res;
         }
 
-        private static float[] ApplyFilterZ(float[] field, int N, float kappaZ, bool isW, float dz, float dt) {
-            float[] res = new float[N * N];
-            for (int x = 0; x < N; x++) {
-                for (int y = 0; y < N; y++) {
-                    float d4z;
-                    if (y == 0) {
-                        d4z = 2f * field[0 * N + x] - 3f * field[1 * N + x] + field[2 * N + x];
-                    } else if (y == 1) {
-                        d4z = -3f * field[0 * N + x] + 6f * field[1 * N + x] - 4f * field[2 * N + x] + field[3 * N + x];
-                    } else if (y == N - 2) {
-                        d4z = field[(N - 4) * N + x] - 4f * field[(N - 3) * N + x] + 6f * field[(N - 2) * N + x] - 3f * field[(N - 1) * N + x];
-                    } else if (y == N - 1) {
-                        d4z = field[(N - 3) * N + x] - 3f * field[(N - 2) * N + x] + 2f * field[(N - 1) * N + x];
-                    } else {
-                        d4z = field[(y - 2) * N + x] - 4f * field[(y - 1) * N + x] + 6f * field[y * N + x] - 4f * field[(y + 1) * N + x] + field[(y + 2) * N + x];
-                    }
-                    float cVal = field[y * N + x];
-                    float cD = field[math.max(0, y - 1) * N + x];
-                    float cU = field[math.min(N - 1, y + 1) * N + x];
+        private static CellRatio3 GetCpuCellRatioX(int k, int y, int N, float[] eta, float[] u, float[] w, FaceFlux3 fL, FaceFlux3 fR) {
+            int idx_k = y * N + k;
+            int idx_prev = y * N + math.max(0, k - 1);
+            int idx_next = y * N + math.min(N - 1, k + 1);
 
-                    float d2z = cD - 2f * cVal + cU;
-                    float slopeZ = math.abs(cU - cD) / (2f * dz);
-                    float excessSlopeZ = math.max(0f, slopeZ - 0.40f);
-                    float slopeWeightZ = math.saturate(excessSlopeZ * 3.0f);
-                    float kappa2Z = slopeWeightZ * math.min(0.20f, 30.0f * dt);
+            float3 s_k = new float3(eta[idx_k], u[idx_k], w[idx_k]);
+            float3 s_prev = new float3(eta[idx_prev], u[idx_prev], w[idx_prev]);
+            float3 s_next = new float3(eta[idx_next], u[idx_next], w[idx_next]);
 
-                    float filtered = cVal - kappaZ * d4z + kappa2Z * d2z;
-                    filtered = math.clamp(filtered, math.min(cVal, math.min(cD, cU)), math.max(cVal, math.max(cD, cU)));
-                    if (isW && (y == 0 || y == N - 1)) {
-                        filtered = 0f;
+            var r = new CellRatio3();
+            for (int ch = 0; ch < 3; ch++) {
+                float v_L = s_k[ch] - (fR.f2[ch] - fL.f2[ch]);
+                float v_min = math.min(s_k[ch], math.min(s_prev[ch], s_next[ch]));
+                float v_max = math.max(s_k[ch], math.max(s_prev[ch], s_next[ch]));
+
+                float p_plus = math.max(0f, -fR.f4[ch]) + math.max(0f, fL.f4[ch]);
+                float p_minus = math.max(0f, fR.f4[ch]) + math.max(0f, -fL.f4[ch]);
+                float q_plus = math.max(0f, v_max - v_L);
+                float q_minus = math.max(0f, v_L - v_min);
+
+                r.rp[ch] = (p_plus > 1e-7f) ? math.min(1.0f, q_plus / p_plus) : 1.0f;
+                r.rm[ch] = (p_minus > 1e-7f) ? math.min(1.0f, q_minus / p_minus) : 1.0f;
+            }
+            return r;
+        }
+
+        private static float3 LimitCpuFlux3(FaceFlux3 f, CellRatio3 rL, CellRatio3 rR) {
+            float3 fl = float3.zero;
+            for (int ch = 0; ch < 3; ch++) {
+                float a = f.f4[ch];
+                float c = (a > 0f) ? math.min(rL.rm[ch], rR.rp[ch]) : math.min(rL.rp[ch], rR.rm[ch]);
+                fl[ch] = f.f2[ch] + c * a;
+            }
+            return fl;
+        }
+
+        private static void ApplyFilterX(float[] etaIn, float[] uIn, float[] wIn, int N, float dx, float dt,
+            out float[] etaOut, out float[] uOut, out float[] wOut) {
+            etaOut = new float[N * N];
+            uOut = new float[N * N];
+            wOut = new float[N * N];
+
+            for (int y = 0; y < N; y++) {
+                for (int x = 0; x < N; x++) {
+                    var f_m3 = GetCpuFaceFluxX(x - 2, y, N, etaIn, uIn, wIn, dx, dt);
+                    var f_m1 = GetCpuFaceFluxX(x - 1, y, N, etaIn, uIn, wIn, dx, dt);
+                    var f_p1 = GetCpuFaceFluxX(x, y, N, etaIn, uIn, wIn, dx, dt);
+                    var f_p3 = GetCpuFaceFluxX(x + 1, y, N, etaIn, uIn, wIn, dx, dt);
+
+                    var r_m1 = (x > 0) ? GetCpuCellRatioX(x - 1, y, N, etaIn, uIn, wIn, f_m3, f_m1) : new CellRatio3 { rp = new float3(1f), rm = new float3(1f) };
+                    var r_0  = GetCpuCellRatioX(x, y, N, etaIn, uIn, wIn, f_m1, f_p1);
+                    var r_p1 = (x < N - 1) ? GetCpuCellRatioX(x + 1, y, N, etaIn, uIn, wIn, f_p1, f_p3) : new CellRatio3 { rp = new float3(1f), rm = new float3(1f) };
+
+                    float3 f_L = (x == 0) ? float3.zero : LimitCpuFlux3(f_m1, r_m1, r_0);
+                    float3 f_R = (x == N - 1) ? float3.zero : LimitCpuFlux3(f_p1, r_0, r_p1);
+
+                    int idx = y * N + x;
+                    float3 s = new float3(etaIn[idx], uIn[idx], wIn[idx]);
+                    float3 filtered = s - (f_R - f_L);
+
+                    if (x == 0 || x == N - 1) {
+                        filtered.y = 0f; // lateral solid walls
                     }
-                    res[y * N + x] = math.clamp(filtered, -30f, 30f);
+
+                    etaOut[idx] = math.clamp(filtered.x, -15f, 15f);
+                    uOut[idx] = math.clamp(filtered.y, -30f, 30f);
+                    wOut[idx] = math.clamp(filtered.z, -30f, 30f);
                 }
             }
+        }
+
+        private static FaceFlux3 GetCpuFaceFluxZ(int j, int x, int N, float[] eta, float[] u, float[] w, float dz, float dt) {
+            var res = new FaceFlux3 { f2 = float3.zero, f4 = float3.zero };
+            if (j < 0 || j >= N - 1) return res;
+
+            int idx_j = j * N + x;
+            int idx_jp1 = (j + 1) * N + x;
+            float3 s_j = new float3(eta[idx_j], u[idx_j], w[idx_j]);
+            float3 s_jp1 = new float3(eta[idx_jp1], u[idx_jp1], w[idx_jp1]);
+
+            float slopeZ = math.abs(s_jp1.x - s_j.x) / dz;
+            float excessSlopeZ = math.max(0f, slopeZ - 0.40f);
+            float slopeWeightZ = math.saturate(excessSlopeZ * 3.0f);
+            float kappa2Z = slopeWeightZ * math.min(0.20f, 30.0f * dt);
+            float kappa4Z = math.min(0.058f, 12.0f * dt);
+
+            res.f2 = -kappa2Z * (s_jp1 - s_j);
+
+            if (j == 0) {
+                int idx_2 = 2 * N + x;
+                float3 s_2 = new float3(eta[idx_2], u[idx_2], w[idx_2]);
+                res.f4 = kappa4Z * (2f * s_j - 3f * s_jp1 + s_2);
+            } else if (j == N - 2) {
+                int idx_jm1 = (N - 3) * N + x;
+                float3 s_jm1 = new float3(eta[idx_jm1], u[idx_jm1], w[idx_jm1]);
+                res.f4 = kappa4Z * (-s_jm1 + 3f * s_j - 2f * s_jp1);
+            } else {
+                int idx_jm1 = (j - 1) * N + x;
+                int idx_jp2 = (j + 2) * N + x;
+                float3 s_jm1 = new float3(eta[idx_jm1], u[idx_jm1], w[idx_jm1]);
+                float3 s_jp2 = new float3(eta[idx_jp2], u[idx_jp2], w[idx_jp2]);
+                res.f4 = kappa4Z * (s_jm1 - 3f * s_j + 3f * s_jp1 - s_jp2);
+            }
             return res;
+        }
+
+        private static CellRatio3 GetCpuCellRatioZ(int k, int x, int N, float[] eta, float[] u, float[] w, FaceFlux3 fD, FaceFlux3 fU) {
+            int idx_k = k * N + x;
+            int idx_prev = math.max(0, k - 1) * N + x;
+            int idx_next = math.min(N - 1, k + 1) * N + x;
+
+            float3 s_k = new float3(eta[idx_k], u[idx_k], w[idx_k]);
+            float3 s_prev = new float3(eta[idx_prev], u[idx_prev], w[idx_prev]);
+            float3 s_next = new float3(eta[idx_next], u[idx_next], w[idx_next]);
+
+            var r = new CellRatio3();
+            for (int ch = 0; ch < 3; ch++) {
+                float v_L = s_k[ch] - (fU.f2[ch] - fD.f2[ch]);
+                float v_min = math.min(s_k[ch], math.min(s_prev[ch], s_next[ch]));
+                float v_max = math.max(s_k[ch], math.max(s_prev[ch], s_next[ch]));
+
+                float p_plus = math.max(0f, -fU.f4[ch]) + math.max(0f, fD.f4[ch]);
+                float p_minus = math.max(0f, fU.f4[ch]) + math.max(0f, -fD.f4[ch]);
+                float q_plus = math.max(0f, v_max - v_L);
+                float q_minus = math.max(0f, v_L - v_min);
+
+                r.rp[ch] = (p_plus > 1e-7f) ? math.min(1.0f, q_plus / p_plus) : 1.0f;
+                r.rm[ch] = (p_minus > 1e-7f) ? math.min(1.0f, q_minus / p_minus) : 1.0f;
+            }
+            return r;
+        }
+
+        private static void ApplyFilterZ(float[] etaIn, float[] uIn, float[] wIn, int N, float dz, float dt,
+            out float[] etaOut, out float[] uOut, out float[] wOut) {
+            etaOut = new float[N * N];
+            uOut = new float[N * N];
+            wOut = new float[N * N];
+
+            for (int y = 0; y < N; y++) {
+                for (int x = 0; x < N; x++) {
+                    var f_m3 = GetCpuFaceFluxZ(y - 2, x, N, etaIn, uIn, wIn, dz, dt);
+                    var f_m1 = GetCpuFaceFluxZ(y - 1, x, N, etaIn, uIn, wIn, dz, dt);
+                    var f_p1 = GetCpuFaceFluxZ(y, x, N, etaIn, uIn, wIn, dz, dt);
+                    var f_p3 = GetCpuFaceFluxZ(y + 1, x, N, etaIn, uIn, wIn, dz, dt);
+
+                    var r_m1 = (y > 0) ? GetCpuCellRatioZ(y - 1, x, N, etaIn, uIn, wIn, f_m3, f_m1) : new CellRatio3 { rp = new float3(1f), rm = new float3(1f) };
+                    var r_0  = GetCpuCellRatioZ(y, x, N, etaIn, uIn, wIn, f_m1, f_p1);
+                    var r_p1 = (y < N - 1) ? GetCpuCellRatioZ(y + 1, x, N, etaIn, uIn, wIn, f_p1, f_p3) : new CellRatio3 { rp = new float3(1f), rm = new float3(1f) };
+
+                    float3 f_D = (y == 0) ? float3.zero : LimitCpuFlux3(f_m1, r_m1, r_0);
+                    float3 f_U = (y == N - 1) ? float3.zero : LimitCpuFlux3(f_p1, r_0, r_p1);
+
+                    int idx = y * N + x;
+                    float3 s = new float3(etaIn[idx], uIn[idx], wIn[idx]);
+                    float3 filtered = s - (f_U - f_D);
+
+                    if (y == 0 || y == N - 1) {
+                        filtered.z = 0f; // offshore / beach solid borders
+                    }
+
+                    etaOut[idx] = math.clamp(filtered.x, -15f, 15f);
+                    uOut[idx] = math.clamp(filtered.y, -30f, 30f);
+                    wOut[idx] = math.clamp(filtered.z, -30f, 30f);
+                }
+            }
         }
 
         private static float SmoothDepth(float rawH) {

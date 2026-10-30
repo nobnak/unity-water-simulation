@@ -101,12 +101,7 @@ namespace Nobnak.WaterSimulation.Editor {
             }
 
             boussSim.Filter = filterMode;
-            boussSim.ResetSimulation();
-            if (boussSim == null) {
-                Debug.LogError("[ShoalDiagnosticProbe] BoussinesqSimulation component not found in Scene 02.");
-                return;
-            }
-
+            boussSim.Pause();
             boussSim.ResetSimulation();
 
             int W = boussSim.Resolution.x;
@@ -210,6 +205,11 @@ namespace Nobnak.WaterSimulation.Editor {
             int totalTrackingLostCount = 0;
             int totalTargetSwitchCount = 0;
 
+            string prevTrackState = "ValidTracking";
+            int validTrackingSubstepCount = 0;
+            int totalRecordedSubstepCount = 0;
+            double sumValidColRatio = 0.0;
+
             // Ensure capture directory exists for video/visual inspection
             if (!Directory.Exists(AnimationOutputDir)) Directory.CreateDirectory(AnimationOutputDir);
 
@@ -230,9 +230,13 @@ namespace Nobnak.WaterSimulation.Editor {
                 int midX = W / 2;
                 int repCrestY = crestY[midX];
 
-                // Dynamically record substeps from prior to entering shoal (repCrestY >= 140 or t >= 6.0s)
-                // until fully traversing cape and shoal (repCrestY >= 420 or t >= 17.5s)
-                bool recordSubsteps = (timeSec >= 6.0f && timeSec <= 17.5f) || (repCrestY >= 140 && repCrestY <= 420);
+                // Dynamically record substeps from prior to entering shoal (repCrestY >= 120 or t >= 3.5s)
+                // until fully traversing cape and shoal (repCrestY >= 430 or t >= 17.5s)
+                bool recordSubsteps = (timeSec >= 3.5f && timeSec <= 17.5f) || (repCrestY >= 120 && repCrestY <= 430);
+
+                if (frame % 100 == 0) {
+                    Debug.Log($"[ShoalDiagnosticProbe] Frame {frame}/{totalFrames} (t={timeSec:F2}s, repCrestY={repCrestY}, record={recordSubsteps})");
+                }
 
                 for (int s = 0; s < subSteps; s++) {
                     int parityBefore = boussSim.CurrentPingPong ? 1 : 0;
@@ -242,6 +246,10 @@ namespace Nobnak.WaterSimulation.Editor {
                         var stateRT = boussSim.CurrentStateTexture;
                         var req = AsyncGPUReadback.Request(stateRT, 0, TextureFormat.RGBAFloat);
                         req.WaitForCompletion();
+                        if (req.hasError) {
+                            Debug.LogError($"[ShoalDiagnosticProbe] Readback failed: frame={frame}, substep={s}, time={timeSec:F3}s, repCrestY={repCrestY}");
+                            break;
+                        }
                         var data = req.GetData<float4>();
 
                         // 1. Primary crest tracking with strict lateral continuity
@@ -301,12 +309,18 @@ namespace Nobnak.WaterSimulation.Editor {
                         int frameSplitCount = 0;
                         int frameLostCount = 0;
 
+                        int validCols = 0;
+                        int checkCols = 0;
                         for (int x = 0; x < W; x++) {
                             float val = crestEta[x];
                             int cy = crestY[x];
                             bool valid = (val >= 0.05f) && (x >= 40 && x < W - 40);
                             isValidCrest[x] = valid;
-                            if (!valid && (x >= 40 && x < W - 40)) frameLostCount++;
+                            if (x >= 40 && x < W - 40) {
+                                checkCols++;
+                                if (valid) validCols++;
+                                else frameLostCount++;
+                            }
 
                             if (val > trackedCrestMaxEta) {
                                 trackedCrestMaxEta = val;
@@ -314,17 +328,31 @@ namespace Nobnak.WaterSimulation.Editor {
                                 trackedPeakY = cy;
                             }
 
-                            if (cy > 2 && cy < H - 2) {
-                                float vD = data[(cy - 1) * W + x].x;
-                                float vU = data[(cy + 1) * W + x].x;
-                                if (cy + 3 < H && data[(cy + 3) * W + x].x > val * 0.7f && data[(cy + 3) * W + x].x > 0.1f) {
-                                    frameSplitCount++;
+                            // True wave split / bifurcation: a distinct secondary crest ahead/behind separated by a trough
+                            if (cy > 10 && cy < H - 25) {
+                                for (int y2 = cy + 10; y2 <= math.min(H - 2, cy + 30); y2++) {
+                                    float val2 = data[y2 * W + x].x;
+                                    if (val2 > 0.08f && val2 > data[(y2 - 1) * W + x].x && val2 > data[(y2 + 1) * W + x].x) {
+                                        float minTrough = 999f;
+                                        for (int yt = cy + 1; yt < y2; yt++) {
+                                            float vt = data[yt * W + x].x;
+                                            if (vt < minTrough) minTrough = vt;
+                                        }
+                                        if (minTrough < 0.6f * math.min(val, val2)) {
+                                            frameSplitCount++;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
 
                         totalCrestSplitCount += frameSplitCount;
                         totalTrackingLostCount += frameLostCount;
+
+                        float validColRatio = (checkCols > 0) ? (float)validCols / checkCols : 0f;
+                        sumValidColRatio += validColRatio;
+                        totalRecordedSubstepCount++;
 
                         // 2. Global Max Peak (across entire domain)
                         float globalMaxPeak = -999f;
@@ -438,12 +466,67 @@ namespace Nobnak.WaterSimulation.Editor {
                         float probeRidgeEta = data[probeRidgeY * W + probeRidgeX].x;
                         float probeDeepEta = data[probeDeepY * W + probeDeepX].x;
 
+                        string trackState = "ValidTracking";
+                        if (trackedCrestMaxEta < 0.05f || validColRatio < 0.35f) {
+                            trackState = "Lost";
+                        } else if (targetSwitched) {
+                            trackState = "TargetSwitch";
+                        } else if (frameSplitCount > 20) {
+                            trackState = "Split";
+                        } else if (prevTrackState == "Split" && frameSplitCount <= 5) {
+                            trackState = "Merge";
+                        } else {
+                            trackState = "ValidTracking";
+                            validTrackingSubstepCount++;
+                        }
+                        prevTrackState = trackState;
+
+                        // Localized Cape & Shoal box statistics at full grid resolution
+                        float locCapeMaxEta = -999f;
+                        float locCapeMinEta = 999f;
+                        double locCapeSumEta = 0.0;
+                        int locCapeCount = 0;
+                        float locCapeMaxSlope = 0f;
+                        float locCapeMax2dx = 0f;
+
+                        for (int ly = capeMinY; ly <= capeMaxY; ly++) {
+                            int lrow = ly * W;
+                            for (int lx = capeMinX; lx <= capeMaxX; lx++) {
+                                float v = data[lrow + lx].x;
+                                if (v > locCapeMaxEta) locCapeMaxEta = v;
+                                if (v < locCapeMinEta) locCapeMinEta = v;
+                                locCapeSumEta += v;
+                                locCapeCount++;
+
+                                if (lx > 0 && lx < W - 1) {
+                                    float vL = data[lrow + lx - 1].x;
+                                    float vR = data[lrow + lx + 1].x;
+                                    float d2x = math.abs(vR - 2f * v + vL);
+                                    if (d2x > locCapeMax2dx) locCapeMax2dx = d2x;
+                                }
+                                if (ly > 0 && ly < H - 1) {
+                                    float vD = data[(ly - 1) * W + lx].x;
+                                    float vU = data[(ly + 1) * W + lx].x;
+                                    float d2z = math.abs(vU - 2f * v + vD);
+                                    if (d2z > locCapeMax2dx) locCapeMax2dx = d2z;
+
+                                    float dhdx = (data[lrow + math.min(W - 1, lx + 1)].x - data[lrow + math.max(0, lx - 1)].x) / (2f * dx);
+                                    float dhdz = (vU - vD) / (2f * dz);
+                                    float slope = math.sqrt(dhdx * dhdx + dhdz * dhdz);
+                                    if (slope > locCapeMaxSlope) locCapeMaxSlope = slope;
+                                }
+                            }
+                        }
+                        float locCapeMeanEta = (locCapeCount > 0) ? (float)(locCapeSumEta / locCapeCount) : 0f;
+
                         substepRecords.Add(new SubstepRecord {
                             frame = frame,
                             substep = s,
                             time = timeSec + (s + 1) * subDt,
                             parity = parityBefore,
                             direction = (parityBefore == 0) ? 1 : -1,
+                            tracking_state = trackState,
+                            valid_tracking_ratio = validColRatio,
                             global_peak_x = globalPeakX,
                             global_peak_y = globalPeakY,
                             global_peak_eta = globalMaxPeak,
@@ -457,6 +540,11 @@ namespace Nobnak.WaterSimulation.Editor {
                             shoal_peak_x = shoalPeakX,
                             shoal_peak_y = shoalPeakY,
                             shoal_peak_eta = shoalMaxPeak,
+                            local_cape_max_eta = locCapeMaxEta,
+                            local_cape_min_eta = locCapeMinEta,
+                            local_cape_mean_eta = locCapeMeanEta,
+                            local_cape_max_slope = locCapeMaxSlope,
+                            local_cape_max_2dx = locCapeMax2dx,
                             probe_cape_eta = probeCapeEta,
                             probe_approach_eta = probeApprEta,
                             probe_ridge_eta = probeRidgeEta,
@@ -480,7 +568,61 @@ namespace Nobnak.WaterSimulation.Editor {
                 var frameStateRT = boussSim.CurrentStateTexture;
                 var frameReq = AsyncGPUReadback.Request(frameStateRT, 0, TextureFormat.RGBAFloat);
                 frameReq.WaitForCompletion();
+                if (frameReq.hasError) {
+                    Debug.LogError($"[ShoalDiagnosticProbe] Frame readback failed at frame={frame}, time={timeSec:F3}s");
+                    break;
+                }
                 var frameData = frameReq.GetData<float4>();
+
+                if (!recordSubsteps) {
+                    // Update crest position at frame level so tracker smoothly follows primary solitary wave from t=0
+                    int prevMidY = crestY[midX];
+                    int bestMidY = prevMidY;
+                    float bestMidVal = -999f;
+                    for (int y = math.max(0, prevMidY - 2); y <= math.min(H - 1, prevMidY + 10); y++) {
+                        float val = frameData[y * W + midX].x;
+                        if (val > bestMidVal) {
+                            bestMidVal = val;
+                            bestMidY = y;
+                        }
+                    }
+                    crestY[midX] = bestMidY;
+                    crestEta[midX] = bestMidVal;
+
+                    for (int x = midX + 1; x < W; x++) {
+                        int refY = crestY[x - 1];
+                        int minY = math.max(0, refY - 4);
+                        int maxY = math.min(H - 1, refY + 4);
+                        int bestY = refY;
+                        float bestVal = -999f;
+                        for (int y = minY; y <= maxY; y++) {
+                            float val = frameData[y * W + x].x;
+                            if (val > bestVal) {
+                                bestVal = val;
+                                bestY = y;
+                            }
+                        }
+                        crestY[x] = bestY;
+                        crestEta[x] = bestVal;
+                    }
+
+                    for (int x = midX - 1; x >= 0; x--) {
+                        int refY = crestY[x + 1];
+                        int minY = math.max(0, refY - 4);
+                        int maxY = math.min(H - 1, refY + 4);
+                        int bestY = refY;
+                        float bestVal = -999f;
+                        for (int y = minY; y <= maxY; y++) {
+                            float val = frameData[y * W + x].x;
+                            if (val > bestVal) {
+                                bestVal = val;
+                                bestY = y;
+                            }
+                        }
+                        crestY[x] = bestY;
+                        crestEta[x] = bestVal;
+                    }
+                }
 
                 // Capture visual frames every 12 frames (approx 0.192s) for video animation
                 if (frame % 12 == 0) {
@@ -621,6 +763,8 @@ namespace Nobnak.WaterSimulation.Editor {
                     global_parity_sign_flip_ratio = globalParityFlipRatio,
                     tracked_parity_sign_flip_ratio = trackedParityFlipRatio,
                     max_cfl = maxCfl,
+                    valid_tracking_substep_ratio = (totalRecordedSubstepCount > 0) ? (float)validTrackingSubstepCount / totalRecordedSubstepCount : 0f,
+                    valid_tracking_mean_col_ratio = (totalRecordedSubstepCount > 0) ? (float)(sumValidColRatio / totalRecordedSubstepCount) : 0f,
                     total_crest_split_events = totalCrestSplitCount,
                     total_tracking_lost_events = totalTrackingLostCount,
                     total_target_switch_events = totalTargetSwitchCount
@@ -770,6 +914,8 @@ namespace Nobnak.WaterSimulation.Editor {
             public float global_parity_sign_flip_ratio;
             public float tracked_parity_sign_flip_ratio;
             public float max_cfl;
+            public float valid_tracking_substep_ratio;
+            public float valid_tracking_mean_col_ratio;
             public int total_crest_split_events;
             public int total_tracking_lost_events;
             public int total_target_switch_events;
@@ -802,6 +948,8 @@ namespace Nobnak.WaterSimulation.Editor {
             public float time;
             public int parity;
             public int direction;
+            public string tracking_state;
+            public float valid_tracking_ratio;
             public int global_peak_x;
             public int global_peak_y;
             public float global_peak_eta;
@@ -815,6 +963,11 @@ namespace Nobnak.WaterSimulation.Editor {
             public int shoal_peak_x;
             public int shoal_peak_y;
             public float shoal_peak_eta;
+            public float local_cape_max_eta;
+            public float local_cape_min_eta;
+            public float local_cape_mean_eta;
+            public float local_cape_max_slope;
+            public float local_cape_max_2dx;
             public float probe_cape_eta;
             public float probe_approach_eta;
             public float probe_ridge_eta;

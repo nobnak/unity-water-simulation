@@ -338,7 +338,34 @@ namespace Nobnak.WaterSimulation {
         public RenderTexture CurrentStateTexture => CurrentStateTex;
         public RenderTexture BathymetryTexture => bathymetryTex;
         public bool CurrentPingPong => pingPong;
-        public void StepSingleSubstep(float subDt) => StepPhysics(subDt);
+        public void BindFrameConstants(float subDt) {
+            float dx = areaSize.x / resolution.x;
+            float dz = areaSize.y / resolution.y;
+            int wavemakerY = (int)(resolution.y * wavemakerLocationNorm);
+            float activeAmp = (initialCondition == InitialConditionType.ContinuousWavemaker) ? wavemakerAmplitude : 0f;
+
+            boussinesqShader.SetInt(PropWidth, resolution.x);
+            boussinesqShader.SetInt(PropHeight, resolution.y);
+            boussinesqShader.SetFloat(PropDeltaTime, subDt);
+            boussinesqShader.SetFloat(PropGridSpacing, dx);
+            boussinesqShader.SetFloat(PropGridSpacingZ, dz);
+            boussinesqShader.SetFloat(PropGravity, Gravity);
+            boussinesqShader.SetFloat(PropDispersionAlpha, dispersionAlpha);
+            boussinesqShader.SetFloat(PropBedFriction, bedFriction);
+            boussinesqShader.SetFloat(PropSpongeWidth, spongeWidth);
+            boussinesqShader.SetFloat(PropSpongeStrength, spongeStrength);
+            boussinesqShader.SetInt(PropSideWallSponge, sideWallSponge ? 1 : 0);
+            boussinesqShader.SetFloat(PropWavemakerAmp, activeAmp);
+            boussinesqShader.SetFloat(PropWavemakerFreq, wavemakerFrequency);
+            boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
+        }
+
+        public void StepSingleSubstep(float subDt) {
+            BindFrameConstants(subDt);
+            StepPhysics(subDt);
+            simulationTime += subDt;
+        }
+
         public void FinalizeFrameOutput() => ComputeNormalAndPackOutput();
         #endregion
 
@@ -472,24 +499,8 @@ namespace Nobnak.WaterSimulation {
             lastSubStepCount = subSteps;
             float subDt = dt / subSteps;
 
-            int wavemakerY = (int)(resolution.y * wavemakerLocationNorm);
-            float activeAmp = (initialCondition == InitialConditionType.ContinuousWavemaker) ? wavemakerAmplitude : 0f;
-
             // Bind step-invariant constants once per frame instead of every substep
-            boussinesqShader.SetInt(PropWidth, resolution.x);
-            boussinesqShader.SetInt(PropHeight, resolution.y);
-            boussinesqShader.SetFloat(PropDeltaTime, subDt);
-            boussinesqShader.SetFloat(PropGridSpacing, dx);
-            boussinesqShader.SetFloat(PropGridSpacingZ, dz);
-            boussinesqShader.SetFloat(PropGravity, Gravity);
-            boussinesqShader.SetFloat(PropDispersionAlpha, dispersionAlpha);
-            boussinesqShader.SetFloat(PropBedFriction, bedFriction);
-            boussinesqShader.SetFloat(PropSpongeWidth, spongeWidth);
-            boussinesqShader.SetFloat(PropSpongeStrength, spongeStrength);
-            boussinesqShader.SetInt(PropSideWallSponge, sideWallSponge ? 1 : 0);
-            boussinesqShader.SetFloat(PropWavemakerAmp, activeAmp);
-            boussinesqShader.SetFloat(PropWavemakerFreq, wavemakerFrequency);
-            boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
+            BindFrameConstants(subDt);
 
             for (int s = 0; s < subSteps; s++) {
                 StepPhysics(subDt);

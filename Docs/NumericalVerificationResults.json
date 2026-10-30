@@ -615,6 +615,44 @@
       "max_transverse_wall_w": 0.0,
       "walls_strictly_zero": true
     },
+    "conservative_fct_verification": {
+      "narrow_0035m": {
+        "mass_before": 0.035,
+        "fct_mass_after": 0.035,
+        "fct_mass_delta": 0.0,
+        "legacy_mass_after": 0.03906,
+        "legacy_mass_gain_pct": 11.599999999999987,
+        "fct_min": 0.0,
+        "fct_max": 0.035
+      },
+      "narrow_035m": {
+        "mass_before": 0.35,
+        "fct_mass_after": 0.35,
+        "fct_mass_delta": 0.0,
+        "legacy_mass_after": 0.39059999999999995,
+        "legacy_mass_gain_pct": 11.599999999999987,
+        "fct_min": 0.0,
+        "fct_max": 0.35
+      },
+      "boundary_impulse": {
+        "mass_before": 2.0,
+        "mass_after": 2.0,
+        "mass_delta": 0.0,
+        "min_val": 0.0
+      },
+      "random_field": {
+        "mass_before": -14.092074500472147,
+        "mass_after": -14.092074500472147,
+        "mass_delta": 0.0
+      },
+      "step_discontinuity": {
+        "mass_before": 16.0,
+        "mass_after": 16.0,
+        "mass_delta": 0.0,
+        "step_min": 0.0,
+        "step_max": 1.0
+      }
+    },
     "filter_extrema_and_monotonicity": {
       "impulse_test": {
         "input_range": [

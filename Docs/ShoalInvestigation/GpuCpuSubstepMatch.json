@@ -1,8 +1,8 @@
 ﻿{
     "test": "GPU Compute Shader vs CPU Continuum Solver Verification Suite",
-    "git_commit": "5a0c12e21b6e8b8fe68d009b060152baf9e58165",
+    "git_commit": "92e56d86b57a13507a56a2ae08babe5678498b92",
     "is_dirty": true,
-    "shader_hash": "fb72d9e90156ec133483d73d3d861ce82f74046168b5c7d93f2b8b39cf7c3c3a",
+    "shader_hash": "230b7b7ef548151cc39fac00d7f106c3630e1cb8a1924c74a0c64c3123842425",
     "grid_size": 32,
     "dx": 1.5625,
     "dz": 1.5625,
@@ -108,37 +108,37 @@
                 },
                 {
                     "stage": "7_FilterX_Eta",
-                    "max_abs_error": 3.627501428127289e-7,
+                    "max_abs_error": 7.525086402893066e-7,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "7_FilterX_U",
-                    "max_abs_error": 6.351619958877564e-7,
+                    "max_abs_error": 0.000001430511474609375,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "7_FilterX_W",
-                    "max_abs_error": 5.010515451431274e-7,
+                    "max_abs_error": 0.0000012796372175216675,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_EtaFinal",
-                    "max_abs_error": 2.2351741790771485e-7,
+                    "max_abs_error": 0.000001087784767150879,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_UFinal",
-                    "max_abs_error": 3.2584648579359057e-7,
+                    "max_abs_error": 0.000001730397343635559,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_WFinal",
-                    "max_abs_error": 3.166496753692627e-7,
+                    "max_abs_error": 0.0000017825514078140259,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 }
@@ -147,8 +147,8 @@
             "max_transverse_wall_w": 0.0,
             "wall_velocities_strictly_zero": true,
             "mass_before": 65.1920166015625,
-            "mass_after": 64.78436279296875,
-            "mass_delta": 0.40765833854675295,
+            "mass_after": 64.78423309326172,
+            "mass_delta": 0.40778419375419619,
             "nan_free": true,
             "all_passed": true
         },
@@ -248,37 +248,37 @@
                 },
                 {
                     "stage": "7_FilterX_Eta",
-                    "max_abs_error": 3.6135315895080569e-7,
+                    "max_abs_error": 7.525086402893066e-7,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "7_FilterX_U",
-                    "max_abs_error": 6.351619958877564e-7,
+                    "max_abs_error": 0.000001434236764907837,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "7_FilterX_W",
-                    "max_abs_error": 5.00120222568512e-7,
+                    "max_abs_error": 0.0000012777745723724366,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_EtaFinal",
-                    "max_abs_error": 2.123415470123291e-7,
+                    "max_abs_error": 0.000001080334186553955,
                     "tolerance": 0.00009999999747378752,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_UFinal",
-                    "max_abs_error": 3.25904693454504e-7,
+                    "max_abs_error": 0.0000017285346984863282,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 },
                 {
                     "stage": "8_FilterZ_WFinal",
-                    "max_abs_error": 3.166496753692627e-7,
+                    "max_abs_error": 0.000001778826117515564,
                     "tolerance": 0.0005000000237487257,
                     "passed": true
                 }
@@ -287,8 +287,78 @@
             "max_transverse_wall_w": 0.0,
             "wall_velocities_strictly_zero": true,
             "mass_before": 65.1920166015625,
-            "mass_after": 64.89922332763672,
-            "mass_delta": 0.2927938997745514,
+            "mass_after": 64.89912414550781,
+            "mass_delta": 0.2928979992866516,
+            "nan_free": true,
+            "all_passed": true
+        },
+        {
+            "suite_name": "Standalone_Conservative_Filter_Suite",
+            "parity": 0,
+            "stages": [
+                {
+                    "stage": "Standalone_Filter_Eta",
+                    "max_abs_error": 1.4901161193847657e-8,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "Standalone_Filter_U",
+                    "max_abs_error": 7.450580596923828e-9,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "Standalone_Filter_W",
+                    "max_abs_error": 7.450580596923828e-9,
+                    "tolerance": 0.00009999999747378752,
+                    "passed": true
+                }
+            ],
+            "max_lateral_wall_u": 0.0,
+            "max_transverse_wall_w": 0.0,
+            "wall_velocities_strictly_zero": true,
+            "mass_before": 7.573747158050537,
+            "mass_after": 7.573747158050537,
+            "mass_delta": 4.12655936088413e-8,
+            "nan_free": true,
+            "all_passed": true
+        },
+        {
+            "suite_name": "Step_vs_Substep_Equivalence",
+            "parity": 0,
+            "stages": [
+                {
+                    "stage": "Equivalence_Eta",
+                    "max_abs_error": 0.000001714332029223442,
+                    "tolerance": 0.000009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "Equivalence_U",
+                    "max_abs_error": 2.0761271457558906e-7,
+                    "tolerance": 0.000009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "Equivalence_W",
+                    "max_abs_error": 0.0000028418762667570265,
+                    "tolerance": 0.000009999999747378752,
+                    "passed": true
+                },
+                {
+                    "stage": "Equivalence_Time",
+                    "max_abs_error": 0.0,
+                    "tolerance": 9.999999974752428e-7,
+                    "passed": true
+                }
+            ],
+            "max_lateral_wall_u": 0.0,
+            "max_transverse_wall_w": 0.0,
+            "wall_velocities_strictly_zero": true,
+            "mass_before": 0.0,
+            "mass_after": 0.0,
+            "mass_delta": 0.0,
             "nan_free": true,
             "all_passed": true
         }
@@ -303,19 +373,19 @@
                     "stages": [
                         {
                             "stage": "Substep_0_EtaFinal",
-                            "max_abs_error": 2.2351741790771485e-7,
+                            "max_abs_error": 0.000001087784767150879,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_0_UFinal",
-                            "max_abs_error": 3.2584648579359057e-7,
+                            "max_abs_error": 0.000001730397343635559,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_0_WFinal",
-                            "max_abs_error": 3.166496753692627e-7,
+                            "max_abs_error": 0.0000017825514078140259,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         }
@@ -335,19 +405,19 @@
                     "stages": [
                         {
                             "stage": "Substep_1_EtaFinal",
-                            "max_abs_error": 3.725290298461914e-7,
+                            "max_abs_error": 0.000003822147846221924,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_1_UFinal",
-                            "max_abs_error": 4.924368113279343e-7,
+                            "max_abs_error": 0.000006362795829772949,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_1_WFinal",
-                            "max_abs_error": 5.480833351612091e-7,
+                            "max_abs_error": 0.000006970018148422241,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         }
@@ -367,19 +437,19 @@
                     "stages": [
                         {
                             "stage": "Substep_2_EtaFinal",
-                            "max_abs_error": 4.842877388000488e-7,
+                            "max_abs_error": 0.000011578202247619629,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_2_UFinal",
-                            "max_abs_error": 6.07222318649292e-7,
+                            "max_abs_error": 0.000020187348127365112,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_2_WFinal",
-                            "max_abs_error": 7.334165275096893e-7,
+                            "max_abs_error": 0.00002203136682510376,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         }
@@ -399,19 +469,19 @@
                     "stages": [
                         {
                             "stage": "Substep_3_EtaFinal",
-                            "max_abs_error": 5.885958671569824e-7,
+                            "max_abs_error": 0.00003574788570404053,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_3_UFinal",
-                            "max_abs_error": 7.487833499908447e-7,
+                            "max_abs_error": 0.00006422214210033417,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         },
                         {
                             "stage": "Substep_3_WFinal",
-                            "max_abs_error": 8.889473974704742e-7,
+                            "max_abs_error": 0.00006486847996711731,
                             "tolerance": 0.0010000000474974514,
                             "passed": true
                         }

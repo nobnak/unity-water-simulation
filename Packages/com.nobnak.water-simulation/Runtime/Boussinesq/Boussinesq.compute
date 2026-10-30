@@ -763,103 +763,251 @@ void CSFilterHighFrequency(uint3 id : SV_DispatchThreadID) {
     _StateOut[pos] = filtered;
 }
 
-// 7b. Directional-split 4th-order biharmonic filter: Pass 1 along X
-// Eliminates 2dx along-crest corrugations with explicit 1D biharmonic stability limit (kappaX <= 1/16 = 0.0625)
+// 7b. Directional-split 4th-order biharmonic filter: Pass 1 along X & Pass 2 along Z
+// Strictly conservative FCT face-flux limiter: machine-precision mass conservation without cell-wise clamping
+
+struct FaceFlux3 {
+    float3 f2;
+    float3 f4;
+};
+
+struct CellRatio3 {
+    float3 rp;
+    float3 rm;
+};
+
+CellRatio3 InitCellRatio() {
+    CellRatio3 r;
+    r.rp = float3(1.0, 1.0, 1.0);
+    r.rm = float3(1.0, 1.0, 1.0);
+    return r;
+}
+
+FaceFlux3 GetFaceFluxX(int i, int y) {
+    FaceFlux3 res;
+    res.f2 = float3(0.0, 0.0, 0.0);
+    res.f4 = float3(0.0, 0.0, 0.0);
+    int w = _Width;
+    if (i < 0 || i >= w - 1) return res;
+
+    float3 s_i   = _StateIn[int2(i, y)].xyz;
+    float3 s_ip1 = _StateIn[int2(i + 1, y)].xyz;
+
+    float dx = GetDx();
+    float slopeX = abs(s_ip1.x - s_i.x) / dx;
+    float excessSlopeX = max(0.0, slopeX - 0.40);
+    float slopeWeightX = saturate(excessSlopeX * 3.0);
+    float kappa2X = slopeWeightX * min(0.20, 30.0 * _DeltaTime);
+    float kappa4X = min(0.058, 12.0 * _DeltaTime);
+
+    res.f2 = -kappa2X * (s_ip1 - s_i);
+
+    if (i == 0) {
+        float3 s_2 = _StateIn[int2(2, y)].xyz;
+        res.f4 = kappa4X * (2.0 * s_i - 3.0 * s_ip1 + s_2);
+    } else if (i == w - 2) {
+        float3 s_im1 = _StateIn[int2(w - 3, y)].xyz;
+        res.f4 = kappa4X * (-s_im1 + 3.0 * s_i - 2.0 * s_ip1);
+    } else {
+        float3 s_im1 = _StateIn[int2(i - 1, y)].xyz;
+        float3 s_ip2 = _StateIn[int2(i + 2, y)].xyz;
+        res.f4 = kappa4X * (s_im1 - 3.0 * s_i + 3.0 * s_ip1 - s_ip2);
+    }
+    return res;
+}
+
+CellRatio3 GetCellRatioX(int k, int y, FaceFlux3 fL, FaceFlux3 fR) {
+    float3 s_k    = _StateIn[int2(k, y)].xyz;
+    float3 s_prev = _StateIn[int2(max(0, k - 1), y)].xyz;
+    float3 s_next = _StateIn[int2(min(_Width - 1, k + 1), y)].xyz;
+
+    CellRatio3 r;
+    [unroll]
+    for (int ch = 0; ch < 3; ch++) {
+        float v_L = s_k[ch] - (fR.f2[ch] - fL.f2[ch]);
+        float v_min = min(s_k[ch], min(s_prev[ch], s_next[ch]));
+        float v_max = max(s_k[ch], max(s_prev[ch], s_next[ch]));
+
+        float p_plus  = max(0.0, -fR.f4[ch]) + max(0.0, fL.f4[ch]);
+        float p_minus = max(0.0,  fR.f4[ch]) + max(0.0, -fL.f4[ch]);
+        float q_plus  = max(0.0, v_max - v_L);
+        float q_minus = max(0.0, v_L - v_min);
+
+        r.rp[ch] = (p_plus > 1e-7) ? min(1.0, q_plus / p_plus) : 1.0;
+        r.rm[ch] = (p_minus > 1e-7) ? min(1.0, q_minus / p_minus) : 1.0;
+    }
+    return r;
+}
+
+float3 LimitFlux3(FaceFlux3 f, CellRatio3 rL, CellRatio3 rR) {
+    float3 fl;
+    [unroll]
+    for (int ch = 0; ch < 3; ch++) {
+        float a = f.f4[ch];
+        float c = (a > 0.0) ? min(rL.rm[ch], rR.rp[ch]) : min(rL.rp[ch], rR.rm[ch]);
+        fl[ch] = f.f2[ch] + c * a;
+    }
+    return fl;
+}
+
+FaceFlux3 GetFaceFluxZ(int j, int x) {
+    FaceFlux3 res;
+    res.f2 = float3(0.0, 0.0, 0.0);
+    res.f4 = float3(0.0, 0.0, 0.0);
+    int h = _Height;
+    if (j < 0 || j >= h - 1) return res;
+
+    float3 s_j   = _StateIn[int2(x, j)].xyz;
+    float3 s_jp1 = _StateIn[int2(x, j + 1)].xyz;
+
+    float dz = GetDz();
+    float slopeZ = abs(s_jp1.x - s_j.x) / dz;
+    float excessSlopeZ = max(0.0, slopeZ - 0.40);
+    float slopeWeightZ = saturate(excessSlopeZ * 3.0);
+    float kappa2Z = slopeWeightZ * min(0.20, 30.0 * _DeltaTime);
+    float kappa4Z = min(0.058, 12.0 * _DeltaTime);
+
+    res.f2 = -kappa2Z * (s_jp1 - s_j);
+
+    if (j == 0) {
+        float3 s_2 = _StateIn[int2(x, 2)].xyz;
+        res.f4 = kappa4Z * (2.0 * s_j - 3.0 * s_jp1 + s_2);
+    } else if (j == h - 2) {
+        float3 s_jm1 = _StateIn[int2(x, h - 3)].xyz;
+        res.f4 = kappa4Z * (-s_jm1 + 3.0 * s_j - 2.0 * s_jp1);
+    } else {
+        float3 s_jm1 = _StateIn[int2(x, j - 1)].xyz;
+        float3 s_jp2 = _StateIn[int2(x, j + 2)].xyz;
+        res.f4 = kappa4Z * (s_jm1 - 3.0 * s_j + 3.0 * s_jp1 - s_jp2);
+    }
+    return res;
+}
+
+CellRatio3 GetCellRatioZ(int k, int x, FaceFlux3 fD, FaceFlux3 fU) {
+    float3 s_k    = _StateIn[int2(x, k)].xyz;
+    float3 s_prev = _StateIn[int2(x, max(0, k - 1))].xyz;
+    float3 s_next = _StateIn[int2(x, min(_Height - 1, k + 1))].xyz;
+
+    CellRatio3 r;
+    [unroll]
+    for (int ch = 0; ch < 3; ch++) {
+        float v_L = s_k[ch] - (fU.f2[ch] - fD.f2[ch]);
+        float v_min = min(s_k[ch], min(s_prev[ch], s_next[ch]));
+        float v_max = max(s_k[ch], max(s_prev[ch], s_next[ch]));
+
+        float p_plus  = max(0.0, -fU.f4[ch]) + max(0.0, fD.f4[ch]);
+        float p_minus = max(0.0,  fU.f4[ch]) + max(0.0, -fD.f4[ch]);
+        float q_plus  = max(0.0, v_max - v_L);
+        float q_minus = max(0.0, v_L - v_min);
+
+        r.rp[ch] = (p_plus > 1e-7) ? min(1.0, q_plus / p_plus) : 1.0;
+        r.rm[ch] = (p_minus > 1e-7) ? min(1.0, q_minus / p_minus) : 1.0;
+    }
+    return r;
+}
+
 [numthreads(8, 8, 1)]
 void CSFilterX(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
     int2 pos = int2(id.xy);
-    float4 c = _StateIn[pos];
     int x = pos.x;
     int y = pos.y;
     int w = _Width;
 
-    float4 d4x;
-    if (x == 0) {
-        d4x = 2.0 * _StateIn[int2(0, y)] - 3.0 * _StateIn[int2(1, y)] + _StateIn[int2(2, y)];
-    } else if (x == 1) {
-        d4x = -3.0 * _StateIn[int2(0, y)] + 6.0 * _StateIn[int2(1, y)] - 4.0 * _StateIn[int2(2, y)] + _StateIn[int2(3, y)];
-    } else if (x == w - 2) {
-        d4x = _StateIn[int2(w - 4, y)] - 4.0 * _StateIn[int2(w - 3, y)] + 6.0 * _StateIn[int2(w - 2, y)] - 3.0 * _StateIn[int2(w - 1, y)];
-    } else if (x == w - 1) {
-        d4x = _StateIn[int2(w - 3, y)] - 3.0 * _StateIn[int2(w - 2, y)] + 2.0 * _StateIn[int2(w - 1, y)];
+    FaceFlux3 f_m3 = GetFaceFluxX(x - 2, y);
+    FaceFlux3 f_m1 = GetFaceFluxX(x - 1, y);
+    FaceFlux3 f_p1 = GetFaceFluxX(x, y);
+    FaceFlux3 f_p3 = GetFaceFluxX(x + 1, y);
+
+    CellRatio3 r_m1;
+    if (x > 0) {
+        r_m1 = GetCellRatioX(x - 1, y, f_m3, f_m1);
     } else {
-        d4x = _StateIn[int2(x - 2, y)] - 4.0 * _StateIn[int2(x - 1, y)] + 6.0 * c - 4.0 * _StateIn[int2(x + 1, y)] + _StateIn[int2(x + 2, y)];
+        r_m1 = InitCellRatio();
+    }
+    CellRatio3 r_0 = GetCellRatioX(x, y, f_m1, f_p1);
+    CellRatio3 r_p1;
+    if (x < w - 1) {
+        r_p1 = GetCellRatioX(x + 1, y, f_p1, f_p3);
+    } else {
+        r_p1 = InitCellRatio();
     }
 
-    float4 cL = _StateIn[int2(max(0, x - 1), y)];
-    float4 cR = _StateIn[int2(min(w - 1, x + 1), y)];
+    if (x == 0) {
+        r_m1.rp = float3(1.0, 1.0, 1.0);
+        r_m1.rm = float3(1.0, 1.0, 1.0);
+    }
+    if (x == w - 1) {
+        r_p1.rp = float3(1.0, 1.0, 1.0);
+        r_p1.rm = float3(1.0, 1.0, 1.0);
+    }
 
-    float4 d2x = cL - 2.0 * c + cR;
-    float slopeX = abs(cR.r - cL.r) / (2.0 * GetDx());
-    float excessSlopeX = max(0.0, slopeX - 0.40);
-    float slopeWeightX = saturate(excessSlopeX * 3.0);
+    float3 f_L = (x == 0)     ? float3(0.0, 0.0, 0.0) : LimitFlux3(f_m1, r_m1, r_0);
+    float3 f_R = (x == w - 1) ? float3(0.0, 0.0, 0.0) : LimitFlux3(f_p1, r_0, r_p1);
 
-    float kappa4X = min(0.058, 12.0 * _DeltaTime);
-    float kappa2X = slopeWeightX * min(0.20, 30.0 * _DeltaTime);
-
-    float4 filtered = c - kappa4X * d4x + kappa2X * d2x;
-    filtered = clamp(filtered, min(c, min(cL, cR)), max(c, max(cL, cR)));
+    float3 filtered = _StateIn[pos].xyz - (f_R - f_L);
 
     if (_SideWallSponge == 0 && (x == 0 || x == w - 1)) {
-        filtered.g = 0.0; // Strictly zero normal velocity on lateral solid walls
+        filtered.y = 0.0; // Strictly zero normal velocity on lateral solid walls
     }
 
-    filtered.r = clamp(filtered.r, -15.0, 15.0);
-    filtered.g = clamp(filtered.g, -30.0, 30.0);
-    filtered.b = clamp(filtered.b, -30.0, 30.0);
-    filtered.a = 0.0;
+    filtered.x = clamp(filtered.x, -15.0, 15.0);
+    filtered.y = clamp(filtered.y, -30.0, 30.0);
+    filtered.z = clamp(filtered.z, -30.0, 30.0);
 
-    _StateOut[pos] = filtered;
+    _StateOut[pos] = float4(filtered, 0.0);
 }
 
-// 7c. Directional-split 4th-order biharmonic filter: Pass 2 along Z
 [numthreads(8, 8, 1)]
 void CSFilterZ(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
     int2 pos = int2(id.xy);
-    float4 c = _StateIn[pos];
     int x = pos.x;
     int y = pos.y;
     int h = _Height;
 
-    float4 d4z;
-    if (y == 0) {
-        d4z = 2.0 * _StateIn[int2(x, 0)] - 3.0 * _StateIn[int2(x, 1)] + _StateIn[int2(x, 2)];
-    } else if (y == 1) {
-        d4z = -3.0 * _StateIn[int2(x, 0)] + 6.0 * _StateIn[int2(x, 1)] - 4.0 * _StateIn[int2(x, 2)] + _StateIn[int2(x, 3)];
-    } else if (y == h - 2) {
-        d4z = _StateIn[int2(x, h - 4)] - 4.0 * _StateIn[int2(x, h - 3)] + 6.0 * _StateIn[int2(x, h - 2)] - 3.0 * _StateIn[int2(x, h - 1)];
-    } else if (y == h - 1) {
-        d4z = _StateIn[int2(x, h - 3)] - 3.0 * _StateIn[int2(x, h - 2)] + 2.0 * _StateIn[int2(x, h - 1)];
+    FaceFlux3 f_m3 = GetFaceFluxZ(y - 2, x);
+    FaceFlux3 f_m1 = GetFaceFluxZ(y - 1, x);
+    FaceFlux3 f_p1 = GetFaceFluxZ(y, x);
+    FaceFlux3 f_p3 = GetFaceFluxZ(y + 1, x);
+
+    CellRatio3 r_m1;
+    if (y > 0) {
+        r_m1 = GetCellRatioZ(y - 1, x, f_m3, f_m1);
     } else {
-        d4z = _StateIn[int2(x, y - 2)] - 4.0 * _StateIn[int2(x, y - 1)] + 6.0 * c - 4.0 * _StateIn[int2(x, y + 1)] + _StateIn[int2(x, y + 2)];
+        r_m1 = InitCellRatio();
+    }
+    CellRatio3 r_0 = GetCellRatioZ(y, x, f_m1, f_p1);
+    CellRatio3 r_p1;
+    if (y < h - 1) {
+        r_p1 = GetCellRatioZ(y + 1, x, f_p1, f_p3);
+    } else {
+        r_p1 = InitCellRatio();
     }
 
-    float4 cD = _StateIn[int2(x, max(0, y - 1))];
-    float4 cU = _StateIn[int2(x, min(h - 1, y + 1))];
+    if (y == 0) {
+        r_m1.rp = float3(1.0, 1.0, 1.0);
+        r_m1.rm = float3(1.0, 1.0, 1.0);
+    }
+    if (y == h - 1) {
+        r_p1.rp = float3(1.0, 1.0, 1.0);
+        r_p1.rm = float3(1.0, 1.0, 1.0);
+    }
 
-    float4 d2z = cD - 2.0 * c + cU;
-    float slopeZ = abs(cU.r - cD.r) / (2.0 * GetDz());
-    float excessSlopeZ = max(0.0, slopeZ - 0.40);
-    float slopeWeightZ = saturate(excessSlopeZ * 3.0);
+    float3 f_D = (y == 0)     ? float3(0.0, 0.0, 0.0) : LimitFlux3(f_m1, r_m1, r_0);
+    float3 f_U = (y == h - 1) ? float3(0.0, 0.0, 0.0) : LimitFlux3(f_p1, r_0, r_p1);
 
-    float kappa4Z = min(0.058, 12.0 * _DeltaTime);
-    float kappa2Z = slopeWeightZ * min(0.20, 30.0 * _DeltaTime);
-
-    float4 filtered = c - kappa4Z * d4z + kappa2Z * d2z;
-    filtered = clamp(filtered, min(c, min(cD, cU)), max(c, max(cD, cU)));
+    float3 filtered = _StateIn[pos].xyz - (f_U - f_D);
 
     if (y == 0 || y == h - 1) {
-        filtered.b = 0.0; // Strictly zero normal velocity on offshore/beach borders
+        filtered.z = 0.0; // Strictly zero normal velocity on offshore/beach borders
     }
 
-    filtered.r = clamp(filtered.r, -15.0, 15.0);
-    filtered.g = clamp(filtered.g, -30.0, 30.0);
-    filtered.b = clamp(filtered.b, -30.0, 30.0);
-    filtered.a = 0.0;
+    filtered.x = clamp(filtered.x, -15.0, 15.0);
+    filtered.y = clamp(filtered.y, -30.0, 30.0);
+    filtered.z = clamp(filtered.z, -30.0, 30.0);
 
-    _StateOut[pos] = filtered;
+    _StateOut[pos] = float4(filtered, 0.0);
 }
 
 // 8. ADI Defect correction for dispersionSweeps > 1:
