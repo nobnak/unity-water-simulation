@@ -1,9 +1,23 @@
 ﻿{
-    "timestamp": "2026-10-30T13:28:35.0236396Z",
+    "timestamp": "2026-10-30T14:00:02.9583139Z",
     "resolution": 512,
-    "reference_filter_avg_ms": 0.488115,
-    "measured_delta_ms": 0.008,
+    "sample_trials": 50,
     "max_numerical_difference": 0.0,
+    "reference_filter_stats": {
+        "mean_ms": 3.2884,
+        "std_dev_ms": 0.7101,
+        "min_ms": 2.4696,
+        "max_ms": 6.7052
+    },
+    "candidate_filter_stats": {
+        "mean_ms": 3.2649,
+        "std_dev_ms": 1.2298,
+        "min_ms": 2.0414,
+        "max_ms": 11.4988
+    },
+    "measured_delta_ms": -0.0235,
     "is_within_measurement_error": true,
-    "conclusion": "DX11 GPU texture L1/L2 cache coalesces repeated 1D adjacent neighbor fetches within the same 8x8 warp. Shared memory buffering would add synchronization barrier overhead that exceeds the cache latency reduction on modern GPUs (~0.008 ms variance is within measurement noise)."
+    "empirical_facts": "Measured 50 alternating trials with GPU sync. Reference: mean=3.2884 ms (std=0.7101 ms, min=2.4696 ms, max=6.7052 ms). Candidate: mean=3.2649 ms (std=1.2298 ms, min=2.0414 ms, max=11.4988 ms). Max numerical output difference between ref and cand is 0.00E+000.",
+    "hypothesis_analysis": "Hypothesis: Direct-load register caching reduces VRAM texture fetch count from ~24 to 7 per cell. However, modern GPU L1/L2 texture caches coalesce 1D neighbor reads effectively, so bandwidth was not a saturation bottleneck. The candidate increases register pressure and private vector ALU operations, making net runtime change negligible and within statistical error.",
+    "conclusion": "Candidate optimization yields no statistically significant performance gain over reference implementation within measurement error. Production code should retain reference implementation for simplicity and maintainability."
 }

@@ -51,13 +51,23 @@ namespace Nobnak.WaterSimulation.Editor {
         }
 
         [Serializable]
+        public class PerformanceBenchmarkCase {
+            public string bathymetry_type;
+            public int resolution;
+            public int trials;
+            public double generic_mean_ms;
+            public double generic_std_dev_ms;
+            public double specialized_mean_ms;
+            public double specialized_std_dev_ms;
+            public double speedup;
+        }
+
+        [Serializable]
         public class PerformanceComparison {
-            public double generic_128_avg_ms;
-            public double specialized_128_avg_ms;
-            public double speedup_128;
-            public double generic_256_avg_ms;
-            public double specialized_256_avg_ms;
-            public double speedup_256;
+            public string timing_definition;
+            public PerformanceBenchmarkCase bench_128_flat;
+            public PerformanceBenchmarkCase bench_128_shoal;
+            public PerformanceBenchmarkCase bench_256_shoal;
             public string note;
         }
 
@@ -225,38 +235,60 @@ namespace Nobnak.WaterSimulation.Editor {
         }
 
         private static PerformanceComparison BenchmarkPerformance(ComputeShader shader) {
-            const int warmup = 10;
+            const int warmup = 15;
             const int trials = 50;
 
-            // 128 comparison
-            double gen128Ms = MeasureDispatchPair(shader, 128, 128, false, warmup, trials);
-            double spec128Ms = MeasureDispatchPair(shader, 128, 128, true, warmup, trials);
+            // 1. 128 Flat
+            var case128Flat = RunBenchmarkPair(shader, 128, 128, false, warmup, trials, "Flat");
 
-            // 256 comparison
-            double gen256Ms = MeasureDispatchPair(shader, 256, 256, false, warmup, trials);
-            double spec256Ms = MeasureDispatchPair(shader, 256, 256, true, warmup, trials);
+            // 2. 128 Shoal
+            var case128Shoal = RunBenchmarkPair(shader, 128, 128, true, warmup, trials, "Shoal");
+
+            // 3. 256 Shoal
+            var case256Shoal = RunBenchmarkPair(shader, 256, 256, true, warmup, trials, "Shoal");
 
             return new PerformanceComparison {
-                generic_128_avg_ms = gen128Ms,
-                specialized_128_avg_ms = spec128Ms,
-                speedup_128 = gen128Ms > 0 ? gen128Ms / spec128Ms : 1.0,
-                generic_256_avg_ms = gen256Ms,
-                specialized_256_avg_ms = spec256Ms,
-                speedup_256 = gen256Ms > 0 ? gen256Ms / spec256Ms : 1.0,
-                note = "Benchmarked across 50 trials with GPU synchronization. Specialization eliminates redundant synchronization barriers (7 steps for N=128 vs 9 steps for generic, 8 steps for N=256)."
+                timing_definition = "Dispatch-to-sync throughput time in milliseconds (CPU dispatch + GPU execution + AsyncGPUReadback completion wait per sub-pass pair CSTridiagonalX + CSTridiagonalZ). This is not an isolated driver-internal GPU hardware counter.",
+                bench_128_flat = case128Flat,
+                bench_128_shoal = case128Shoal,
+                bench_256_shoal = case256Shoal,
+                note = "Tested on fully initialized non-zero bathymetry and force fields. Alternating trials (Generic, Specialized, Generic, Specialized...) across 50 iterations eliminate execution order and thermal bias. Specialized kernels eliminate unneeded loop iterations (7 steps for N=128 vs 9 generic, 8 steps for N=256)."
             };
         }
 
-        private static double MeasureDispatchPair(ComputeShader shader, int W, int H, bool useSpec, int warmup, int trials) {
+        private static PerformanceBenchmarkCase RunBenchmarkPair(ComputeShader shader, int W, int H, bool isShoal, int warmup, int trials, string bathyType) {
             int kGenericX = shader.FindKernel("CSTridiagonalX");
             int kGenericZ = shader.FindKernel("CSTridiagonalZ");
-            int kX = useSpec ? ((W == 128) ? shader.FindKernel("CSTridiagonalX_128") : shader.FindKernel("CSTridiagonalX_256")) : kGenericX;
-            int kZ = useSpec ? ((H == 128) ? shader.FindKernel("CSTridiagonalZ_128") : shader.FindKernel("CSTridiagonalZ_256")) : kGenericZ;
+            int kSpecX = (W == 128) ? shader.FindKernel("CSTridiagonalX_128") : shader.FindKernel("CSTridiagonalX_256");
+            int kSpecZ = (H == 128) ? shader.FindKernel("CSTridiagonalZ_128") : shader.FindKernel("CSTridiagonalZ_256");
 
             var bathyRT = CreateRT(W, H, RenderTextureFormat.RGHalf);
             var forceRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
-            var pongRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
-            var pingRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+            var pongGenRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+            var pingGenRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+            var pongSpecRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+            var pingSpecRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+
+            // Populate known non-zero bathymetry and force fields
+            var bathyTex = new Texture2D(W, H, TextureFormat.RGFloat, false);
+            var forceTex = new Texture2D(W, H, TextureFormat.RGFloat, false);
+            for (int y = 0; y < H; y++) {
+                float ny = (float)y / (H - 1);
+                for (int x = 0; x < W; x++) {
+                    float nx = (float)x / (W - 1);
+                    float d = isShoal ? math.lerp(3.5f, 0.8f, ny) + 0.2f * math.sin(nx * math.PI * 3f) : 3.5f;
+                    bathyTex.SetPixel(x, y, new Color(d, 0, 0, 0));
+
+                    float fx = math.sin(nx * math.PI * 4f) * math.cos(ny * math.PI * 2f);
+                    float fz = math.cos(nx * math.PI * 2f) * math.sin(ny * math.PI * 4f);
+                    forceTex.SetPixel(x, y, new Color(fx, fz, 0, 0));
+                }
+            }
+            bathyTex.Apply();
+            forceTex.Apply();
+            Graphics.Blit(bathyTex, bathyRT);
+            Graphics.Blit(forceTex, forceRT);
+            ForceSync(forceRT);
 
             shader.SetInt("_Width", W);
             shader.SetInt("_Height", H);
@@ -265,34 +297,107 @@ namespace Nobnak.WaterSimulation.Editor {
             shader.SetFloat("_DispersionAlpha", 1.0f);
             shader.SetInt("_SideWallSponge", 0);
 
-            shader.SetTexture(kX, "_BathymetryTex", bathyRT);
-            shader.SetTexture(kX, "_ForceTex", forceRT);
-            shader.SetTexture(kX, "_AccelPong", pongRT);
+            // Bind textures
+            shader.SetTexture(kGenericX, "_BathymetryTex", bathyRT);
+            shader.SetTexture(kGenericX, "_ForceTex", forceRT);
+            shader.SetTexture(kGenericX, "_AccelPong", pongGenRT);
+            shader.SetTexture(kGenericZ, "_BathymetryTex", bathyRT);
+            shader.SetTexture(kGenericZ, "_AccelPong", pongGenRT);
+            shader.SetTexture(kGenericZ, "_AccelPing", pingGenRT);
 
-            shader.SetTexture(kZ, "_BathymetryTex", bathyRT);
-            shader.SetTexture(kZ, "_AccelPong", pongRT);
-            shader.SetTexture(kZ, "_AccelPing", pingRT);
+            shader.SetTexture(kSpecX, "_BathymetryTex", bathyRT);
+            shader.SetTexture(kSpecX, "_ForceTex", forceRT);
+            shader.SetTexture(kSpecX, "_AccelPong", pongSpecRT);
+            shader.SetTexture(kSpecZ, "_BathymetryTex", bathyRT);
+            shader.SetTexture(kSpecZ, "_AccelPong", pongSpecRT);
+            shader.SetTexture(kSpecZ, "_AccelPing", pingSpecRT);
 
+            // Warmup
             for (int i = 0; i < warmup; i++) {
-                shader.Dispatch(kX, H, 1, 1);
-                shader.Dispatch(kZ, W, 1, 1);
+                shader.Dispatch(kGenericX, H, 1, 1);
+                shader.Dispatch(kGenericZ, W, 1, 1);
+                shader.Dispatch(kSpecX, H, 1, 1);
+                shader.Dispatch(kSpecZ, W, 1, 1);
             }
-            ForceSync(pingRT);
+            ForceSync(pingGenRT);
+            ForceSync(pingSpecRT);
 
-            var sw = Stopwatch.StartNew();
+            var genTimes = new System.Collections.Generic.List<double>(trials);
+            var specTimes = new System.Collections.Generic.List<double>(trials);
+            var sw = new Stopwatch();
+
+            // Alternating trials
             for (int i = 0; i < trials; i++) {
-                shader.Dispatch(kX, H, 1, 1);
-                shader.Dispatch(kZ, W, 1, 1);
+                if (i % 2 == 0) {
+                    sw.Restart();
+                    shader.Dispatch(kGenericX, H, 1, 1);
+                    shader.Dispatch(kGenericZ, W, 1, 1);
+                    ForceSync(pingGenRT);
+                    sw.Stop();
+                    genTimes.Add(sw.Elapsed.TotalMilliseconds);
+
+                    sw.Restart();
+                    shader.Dispatch(kSpecX, H, 1, 1);
+                    shader.Dispatch(kSpecZ, W, 1, 1);
+                    ForceSync(pingSpecRT);
+                    sw.Stop();
+                    specTimes.Add(sw.Elapsed.TotalMilliseconds);
+                } else {
+                    sw.Restart();
+                    shader.Dispatch(kSpecX, H, 1, 1);
+                    shader.Dispatch(kSpecZ, W, 1, 1);
+                    ForceSync(pingSpecRT);
+                    sw.Stop();
+                    specTimes.Add(sw.Elapsed.TotalMilliseconds);
+
+                    sw.Restart();
+                    shader.Dispatch(kGenericX, H, 1, 1);
+                    shader.Dispatch(kGenericZ, W, 1, 1);
+                    ForceSync(pingGenRT);
+                    sw.Stop();
+                    genTimes.Add(sw.Elapsed.TotalMilliseconds);
+                }
             }
-            ForceSync(pingRT);
-            sw.Stop();
 
             bathyRT.Release();
             forceRT.Release();
-            pongRT.Release();
-            pingRT.Release();
+            pongGenRT.Release();
+            pingGenRT.Release();
+            pongSpecRT.Release();
+            pingSpecRT.Release();
+            UnityEngine.Object.DestroyImmediate(bathyTex);
+            UnityEngine.Object.DestroyImmediate(forceTex);
 
-            return sw.Elapsed.TotalMilliseconds / trials;
+            double genMean = ComputeMean(genTimes);
+            double genStd = ComputeStdDev(genTimes, genMean);
+            double specMean = ComputeMean(specTimes);
+            double specStd = ComputeStdDev(specTimes, specMean);
+
+            return new PerformanceBenchmarkCase {
+                bathymetry_type = bathyType,
+                resolution = W,
+                trials = trials,
+                generic_mean_ms = Math.Round(genMean, 4),
+                generic_std_dev_ms = Math.Round(genStd, 4),
+                specialized_mean_ms = Math.Round(specMean, 4),
+                specialized_std_dev_ms = Math.Round(specStd, 4),
+                speedup = (specMean > 0) ? Math.Round(genMean / specMean, 3) : 1.0
+            };
+        }
+
+        private static double ComputeMean(System.Collections.Generic.List<double> list) {
+            double sum = 0;
+            for (int i = 0; i < list.Count; i++) sum += list[i];
+            return sum / list.Count;
+        }
+
+        private static double ComputeStdDev(System.Collections.Generic.List<double> list, double mean) {
+            double sum = 0;
+            for (int i = 0; i < list.Count; i++) {
+                double diff = list[i] - mean;
+                sum += diff * diff;
+            }
+            return math.sqrt(sum / list.Count);
         }
 
         private static RenderTexture CreateRT(int w, int h, RenderTextureFormat fmt) {

@@ -1,6 +1,6 @@
 ﻿{
-    "timestamp": "2026-10-30T13:28:01.7801904Z",
-    "git_commit": "d5446df",
+    "timestamp": "2026-10-30T14:01:17.0437431Z",
+    "git_commit": "18ef6b8",
     "is_dirty": true,
     "shader_hash": "7cc906750fa25ee5de7942c20e6cfdde171cdab7c7bda4120bf1399c143eac86",
     "overall_passed": true,
@@ -45,12 +45,37 @@
         "max_combined_diff": 0.0
     },
     "perf_comparison": {
-        "generic_128_avg_ms": 0.49565000000000006,
-        "specialized_128_avg_ms": 0.14741800000000003,
-        "speedup_128": 3.362208142831947,
-        "generic_256_avg_ms": 0.69259,
-        "specialized_256_avg_ms": 0.36205800000000007,
-        "speedup_256": 1.9129255533643779,
-        "note": "Benchmarked across 50 trials with GPU synchronization. Specialization eliminates redundant synchronization barriers (7 steps for N=128 vs 9 steps for generic, 8 steps for N=256)."
+        "timing_definition": "Dispatch-to-sync throughput time in milliseconds (CPU dispatch + GPU execution + AsyncGPUReadback completion wait per sub-pass pair CSTridiagonalX + CSTridiagonalZ). This is not an isolated driver-internal GPU hardware counter.",
+        "bench_128_flat": {
+            "bathymetry_type": "Flat",
+            "resolution": 128,
+            "trials": 50,
+            "generic_mean_ms": 0.5135,
+            "generic_std_dev_ms": 0.1991,
+            "specialized_mean_ms": 0.4031,
+            "specialized_std_dev_ms": 0.1995,
+            "speedup": 1.274
+        },
+        "bench_128_shoal": {
+            "bathymetry_type": "Shoal",
+            "resolution": 128,
+            "trials": 50,
+            "generic_mean_ms": 0.3375,
+            "generic_std_dev_ms": 0.178,
+            "specialized_mean_ms": 0.26,
+            "specialized_std_dev_ms": 0.0399,
+            "speedup": 1.298
+        },
+        "bench_256_shoal": {
+            "bathymetry_type": "Shoal",
+            "resolution": 256,
+            "trials": 50,
+            "generic_mean_ms": 0.5916,
+            "generic_std_dev_ms": 0.2977,
+            "specialized_mean_ms": 0.5008,
+            "specialized_std_dev_ms": 0.1602,
+            "speedup": 1.181
+        },
+        "note": "Tested on fully initialized non-zero bathymetry and force fields. Alternating trials (Generic, Specialized, Generic, Specialized...) across 50 iterations eliminate execution order and thermal bias. Specialized kernels eliminate unneeded loop iterations (7 steps for N=128 vs 9 generic, 8 steps for N=256)."
     }
 }
