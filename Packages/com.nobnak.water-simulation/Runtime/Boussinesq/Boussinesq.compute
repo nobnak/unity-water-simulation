@@ -15,6 +15,9 @@
 #pragma kernel CSFilterX
 #pragma kernel CSFilterZ
 #pragma kernel CSDefectCorrection
+#pragma kernel CSMeasurePreFilterMetricsX
+#pragma kernel CSMeasurePreFilterMetricsZ
+#pragma kernel CSEvaluateSampleDepth
 
 RWTexture2D<float4> _StateIn;     // R: eta (surface elevation [m]), G: u (vel X [m/s]), B: w (vel Z [m/s]), A: aux
 RWTexture2D<float4> _StatePred;   // Predicted state (MacCormack)
@@ -41,7 +44,11 @@ cbuffer SimParams {
     float _SpongeStrength;
     int _StepParity;         // Alternating 0 / 1 for Symmetric MacCormack (F-B / B-F)
     int _SideWallSponge;     // 1 = Sponge on all 4 borders, 0 = Lateral reflective slip walls (flume)
+    float _DisableSlopeDissipation; // 0.0 = enabled (default), 1.0 = disabled (benchmark/isolation)
 };
+
+RWStructuredBuffer<uint> _DissipationMetricsBuffer;
+RWTexture2D<float> _EffectiveDepthOut;
 
 cbuffer WavemakerParams {
     float _WavemakerAmp;     // Amplitude [m]
@@ -824,7 +831,8 @@ FaceFlux3 GetFaceFluxX(int i, int y) {
     float slopeX = abs(s_ip1.x - s_i.x) / dx;
     float excessSlopeX = max(0.0, slopeX - 0.40);
     float slopeWeightX = saturate(excessSlopeX * 3.0);
-    float kappa2X = slopeWeightX * min(0.20, 30.0 * _DeltaTime);
+    float slopeScaleX = (_DisableSlopeDissipation > 0.5) ? 0.0 : 1.0;
+    float kappa2X = slopeScaleX * slopeWeightX * min(0.20, 30.0 * _DeltaTime);
     float kappa4X = min(0.058, 12.0 * _DeltaTime);
 
     res.f2 = -kappa2X * (s_ip1 - s_i);
@@ -891,7 +899,8 @@ FaceFlux3 GetFaceFluxZ(int j, int x) {
     float slopeZ = abs(s_jp1.x - s_j.x) / dz;
     float excessSlopeZ = max(0.0, slopeZ - 0.40);
     float slopeWeightZ = saturate(excessSlopeZ * 3.0);
-    float kappa2Z = slopeWeightZ * min(0.20, 30.0 * _DeltaTime);
+    float slopeScaleZ = (_DisableSlopeDissipation > 0.5) ? 0.0 : 1.0;
+    float kappa2Z = slopeScaleZ * slopeWeightZ * min(0.20, 30.0 * _DeltaTime);
     float kappa4Z = min(0.058, 12.0 * _DeltaTime);
 
     res.f2 = -kappa2Z * (s_jp1 - s_j);
@@ -1073,4 +1082,81 @@ void CSDefectCorrection(uint3 id : SV_DispatchThreadID) {
 
     float2 defect = betaX * betaZ * crossD4;
     _ForceTex[pos] = _ForceOrigTex[pos] + defect;
+}
+
+[numthreads(8, 8, 1)]
+void CSEvaluateSampleDepth(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height) return;
+    int2 pos = int2(id.xy);
+    _EffectiveDepthOut[pos] = SampleDepth(pos);
+}
+
+[numthreads(8, 8, 1)]
+void CSMeasurePreFilterMetricsX(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width - 1 || id.y >= (uint)_Height) return;
+    int x = (int)id.x;
+    int y = (int)id.y;
+
+    float3 s_i   = _StateIn[int2(x, y)].xyz;
+    float3 s_ip1 = _StateIn[int2(x + 1, y)].xyz;
+
+    float dx = GetDx();
+    float slopeX = abs(s_ip1.x - s_i.x) / dx;
+    float excessSlopeX = max(0.0, slopeX - 0.40);
+    float slopeWeightX = saturate(excessSlopeX * 3.0);
+    float slopeScaleX = (_DisableSlopeDissipation > 0.5) ? 0.0 : 1.0;
+    float kappa2X = slopeScaleX * slopeWeightX * min(0.20, 30.0 * _DeltaTime);
+    float3 f2X = -kappa2X * (s_ip1 - s_i);
+    float fluxMag = length(f2X);
+
+    bool isCenter = (y == _Height / 2);
+
+    // Indices 0..3: Pass X Full Domain
+    if (slopeX > 0.40) InterlockedAdd(_DissipationMetricsBuffer[0], 1);
+    if (kappa2X > 0.0) InterlockedAdd(_DissipationMetricsBuffer[1], 1);
+    if (kappa2X > 0.0) InterlockedMax(_DissipationMetricsBuffer[2], asuint(kappa2X));
+    if (fluxMag > 0.0) InterlockedMax(_DissipationMetricsBuffer[3], asuint(fluxMag));
+
+    // Indices 4..7: Pass X Center Cross-Section
+    if (isCenter) {
+        if (slopeX > 0.40) InterlockedAdd(_DissipationMetricsBuffer[4], 1);
+        if (kappa2X > 0.0) InterlockedAdd(_DissipationMetricsBuffer[5], 1);
+        if (kappa2X > 0.0) InterlockedMax(_DissipationMetricsBuffer[6], asuint(kappa2X));
+        if (fluxMag > 0.0) InterlockedMax(_DissipationMetricsBuffer[7], asuint(fluxMag));
+    }
+}
+
+[numthreads(8, 8, 1)]
+void CSMeasurePreFilterMetricsZ(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)_Width || id.y >= (uint)_Height - 1) return;
+    int x = (int)id.x;
+    int y = (int)id.y;
+
+    float3 s_j   = _StateIn[int2(x, y)].xyz;
+    float3 s_jp1 = _StateIn[int2(x, y + 1)].xyz;
+
+    float dz = GetDz();
+    float slopeZ = abs(s_jp1.x - s_j.x) / dz;
+    float excessSlopeZ = max(0.0, slopeZ - 0.40);
+    float slopeWeightZ = saturate(excessSlopeZ * 3.0);
+    float slopeScaleZ = (_DisableSlopeDissipation > 0.5) ? 0.0 : 1.0;
+    float kappa2Z = slopeScaleZ * slopeWeightZ * min(0.20, 30.0 * _DeltaTime);
+    float3 f2Z = -kappa2Z * (s_jp1 - s_j);
+    float fluxMag = length(f2Z);
+
+    bool isCenter = (x == _Width / 2);
+
+    // Indices 8..11: Pass Z Full Domain
+    if (slopeZ > 0.40) InterlockedAdd(_DissipationMetricsBuffer[8], 1);
+    if (kappa2Z > 0.0) InterlockedAdd(_DissipationMetricsBuffer[9], 1);
+    if (kappa2Z > 0.0) InterlockedMax(_DissipationMetricsBuffer[10], asuint(kappa2Z));
+    if (fluxMag > 0.0) InterlockedMax(_DissipationMetricsBuffer[11], asuint(fluxMag));
+
+    // Indices 12..15: Pass Z Center Cross-Section
+    if (isCenter) {
+        if (slopeZ > 0.40) InterlockedAdd(_DissipationMetricsBuffer[12], 1);
+        if (kappa2Z > 0.0) InterlockedAdd(_DissipationMetricsBuffer[13], 1);
+        if (kappa2Z > 0.0) InterlockedMax(_DissipationMetricsBuffer[14], asuint(kappa2Z));
+        if (fluxMag > 0.0) InterlockedMax(_DissipationMetricsBuffer[15], asuint(fluxMag));
+    }
 }

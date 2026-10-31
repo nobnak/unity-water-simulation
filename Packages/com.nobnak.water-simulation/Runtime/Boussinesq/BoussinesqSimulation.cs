@@ -369,6 +369,7 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetFloat(PropWavemakerAmp, activeAmp);
             boussinesqShader.SetFloat(PropWavemakerFreq, wavemakerFrequency);
             boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
+            boussinesqShader.SetFloat(PropDisableSlopeDissipation, 0.0f);
         }
 
         public void StepSingleSubstep(float subDt) {
@@ -996,6 +997,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropForcePredTex = Shader.PropertyToID("_ForcePredTex");
         private static readonly int PropAccelPing = Shader.PropertyToID("_AccelPing");
         private static readonly int PropAccelPong = Shader.PropertyToID("_AccelPong");
+        private static readonly int PropDisableSlopeDissipation = Shader.PropertyToID("_DisableSlopeDissipation");
         #endregion
     }
 }

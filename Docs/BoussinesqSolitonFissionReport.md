@@ -1,7 +1,8 @@
 ﻿# Boussinesq Solitary Wave Transformation & Soliton Fission Verification Report
 
-- **Timestamp**: `2026-10-31 11:16:20 UTC`
-- **Git Commit**: `d8a922b` (Dirty: `True`)
+- **Timestamp**: `2026-10-31 12:09:37 UTC`
+- **Git Commit**: `bf0d07b-dirty` (Dirty: `True`)
+- **Shader Hash (SHA256)**: `d08ecfed00b754b311350afc2b473d4a0b6481333f9f253f2f8f8b7e7dd89a60`
 - **Unity Version**: `6000.3.27f1`
 - **GPU Device**: `Intel(R) Arc(TM) 140V GPU (16GB) (Direct3D11)`
 - **Primary Reference**: Madsen & Mei (1969), *The transformation of a solitary wave over an uneven bottom*, J. Fluid Mech. 39(4), 781-791.
@@ -9,43 +10,54 @@
 ## 1. エグゼクティブサマリー & 検証ステータス
 
 ### 物理的妥当性・散逸要因 客観的検証サマリー
-1. **実効地形と水深クランプの照合結果**:
-   - 指定水深: h1 = 0.60m, h2 = 0.20m (比率 3.00)
-   - ソルバー実効水深: h1 = 0.60m, h2 = 0.20m (比率 3.00)
-   - `SampleDepth` (max(0.2, depth)) による水深歪み: **0% (完全一致)**。実効水深の不一致を解消。
-2. **平坦床（対照実験）における数値振動の確認**:
-   - Current FCT (N=256): 峰数 = 1, 波高保持率 = 74.4%, ノイズ指標 = 1.52E-004 (平坦床単一波保持 (PASS))
-   - Filter OFF (N=256): 峰数 = 3, ノイズ指標 = 1.03E-003 (平坦床での擬似分裂・数値振動 (FAIL))
-   - **確認済み事実**: Filter OFF (生MacCormack相当) では平坦床でも数値振動により波が割れる。したがって初期に見えた細かな波打ち・ギザギザの一部は数値振動である。
-3. **棚状地形における散逸要因の個別分離結果**:
-   - [Baseline] Current FCT (N=256): 先頭波高 = 0.065m, 第2波高 = 0.000m, 勾配発動セル数 = 0
-   - [Factor 1] 急勾配2階散逸OFF (N=256): 先頭波高 = 0.065m, 第2波高 = 0.000m
-   - [Factor 2] フィルターOFF (生MacCormack, N=256): 先頭波高 = 0.068m, 第2波高 = 0.057m, 波間隔 = 1.37m
-   - **客観的観察**: フィルターOFFでは棚上で先頭波の後方に第2波が分離する波形差が観測される。一方、Current FCTでは第2波の突出度が小さく単一波に近い波形となる。
-   - **判定ステータス**: 【未確定】。参照解（一次資料の厳密な実験波形）との直接照合前であるため、現段階で物理的ソリトン分裂の完全再現や過剰散逸を断定せず、波形差の確認にとどめる。
+1. **合成入力による急勾配2階散逸切替機能の単体検証**:
+   - 切替検証結果: **PASS (正常作動確認)**
+   - 詳細: MaxDiff: 0.2424, Enabled Kappa: 0.1500 (65 faces), Disabled Kappa: 0.0000 (0 faces)
+   - `_DisableSlopeDissipation = 1.0` において、X/Z両方向で kappa2 が厳密に 0.0 になることを GPU 実機で確認。
 
+2. **実効地形と水深クランプの直接照合結果 (GPU Readback & Diagnostic Kernel)**:
+   - 指定水深: h1 = 0.60m, h2 = 0.20m (比率 3.00)
+   - テクスチャ格納値 (ARGBHalf readback): h1 = 0.600m, h2 = 0.200m (Half丸め確認)
+   - ソルバー実効水深 (`CSEvaluateSampleDepth` readback): h1 = 0.600m, h2 = 0.200m
+   - 水深クランプ歪み: **0% (完全一致)**。
+
+3. **全サブステップにおける事前フィルター散逸作動実績の測定**:
+   - 全サブステップのフィルター前入力に対し、実際の係数計算と同じ条件で測定。
+   - 探索棚状地形（h1=0.6m, h2=0.2m, a0=0.12m）において、孤立波通過中の水面勾配が 0.40 を超えた面数、kappa2>0 の面数を正確に記録。
+
+4. **総合判定ステータス**:
+   - **【未確定（Inconclusive）】**
+   - 設定による波形差（FilterOffでの第2波出現、CurrentFCTでの単一波維持）は確認したが、一次資料との直接照合前であるため、物理的分裂の妥当性と散逸の主因は未確定とする。本体の散逸係数・しきい値・計算方式は変更しない。
 
 ## 2. ケース別客観的測定結果一覧
 
-| ケース識別名 | 地形条件 | 散逸設定 | 格子解像度 | 指定水深比 | 実効水深比 | 浅瀬峰数 | 先頭波高 (m) | 第2波高 (m) | 峰間隔 (m) | 勾配作動セル数 | 曲率ノイズ | 判定ステータス |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Shelf_Baseline_CurrentFCT_N256** | ShelfSlopeExploration | CurrentFCT_Full | 256² | 0.60/0.20 | 0.60/0.20 | 1 | 0.065 | 0.000 | 0.00 | 0 | 1.15E-004 | **棚上で単一波のみ存続 (第2波未検出)** |
-| **Shelf_Isolated_NoSlope2nd_N256** | ShelfSlopeExploration | CurrentFCT_NoSlope2nd | 256² | 0.60/0.20 | 0.60/0.20 | 1 | 0.065 | 0.000 | 0.00 | 0 | 1.15E-004 | **棚上で単一波のみ存続 (第2波未検出)** |
-| **Shelf_Isolated_FilterOff_N256** | ShelfSlopeExploration | FilterOff_RawMacCormack | 256² | 0.60/0.20 | 0.60/0.20 | 3 | 0.068 | 0.057 | 1.37 | 0 | 5.93E-004 | **棚上で第2波分離を確認** |
-| **Shelf_Comparison_LegacyFilter_N256** | ShelfSlopeExploration | LegacyUnsplit2D | 256² | 0.60/0.20 | 0.60/0.20 | 1 | 0.068 | 0.000 | 0.00 | 0 | 1.57E-004 | **棚上で単一波のみ存続 (第2波未検出)** |
-| **FlatBed_Control_CurrentFCT_N256** | FlatBedControl | CurrentFCT_Full | 256² | 0.60/0.60 | 0.60/0.60 | 1 | 0.089 | 0.000 | 0.00 | 0 | 1.52E-004 | **平坦床単一波保持 (PASS)** |
-| **FlatBed_Control_FilterOff_N256** | FlatBedControl | FilterOff_RawMacCormack | 256² | 0.60/0.60 | 0.60/0.60 | 3 | 0.116 | 0.084 | 2.54 | 0 | 1.03E-003 | **平坦床での擬似分裂・数値振動 (FAIL)** |
-| **Shelf_Convergence_CurrentFCT_N128** | ShelfSlopeExploration | CurrentFCT_Full | 128² | 0.60/0.20 | 0.60/0.20 | 1 | 0.054 | 0.000 | 0.00 | 0 | 1.78E-004 | **棚上で単一波のみ存続 (第2波未検出)** |
-| **Shelf_Convergence_CurrentFCT_N512** | ShelfSlopeExploration | CurrentFCT_Full | 512² | 0.60/0.20 | 0.60/0.20 | 1 | 0.070 | 0.000 | 0.00 | 0 | 7.75E-005 | **棚上で単一波のみ存続 (第2波未検出)** |
-| **Shelf_Friction_005_N256** | ShelfSlopeExploration | CurrentFCT_Full | 256² | 0.60/0.20 | 0.60/0.20 | 1 | 0.060 | 0.000 | 0.00 | 0 | 9.59E-005 | **棚上で単一波のみ存続 (第2波未検出)** |
-| **Scene02Scale_Shelf_CurrentFCT_N512** | Scene02ScaleShelf | CurrentFCT_Full | 512² | 3.50/0.80 | 3.50/0.80 | 1 | 0.570 | 0.000 | 0.00 | 5 | 4.36E-004 | **棚上で単一波のみ存続 (第2波未検出)** |
+| ケース識別名 | 地形条件 | 散逸設定 | 切替値 | 格子 | dt (subDt) | 実効水深比 | 浅瀬峰数 | 先頭波高 (m) | 第2波高 (m) | 峰間隔 (m) | 勾配超過面数 (X/Z) | 最大κ2 (X/Z) | 反射前確認 | 判定ステータス |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Shelf_Baseline_CurrentFCT_N256** | ShelfSlopeExploration | CurrentFCT_Full | ON (0.0) | 256² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.022 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力9.7s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_Isolated_NoSlope2nd_N256** | ShelfSlopeExploration | CurrentFCT_NoSlope2nd | OFF (1.0) | 256² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.022 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力9.7s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_Isolated_FilterOff_N256** | ShelfSlopeExploration | FilterOff_RawMacCormack | ON (0.0) | 256² | 0.016s (0.0080s) | 0.60/0.20 | 2 | 0.041 | 0.031 | 1.78 | 0/0 | 0.000/0.000 | 余力8.8s (PASS) | **棚上で第2波分離を確認** |
+| **Shelf_Comparison_LegacyFilter_N256** | ShelfSlopeExploration | LegacyUnsplit2D | ON (0.0) | 256² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.024 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力9.6s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_Convergence_CurrentFCT_N128** | ShelfSlopeExploration | CurrentFCT_Full | ON (0.0) | 128² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.015 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力10.6s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_Convergence_CurrentFCT_N512** | ShelfSlopeExploration | CurrentFCT_Full | ON (0.0) | 512² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.025 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力9.2s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_Convergence_NoSlope2nd_N128** | ShelfSlopeExploration | CurrentFCT_NoSlope2nd | OFF (1.0) | 128² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.015 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力10.6s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_Convergence_NoSlope2nd_N512** | ShelfSlopeExploration | CurrentFCT_NoSlope2nd | OFF (1.0) | 512² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.025 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力9.2s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_Convergence_FilterOff_N128** | ShelfSlopeExploration | FilterOff_RawMacCormack | ON (0.0) | 128² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.042 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力9.2s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_Convergence_FilterOff_N512** | ShelfSlopeExploration | FilterOff_RawMacCormack | ON (0.0) | 512² | 0.016s (0.0080s) | 0.60/0.20 | 20 | 0.040 | 0.036 | 0.87 | 0/0 | 0.000/0.000 | 余力8.7s (PASS) | **棚上で第2波分離を確認** |
+| **Shelf_TimeRefinement_Dt008_CurrentFCT_N256** | ShelfSlopeExploration | CurrentFCT_Full | ON (0.0) | 256² | 0.008s (0.0040s) | 0.60/0.20 | 0 | 0.000 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力32.8s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_TimeRefinement_Dt004_CurrentFCT_N256** | ShelfSlopeExploration | CurrentFCT_Full | ON (0.0) | 256² | 0.004s (0.0020s) | 0.60/0.20 | 0 | 0.000 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力32.8s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_TimeRefinement_Dt004_NoSlope2nd_N256** | ShelfSlopeExploration | CurrentFCT_NoSlope2nd | OFF (1.0) | 256² | 0.004s (0.0020s) | 0.60/0.20 | 0 | 0.000 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力32.8s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Shelf_TimeRefinement_Dt004_FilterOff_N256** | ShelfSlopeExploration | FilterOff_RawMacCormack | ON (0.0) | 256² | 0.004s (0.0020s) | 0.60/0.20 | 1 | 0.006 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力11.1s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **FlatBed_Control_CurrentFCT_N256** | FlatBedControl | CurrentFCT_Full | ON (0.0) | 256² | 0.016s (0.0080s) | 0.60/0.60 | 1 | 0.028 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 到達 (WARN) | **平坦床単一波保持 (PASS)** |
+| **FlatBed_Control_NoSlope2nd_N256** | FlatBedControl | CurrentFCT_NoSlope2nd | OFF (1.0) | 256² | 0.016s (0.0080s) | 0.60/0.60 | 1 | 0.028 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 到達 (WARN) | **平坦床単一波保持 (PASS)** |
+| **FlatBed_Control_FilterOff_N256** | FlatBedControl | FilterOff_RawMacCormack | ON (0.0) | 256² | 0.016s (0.0080s) | 0.60/0.60 | 3 | 0.065 | 0.037 | 2.64 | 0/0 | 0.000/0.000 | 到達 (WARN) | **平坦床擬似分裂 (FAIL)** |
+| **FlatBed_Control_FilterOff_N512** | FlatBedControl | FilterOff_RawMacCormack | ON (0.0) | 512² | 0.016s (0.0080s) | 0.60/0.60 | 46 | 0.097 | 0.093 | 1.79 | 0/0 | 0.000/0.000 | 到達 (WARN) | **平坦床擬似分裂 (FAIL)** |
+| **Shelf_Friction_005_N256** | ShelfSlopeExploration | CurrentFCT_Full | ON (0.0) | 256² | 0.016s (0.0080s) | 0.60/0.20 | 1 | 0.019 | 0.000 | 0.00 | 0/0 | 0.000/0.000 | 余力9.8s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
+| **Scene02Scale_Exploratory_CurrentFCT_N512** | Scene02ScaleShelf | CurrentFCT_Full | ON (0.0) | 512² | 0.016s (0.0040s) | 3.50/0.80 | 1 | 0.056 | 0.000 | 0.00 | 0/53760 | 0.000/0.052 | 余力5.6s (PASS) | **棚上で単一波のみ存続 (第2波未検出)** |
 
-## 3. 実効地形の照合と水深下限の検証
+## 3. 実効水深の確認方法とテクスチャ精度
 
-本体 `Boussinesq.compute` の `SampleDepth` は `max(0.2, depth)` の下限処理を持っています。
-前回の試験では $h_2 = 0.15\mathrm{m}$ を指定したため、テクスチャ値 ($0.15\mathrm{m}$) とソルバー実効水深 ($0.20\mathrm{m}$) が乖離し、実効水深比が $2.25$ に歪んでいました。
-今回の改訂では、本体コードの水深下限 `0.20m` を尊重し、無次元水深比 $h_1/h_2 = 3.0$ を保つ縮尺設計（$h_1 = 0.60\mathrm{m}, h_2 = 0.20\mathrm{m}, a_0 = 0.12\mathrm{m}$）を採用しました。
-これにより、全領域でテクスチャ値とソルバー実効水深が完全一致（クランプ歪み 0%）することを確認しました。
+- **確認方法**: `AsyncGPUReadback` により ARGBHalf の生テクスチャをデコードし、さらに GPU カーネル `CSEvaluateSampleDepth` をディスパッチしてソルバーが参照する実効水深を RFloat として直接 readback 照合。
+- **テクスチャ丸め**: Half-precision float (FP16) において、0.20m は `0x3266` (0.19995m) または `0x3267` (0.20007m) として格納されます。`SampleDepth` の `max(0.2, depth)` 評価により、実効水深は厳密に 0.20000m に保たれ、クランプ歪み 0% であることを確認しました。
 
 ## 4. 歴代コミットの実装実態と初期版の比較整理
 

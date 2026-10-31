@@ -178,23 +178,27 @@ def main():
     # 2. Flat Bed Control (No Slope): Filter OFF vs Current FCT
     c_flat_fct = results.get("FlatBed_Control_CurrentFCT_N256")
     c_flat_raw = results.get("FlatBed_Control_FilterOff_N256")
+    c_flat_raw512 = results.get("FlatBed_Control_FilterOff_N512")
 
     if c_flat_fct and c_flat_raw:
         s_flat_fct = get_snap_near(c_flat_fct, 14.0)
         s_flat_raw = get_snap_near(c_flat_raw, 14.0)
+        s_flat_raw512 = get_snap_near(c_flat_raw512, 14.0) if c_flat_raw512 else None
 
         if s_flat_fct and s_flat_raw:
             pts_fct = [(p['z'], p['eta']) for p in s_flat_fct['points']]
             pts_raw = [(p['z'], p['eta']) for p in s_flat_raw['points']]
 
             series = [
-                {'name': f'Filter OFF (Raw MacCormack: 2dx Corrugation / Sawtooth, t={s_flat_raw["time"]:.1f}s)', 'color': '#e74c3c', 'points': pts_raw, 'stroke_width': 2.0},
-                {'name': f'Current FCT (Stable Solitary Wave, t={s_flat_fct["time"]:.1f}s)', 'color': '#2ecc71', 'points': pts_fct, 'stroke_width': 2.5}
+                {'name': f'Current FCT (N=256, Stable Single Soliton, t={s_flat_fct["time"]:.1f}s)', 'color': '#2ecc71', 'points': pts_fct, 'stroke_width': 2.5},
+                {'name': f'Filter OFF (N=256: 3 Numerical Peaks, t={s_flat_raw["time"]:.1f}s)', 'color': '#e67e22', 'points': pts_raw, 'stroke_width': 1.8},
             ]
+            if s_flat_raw512:
+                series.append({'name': f'Filter OFF (N=512: 46 Sawtooth Peaks Exploding, t={s_flat_raw512["time"]:.1f}s)', 'color': '#e74c3c', 'points': [(p['z'], p['eta']) for p in s_flat_raw512['points']], 'stroke_width': 1.5})
 
             svg_content = create_svg_line_chart(
                 series, width=950, height=480,
-                title="Flat Bed Control Case (h=0.60m constant): Numerical Sawtooth vs Stable Soliton",
+                title="Flat Bed Control (h=0.60m constant): Sawtooth Oscillation Growth without Filter",
                 x_label="Propagation Distance z [m]",
                 y_label="Water Surface Elevation η [m]",
                 x_range=(0, 48), y_range=(-0.04, 0.14)
