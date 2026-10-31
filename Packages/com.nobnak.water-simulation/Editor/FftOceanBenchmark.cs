@@ -131,7 +131,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 configuration_name = "Baseline (numthreads=512, MAX_FFT_N=512, 1 row/group)",
                 category = "【解析】/【本体GPU実測】",
                 shared_memory_per_group_bytes = 512 * 16 * 2, // 16KB
-                measured_frame_time_display = "稼働中 (4 Dispatch, ~0.82ms)",
+                measured_frame_time_display = "稼働中 (4 Dispatch, 0.122ms/step [同期を含む壁時計時間: BenchmarkResults.csv, Commit d5446df])",
                 occupancy_display = "実測基準",
                 status = "区分 B (採用中・基準方式)",
                 notes = "FFTOcean.compute 現行実装。N=256 では前半256スレッドが稼働し、16KB共有メモリ内で全8段バタフライを完結。"

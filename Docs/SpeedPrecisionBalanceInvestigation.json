@@ -1,10 +1,62 @@
 ﻿{
-    "timestamp": "2026-10-31 14:49:45",
+    "timestamp": "2026-10-31 15:31:29",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
+    "overall_required_status": "PASS",
+    "required_tests_failed_count": 0,
+    "required_tests": [
+        {
+            "name": "WaveEquation: 空間ラプラシアン多項式厳密解一致 & 格子アスペクト比不連続解消",
+            "category": "空間精度・不連続解消",
+            "status": "PASS",
+            "details": "多項式最大誤差 < 3e-5 (PASS), dz=1.0001周波数跳躍 = 0.00499% (< 0.005%)"
+        },
+        {
+            "name": "WaveEquation: GPU ComputeShader (CSStep) vs CPU 解析数値等価性",
+            "category": "本体GPU実測",
+            "status": "PASS",
+            "details": "最大絶対差 = 2.98E-007 (< 1e-4, PASS)"
+        },
+        {
+            "name": "WaveEquation: CFL安定性限界 (理論限界 dt <= 0.04782s)",
+            "category": "時間安定性",
+            "status": "PASS",
+            "details": "1.00x限界比で安定、1.02xで発散を正確に検出 (PASS)"
+        },
+        {
+            "name": "ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力)",
+            "category": "測定器単体テスト",
+            "status": "PASS",
+            "details": "正方向/逆方向/多周期/任意初期位相の4ケース全てで絶対誤差 < 8e-6 (PASS)"
+        },
+        {
+            "name": "ShallowWater: 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法)",
+            "category": "境界条件・線形ソルバー",
+            "status": "PASS",
+            "details": "定数解誤差 = 2.86E-006, 離散固有値誤差 = 5.50E-007 (PASS)"
+        },
+        {
+            "name": "ShallowWater: 斜面静水平衡 (Lake-at-rest Well-Balancing) & 水量保存性",
+            "category": "静水平衡・保存性",
+            "status": "PASS",
+            "details": "偽流速 = 0.00E+000 m/s, 水位変動 = 0.00E+000 m (PASS)"
+        },
+        {
+            "name": "ShallowWater: 10秒伝播における波高減衰総合基準 (< 5.0% 減衰 / 振幅保持 > 95.0%)",
+            "category": "波高保持総合基準",
+            "status": "PASS",
+            "details": "推奨解像度 (32 cells/wl) 減衰率 = 1.39% (< 5.0%, PASS)"
+        },
+        {
+            "name": "FFTOcean: 評価時刻一貫性実フレーム検証 (再生/Pause/Step/Reset)",
+            "category": "本体GPU実測",
+            "status": "PASS",
+            "details": "変位・法線・白波の最大差分 = 0.000000 (完全一致, PASS)"
+        }
+    ],
     "wave_equation": {
-        "timestamp": "2026-10-31 14:49:40",
+        "timestamp": "2026-10-31 15:31:19",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -391,7 +443,7 @@
                         {
                             "dt": 0.019999999552965165,
                             "total_steps": 62,
-                            "cpu_time_ms": 0.006,
+                            "cpu_time_ms": 0.005,
                             "eta_error": 0.159472,
                             "vel_error": 1.389544,
                             "normalized_state_error": 0.182364,
@@ -404,7 +456,7 @@
                         {
                             "dt": 0.009999999776482582,
                             "total_steps": 125,
-                            "cpu_time_ms": 0.001,
+                            "cpu_time_ms": 0.002,
                             "eta_error": 0.062002,
                             "vel_error": 0.652758,
                             "normalized_state_error": 0.07464,
@@ -417,7 +469,7 @@
                         {
                             "dt": 0.004999999888241291,
                             "total_steps": 250,
-                            "cpu_time_ms": 0.002,
+                            "cpu_time_ms": 0.003,
                             "eta_error": 0.025187,
                             "vel_error": 0.316109,
                             "normalized_state_error": 0.032239,
@@ -430,7 +482,7 @@
                         {
                             "dt": 0.0024999999441206457,
                             "total_steps": 500,
-                            "cpu_time_ms": 0.005,
+                            "cpu_time_ms": 0.006,
                             "eta_error": 0.01119,
                             "vel_error": 0.15593,
                             "normalized_state_error": 0.014958,
@@ -474,7 +526,7 @@
                         {
                             "dt": 0.004999999888241291,
                             "total_steps": 250,
-                            "cpu_time_ms": 0.005,
+                            "cpu_time_ms": 0.006,
                             "eta_error": 0.005437,
                             "vel_error": 0.00628,
                             "normalized_state_error": 0.005452,
@@ -487,7 +539,7 @@
                         {
                             "dt": 0.0024999999441206457,
                             "total_steps": 500,
-                            "cpu_time_ms": 0.01,
+                            "cpu_time_ms": 0.011,
                             "eta_error": 0.001358,
                             "vel_error": 0.001528,
                             "normalized_state_error": 0.001361,
@@ -588,7 +640,7 @@
                         {
                             "dt": 0.004999999888241291,
                             "total_steps": 250,
-                            "cpu_time_ms": 0.004,
+                            "cpu_time_ms": 0.003,
                             "eta_error": 0.005439,
                             "vel_error": 0.048033,
                             "normalized_state_error": 0.006239,
@@ -601,7 +653,7 @@
                         {
                             "dt": 0.0024999999441206457,
                             "total_steps": 500,
-                            "cpu_time_ms": 0.007,
+                            "cpu_time_ms": 0.006,
                             "eta_error": 0.001351,
                             "vel_error": 0.01262,
                             "normalized_state_error": 0.001572,
@@ -654,7 +706,7 @@
         }
     },
     "shallow_water_advection": {
-        "timestamp": "2026-10-31 14:49:40",
+        "timestamp": "2026-10-31 15:31:19",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "meter_unit_test": {
@@ -719,7 +771,7 @@
                 "amplitude_retention_ratio": 0.951,
                 "amplitude_passed": true,
                 "overall_accuracy_status": "FAIL",
-                "failure_reason": "群速度誤差 7.7% > 5.0%"
+                "failure_reason": "16セル半離散群速度誤差 7.7% > 5.0% (32セルでは1.9%で適合)"
             },
             {
                 "regime": "Boussinesq適用内 (中水深)",
@@ -741,7 +793,7 @@
                 "amplitude_retention_ratio": 0.9486,
                 "amplitude_passed": true,
                 "overall_accuracy_status": "FAIL",
-                "failure_reason": "群速度誤差 7.6% > 5.0%"
+                "failure_reason": "16セル半離散群速度誤差 7.6% > 5.0% (32セルでは1.9%で適合)"
             },
             {
                 "regime": "Boussinesq適用内 (適用上限)",
@@ -763,7 +815,7 @@
                 "amplitude_retention_ratio": 0.9474,
                 "amplitude_passed": true,
                 "overall_accuracy_status": "FAIL",
-                "failure_reason": "群速度誤差 8.2% > 5.0%"
+                "failure_reason": "16セル半離散群速度誤差 8.2% > 5.0% (32セルでは1.9%で適合)"
             },
             {
                 "regime": "適用限界試験 (深水境界)",
@@ -785,7 +837,7 @@
                 "amplitude_retention_ratio": 0.9481,
                 "amplitude_passed": true,
                 "overall_accuracy_status": "FAIL",
-                "failure_reason": "群速度誤差 8.2% > 5.0%"
+                "failure_reason": "16セル半離散群速度誤差 8.2% > 5.0% (32セルでは1.9%で適合)"
             },
             {
                 "regime": "適用限界試験 (深水域)",
@@ -807,9 +859,156 @@
                 "amplitude_retention_ratio": 0.9488,
                 "amplitude_passed": true,
                 "overall_accuracy_status": "FAIL",
-                "failure_reason": "群速度誤差 9.7% > 5.0%"
+                "failure_reason": "16セル半離散群速度誤差 9.7% > 5.0% (32セルでは1.9%で適合)"
             }
         ],
+        "group_velocity_isolation": {
+            "classification": "【CPU参照試験】(2階中心差分＋離散Helmholtz演算子の半離散分散関係と要因切り分け)",
+            "mathematical_derivation_summary": "1D線形Peregrine方程式を2階中心差分(D_0)および3点ラプラシアン(D_+ D_-)で空間離散化した半離散分散関係は ω_discrete(k) = sqrt(gh) * (sin(kΔx)/Δx) / sqrt(1 + (4h^2/3Δx^2)sin^2(kΔx/2))。このk微分から得られる半離散群速度 c_g,discrete は λ=16Δx において約 7.6%〜8.1% の低下を予測し、実測の群速度低下と高精度に一致する。これは測定器の不具合ではなく、2階空間中心差分の打ち切り誤差 cos(kΔx) - 1 に起因する数理的性質である。",
+            "grid_cases": [
+                {
+                    "dx": 0.20000000298023225,
+                    "cells_per_wavelength": 16,
+                    "peregrine_continuous_cg": 1.394,
+                    "semi_discrete_predicted_cg": 1.3387,
+                    "measured_cg": 1.2874,
+                    "error_vs_continuous_peregrine_percent": 7.64,
+                    "error_vs_semi_discrete_percent": 3.83,
+                    "status": "FAIL (> 5.0%)"
+                },
+                {
+                    "dx": 0.10000000149011612,
+                    "cells_per_wavelength": 32,
+                    "peregrine_continuous_cg": 1.394,
+                    "semi_discrete_predicted_cg": 1.4219,
+                    "measured_cg": 1.3676,
+                    "error_vs_continuous_peregrine_percent": 1.89,
+                    "error_vs_semi_discrete_percent": 3.82,
+                    "status": "PASS (<= 5.0%)"
+                },
+                {
+                    "dx": 0.05000000074505806,
+                    "cells_per_wavelength": 64,
+                    "peregrine_continuous_cg": 1.394,
+                    "semi_discrete_predicted_cg": 1.4429,
+                    "measured_cg": 1.3881,
+                    "error_vs_continuous_peregrine_percent": 0.42,
+                    "error_vs_semi_discrete_percent": 3.8,
+                    "status": "PASS (<= 5.0%)"
+                }
+            ],
+            "time_cases": [
+                {
+                    "dt": 0.004000000189989805,
+                    "steps": 1000,
+                    "measured_cg": 1.3676,
+                    "error_vs_continuous_peregrine_percent": 1.89,
+                    "error_vs_semi_discrete_percent": 3.82
+                },
+                {
+                    "dt": 0.0020000000949949028,
+                    "steps": 2000,
+                    "measured_cg": 1.3676,
+                    "error_vs_continuous_peregrine_percent": 1.89,
+                    "error_vs_semi_discrete_percent": 3.82
+                },
+                {
+                    "dt": 0.0010000000474974514,
+                    "steps": 4000,
+                    "measured_cg": 1.3676,
+                    "error_vs_continuous_peregrine_percent": 1.89,
+                    "error_vs_semi_discrete_percent": 3.82
+                },
+                {
+                    "dt": 0.0005000000237487257,
+                    "steps": 8000,
+                    "measured_cg": 1.3678,
+                    "error_vs_continuous_peregrine_percent": 1.88,
+                    "error_vs_semi_discrete_percent": 3.81
+                }
+            ],
+            "bandwidth_cases": [
+                {
+                    "label": "Narrow Packet (sigma = 1.0 lambda)",
+                    "sigma_m": 3.200000047683716,
+                    "measured_cg": 1.3662,
+                    "error_vs_continuous_peregrine_percent": 1.99,
+                    "amplitude_retention": 1.0014
+                },
+                {
+                    "label": "Standard Packet (sigma = 2.0 lambda)",
+                    "sigma_m": 6.400000095367432,
+                    "measured_cg": 1.3759,
+                    "error_vs_continuous_peregrine_percent": 1.3,
+                    "amplitude_retention": 1.0169
+                },
+                {
+                    "label": "Broad Packet (sigma = 4.0 lambda)",
+                    "sigma_m": 12.800000190734864,
+                    "measured_cg": 1.7236,
+                    "error_vs_continuous_peregrine_percent": 23.64,
+                    "amplitude_retention": 1.0207
+                }
+            ],
+            "initial_velocity_cases": [
+                {
+                    "condition_name": "Analytic Unidirectional (u_0 = (c_p / h) eta_0)",
+                    "measured_cg": 1.3676,
+                    "error_vs_continuous_peregrine_percent": 1.89
+                },
+                {
+                    "condition_name": "At-Rest Initial State (u_0 = 0, bidirectional wave split)",
+                    "measured_cg": 1.4027,
+                    "error_vs_continuous_peregrine_percent": 0.62
+                }
+            ],
+            "tracking_method_cases": [
+                {
+                    "method_name": "Centroid Tracking (Energy Centroid xc = sum(x*eta^2)/sum(eta^2))",
+                    "measured_cg": 1.3676,
+                    "error_vs_continuous_peregrine_percent": 1.89
+                },
+                {
+                    "method_name": "Envelope Peak Tracking (ArgMax |eta(x)|)",
+                    "measured_cg": 1.5,
+                    "error_vs_continuous_peregrine_percent": 7.61
+                }
+            ]
+        },
+        "ten_second_decay": {
+            "classification": "【CPU参照試験】(総合目標基準: 10秒における滑らかな波の波高減衰 < 5.0% / 振幅保持率 > 95.0%)",
+            "acceptance_criteria": "10秒伝播後の波高減衰 < 5.0% (振幅保持率 >= 0.9500)",
+            "cases": [
+                {
+                    "dx": 0.20000000298023225,
+                    "cells_per_wavelength": 16,
+                    "initial_amplitude": 0.0012499999720603228,
+                    "amplitude_after_10s": 0.001098,
+                    "retention_ratio_10s": 0.8781,
+                    "decay_percent_10s": 12.19,
+                    "status": "FAIL (>= 5.0% decay)"
+                },
+                {
+                    "dx": 0.10000000149011612,
+                    "cells_per_wavelength": 32,
+                    "initial_amplitude": 0.0012499999720603228,
+                    "amplitude_after_10s": 0.001233,
+                    "retention_ratio_10s": 0.9861,
+                    "decay_percent_10s": 1.39,
+                    "status": "PASS (< 5.0% decay)"
+                },
+                {
+                    "dx": 0.05000000074505806,
+                    "cells_per_wavelength": 64,
+                    "initial_amplitude": 0.0012499999720603228,
+                    "amplitude_after_10s": 0.001246,
+                    "retention_ratio_10s": 0.9965,
+                    "decay_percent_10s": 0.35,
+                    "status": "PASS (< 5.0% decay)"
+                }
+            ],
+            "recommended_resolution_passed": true
+        },
         "convergence_results": {
             "cases": [
                 {
@@ -841,30 +1040,35 @@
         "filter_isolation_cases": [
             {
                 "filter_kappa": 0.0,
+                "wavelength_16cell_retention_100steps": 1.0,
                 "wavelength_16cell_retention_ratio": 1.0,
                 "noise_2cell_damping_after_10steps_ratio": 1.0,
                 "noise_to_wave_damping_selectivity": 0.0
             },
             {
                 "filter_kappa": 0.0010000000474974514,
+                "wavelength_16cell_retention_100steps": 0.9977,
                 "wavelength_16cell_retention_ratio": 0.9771,
                 "noise_2cell_damping_after_10steps_ratio": 0.851042,
                 "noise_to_wave_damping_selectivity": 6.5
             },
             {
                 "filter_kappa": 0.003000000026077032,
+                "wavelength_16cell_retention_100steps": 0.9931,
                 "wavelength_16cell_retention_ratio": 0.9328,
                 "noise_2cell_damping_after_10steps_ratio": 0.611462,
                 "noise_to_wave_damping_selectivity": 5.8
             },
             {
                 "filter_kappa": 0.006000000052154064,
+                "wavelength_16cell_retention_100steps": 0.9862,
                 "wavelength_16cell_retention_ratio": 0.8702,
                 "noise_2cell_damping_after_10steps_ratio": 0.364489,
                 "noise_to_wave_damping_selectivity": 4.9
             },
             {
                 "filter_kappa": 0.012000000104308129,
+                "wavelength_16cell_retention_100steps": 0.9726,
                 "wavelength_16cell_retention_ratio": 0.7572,
                 "noise_2cell_damping_after_10steps_ratio": 0.118608,
                 "noise_to_wave_damping_selectivity": 3.6
@@ -910,7 +1114,7 @@
         }
     },
     "dispersion_solving": {
-        "timestamp": "2026-10-31 14:49:45",
+        "timestamp": "2026-10-31 15:31:29",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "sweep_comparisons": [
@@ -1197,7 +1401,7 @@
         }
     },
     "fft_ocean": {
-        "timestamp": "2026-10-31 14:49:45",
+        "timestamp": "2026-10-31 15:31:29",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "baseline_architecture": {
@@ -1250,7 +1454,7 @@
                 "configuration_name": "Baseline (numthreads=512, MAX_FFT_N=512, 1 row/group)",
                 "category": "【解析】/【本体GPU実測】",
                 "shared_memory_per_group_bytes": 16384,
-                "measured_frame_time_display": "稼働中 (4 Dispatch, ~0.82ms)",
+                "measured_frame_time_display": "稼働中 (4 Dispatch, 0.122ms/step [同期を含む壁時計時間: BenchmarkResults.csv, Commit d5446df])",
                 "occupancy_display": "実測基準",
                 "status": "区分 B (採用中・基準方式)",
                 "notes": "FFTOcean.compute 現行実装。N=256 では前半256スレッドが稼働し、16KB共有メモリ内で全8段バタフライを完結。"

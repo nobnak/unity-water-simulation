@@ -1,5 +1,5 @@
 ﻿{
-    "timestamp": "2026-10-31 14:49:40",
+    "timestamp": "2026-10-31 15:31:19",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -386,7 +386,7 @@
                     {
                         "dt": 0.019999999552965165,
                         "total_steps": 62,
-                        "cpu_time_ms": 0.006,
+                        "cpu_time_ms": 0.005,
                         "eta_error": 0.159472,
                         "vel_error": 1.389544,
                         "normalized_state_error": 0.182364,
@@ -399,7 +399,7 @@
                     {
                         "dt": 0.009999999776482582,
                         "total_steps": 125,
-                        "cpu_time_ms": 0.001,
+                        "cpu_time_ms": 0.002,
                         "eta_error": 0.062002,
                         "vel_error": 0.652758,
                         "normalized_state_error": 0.07464,
@@ -412,7 +412,7 @@
                     {
                         "dt": 0.004999999888241291,
                         "total_steps": 250,
-                        "cpu_time_ms": 0.002,
+                        "cpu_time_ms": 0.003,
                         "eta_error": 0.025187,
                         "vel_error": 0.316109,
                         "normalized_state_error": 0.032239,
@@ -425,7 +425,7 @@
                     {
                         "dt": 0.0024999999441206457,
                         "total_steps": 500,
-                        "cpu_time_ms": 0.005,
+                        "cpu_time_ms": 0.006,
                         "eta_error": 0.01119,
                         "vel_error": 0.15593,
                         "normalized_state_error": 0.014958,
@@ -469,7 +469,7 @@
                     {
                         "dt": 0.004999999888241291,
                         "total_steps": 250,
-                        "cpu_time_ms": 0.005,
+                        "cpu_time_ms": 0.006,
                         "eta_error": 0.005437,
                         "vel_error": 0.00628,
                         "normalized_state_error": 0.005452,
@@ -482,7 +482,7 @@
                     {
                         "dt": 0.0024999999441206457,
                         "total_steps": 500,
-                        "cpu_time_ms": 0.01,
+                        "cpu_time_ms": 0.011,
                         "eta_error": 0.001358,
                         "vel_error": 0.001528,
                         "normalized_state_error": 0.001361,
@@ -583,7 +583,7 @@
                     {
                         "dt": 0.004999999888241291,
                         "total_steps": 250,
-                        "cpu_time_ms": 0.004,
+                        "cpu_time_ms": 0.003,
                         "eta_error": 0.005439,
                         "vel_error": 0.048033,
                         "normalized_state_error": 0.006239,
@@ -596,7 +596,7 @@
                     {
                         "dt": 0.0024999999441206457,
                         "total_steps": 500,
-                        "cpu_time_ms": 0.007,
+                        "cpu_time_ms": 0.006,
                         "eta_error": 0.001351,
                         "vel_error": 0.01262,
                         "normalized_state_error": 0.001572,

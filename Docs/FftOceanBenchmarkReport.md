@@ -1,6 +1,6 @@
 ﻿# FFT Ocean Baseline & Optimization Candidate Benchmark Report
 
-- **Timestamp**: `2026-10-31 14:49:45`
+- **Timestamp**: `2026-10-31 15:31:29`
 - **Unity Version**: `6000.3.27f1`
 - **GPU**: `Intel(R) Arc(TM) 140V GPU (16GB)`
 
@@ -24,7 +24,7 @@
 
 | 解像度 | 構成候補 | 分類 | 共有メモリ使用量 | 実測フレーム時間 | Occupancy | 採用判断・備考 |
 | :---: | :--- | :---: | :---: | :---: | :---: | :--- |
-| 256x256 | Baseline (numthreads=512, MAX_FFT_N=512, 1 row/group) | 【解析】/【本体GPU実測】 | 16384 B (16 KB) | 稼働中 (4 Dispatch, ~0.82ms) | 実測基準 | 区分 B (採用中・基準方式) (FFTOcean.compute 現行実装。N=256 では前半256スレッドが稼働し、16KB共有メモリ内で全8段バタフライを完結。) |
+| 256x256 | Baseline (numthreads=512, MAX_FFT_N=512, 1 row/group) | 【解析】/【本体GPU実測】 | 16384 B (16 KB) | 稼働中 (4 Dispatch, 0.122ms/step [同期を含む壁時計時間: BenchmarkResults.csv, Commit d5446df]) | 実測基準 | 区分 B (採用中・基準方式) (FFTOcean.compute 現行実装。N=256 では前半256スレッドが稼働し、16KB共有メモリ内で全8段バタフライを完結。) |
 | 256x256 | Radix-4 Multi-Row (候補) | 【未実施】 | 未計測 | 未計測 | 未計測 | 区分 C (判断保留・未実装) (Radix-4 化によるステップ数半減の仮説はあるが、ComputeShader未実装のためGPU実測値・Occupancy測定値なし。採用不要とは結論せず判断保留。) |
 | 256x256 | Tile-Transposed Shared Memory (候補) | 【未実施】 | 未計測 | 未計測 | 未計測 | 区分 C (判断保留・未実装) (行列転置を用いた2D FFT集約候補。ComputeShader未実装のためGPU実測値・Occupancy測定値なし。採用不要とは結論せず判断保留。) |
 
