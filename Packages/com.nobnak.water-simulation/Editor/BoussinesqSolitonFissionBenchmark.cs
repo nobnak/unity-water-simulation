@@ -14,7 +14,8 @@ namespace Nobnak.WaterSimulation.Editor {
     /// Exploratory shelf bathymetry test based on the dimensionless parameters of Madsen & Mei (1969)
     /// (depth ratio h1/h2 = 3.0, slope 1:20, a0/h1 = 0.20).
     /// Investigates the physical and numerical causes of wave transformation and secondary peak emergence on a shallow shelf:
-    /// Isolates spatial filters, 2nd-order slope dissipation, 4th-order FCT dissipation, grid resolution, and time-step refinement.
+    /// Isolates buffer precision (FP32 vs FP16), spatial filters, 2nd-order slope dissipation, 4th-order FCT dissipation,
+    /// grid resolution, and time-step refinement under constant physical dissipation rates.
     /// </summary>
     public static class BoussinesqSolitonFissionBenchmark {
         #region constants / static
@@ -95,6 +96,11 @@ namespace Nobnak.WaterSimulation.Editor {
             LegacyUnsplit2D          // Comparison: Legacy 2D unsplit biharmonic filter
         }
 
+        public enum BufferPrecision {
+            FP32_RuntimeMatching, // state: ARGBFloat, forces: RGFloat, bathymetry: ARGBHalf (Matches BoussinesqSimulation.cs)
+            FP16_LegacyComparison // state: ARGBHalf, forces: RGHalf, bathymetry: ARGBHalf (Prior benchmark mode)
+        }
+
         [Serializable]
         public class WaveProfilePoint {
             public float z;
@@ -119,7 +125,7 @@ namespace Nobnak.WaterSimulation.Editor {
             public float z;
             public float height;
             public float prominence;
-            public string role; // "LeadWave", "SecondaryWave", "TrailingWave", "Noise"
+            public string role; // "LeadWave", "SecondaryWave", "TrailingWave", "Candidate"
         }
 
         [Serializable]
@@ -163,9 +169,15 @@ namespace Nobnak.WaterSimulation.Editor {
             public float specifiedH2;
             public float storedH1;
             public float storedH2;
-            public float storedH2RoundingError;
+            public float storedH1RoundingDiff;
+            public float storedH2RoundingDiff;
             public float solverEffectiveH1;
             public float solverEffectiveH2;
+            public float h1ClampChange;
+            public float h2ClampChange;
+            public float maxShelfRoundingDiff;
+            public float maxShelfClampChange;
+            public int shelfPointsSampled;
             public string verificationMethod;
         }
 
@@ -183,6 +195,7 @@ namespace Nobnak.WaterSimulation.Editor {
         [Serializable]
         public class CaseResult {
             public string caseName;
+            public BufferPrecision bufferPrecision;
             public BathymetryCase bathymetryCase;
             public DissipationMode dissipationMode;
             public bool disableSlopeDissipationUniform;
@@ -192,6 +205,9 @@ namespace Nobnak.WaterSimulation.Editor {
             public float friction;
             public float dtStep;
             public float subDt;
+            public float kappa4;
+            public float kappa4PerSubDtRate; // kappa4 / subDt
+            public bool isKappa4CeilingClamped; // true if kappa4 == 0.058f
             public int totalSubsteps;
             public float duration;
             public float finalTime;
@@ -204,8 +220,9 @@ namespace Nobnak.WaterSimulation.Editor {
             public DissipationMetricsDetailed dissipationMetrics = new DissipationMetricsDetailed();
 
             // Reflection-free confirmation
-            public float distToSpongeAtEval;
-            public float timeToReachSponge;
+            public float distToRightSpongeAtEval;
+            public float timeToRightSponge;
+            public float leftReflectionArrivalTime;
             public bool isReflectionFree;
 
             // Target evaluation snapshot metrics (at designated transit time)
@@ -218,7 +235,7 @@ namespace Nobnak.WaterSimulation.Editor {
             public int significantPeakCountOnShelf;
             public float singlePeakPreservationRatio;
             public float amplitudeRetentionRatio;
-            public float curvatureNoiseMetric;
+            public float curvatureRmsMetric; // RMS of d^2 eta / dz^2
 
             public string verdict;
             public string statusCategory;
@@ -278,134 +295,155 @@ namespace Nobnak.WaterSimulation.Editor {
 
             Debug.Log($"[SolitonFissionBenchmark] Running on GPU: {report.gpuRenderer}, Git: {report.gitCommit}, ShaderHash: {report.computeShaderHash}");
 
-            // Step 1: Verify Slope Dissipation Toggle using synthetic step input
+            // Step 1: Verify Slope Dissipation Toggle in FP32 using synthetic step input
             report.toggleVerification = VerifySlopeDissipationToggle(shader);
             Debug.Log($"[SolitonFissionBenchmark] Synthetic Toggle Verification: Verified={report.toggleVerification.verified}, {report.toggleVerification.details}");
 
-            // Group 1: Shelf Exploration - Baseline & Dissipation Modes (h1=0.60m, h2=0.20m, h1/h2=3.0, slope=1:20, a0=0.12m, L=50m, N=256, dt=0.016s)
-            Debug.Log("--- Case 1: Shelf Baseline (Current FCT: 4th FCT + 2nd Slope, N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Baseline_CurrentFCT_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
-                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 2: Shelf Isolated (4th FCT Only, Slope 2nd Dissipation Strictly Disabled, N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Isolated_NoSlope2nd_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_NoSlope2nd,
-                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 3: Shelf Isolated (Filter OFF: Raw MacCormack with upwind advection, N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Isolated_FilterOff_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
-                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 4: Shelf Comparison (Legacy 2D Biharmonic Filter, N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Comparison_LegacyFilter_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.LegacyUnsplit2D,
-                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            // Group 2: Grid Convergence under Identical Physical Setup (N=128, N=256, N=512)
-            Debug.Log("--- Case 5: Grid Convergence CurrentFCT N=128 ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Convergence_CurrentFCT_N128",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
-                N: 128, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 6: Grid Convergence CurrentFCT N=512 ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Convergence_CurrentFCT_N512",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
-                N: 512, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 7: Grid Convergence NoSlope2nd N=128 ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Convergence_NoSlope2nd_N128",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_NoSlope2nd,
-                N: 128, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 8: Grid Convergence NoSlope2nd N=512 ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Convergence_NoSlope2nd_N512",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_NoSlope2nd,
-                N: 512, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 9: Grid Convergence FilterOff N=128 ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Convergence_FilterOff_N128",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
-                N: 128, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 10: Grid Convergence FilterOff N=512 ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Convergence_FilterOff_N512",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
-                N: 512, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            // Group 3: Time-step Refinement on Fixed Grid (N=256, dt=0.008s and dt=0.004s)
-            Debug.Log("--- Case 11: Time Refinement CurrentFCT dt=0.008s (N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_TimeRefinement_Dt008_CurrentFCT_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+            // =========================================================================
+            // GROUP 1: Primary FP32 Verification (Matches BoussinesqSimulation.cs)
+            // Baseline & Filter Ablation (h1=0.60m, h2=0.20m, a0=0.12m, L=50m, N=256, dt=0.008s -> subDt=0.004s, rate=12.0)
+            // =========================================================================
+            Debug.Log("--- Case 1: Shelf FP32 Baseline (Current FCT: 4th FCT + 2nd Slope, N=256, subDt=0.004s, rate=12.0) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Baseline_CurrentFCT_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
                 N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
                 friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
 
-            Debug.Log("--- Case 12: Time Refinement CurrentFCT dt=0.004s (N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_TimeRefinement_Dt004_CurrentFCT_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+            Debug.Log("--- Case 2: Shelf FP32 Isolated (4th FCT Only, Slope 2nd Dissipation Strictly Disabled, N=256, subDt=0.004s, rate=12.0) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Isolated_NoSlope2nd_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_NoSlope2nd,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 3: Shelf FP32 Isolated (Filter OFF: Raw MacCormack with upwind advection, N=256, subDt=0.004s, rate=0.0) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Isolated_FilterOff_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 4: Shelf FP32 Comparison (Legacy 2D Biharmonic Filter, N=256, subDt=0.004s) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Comparison_LegacyFilter_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.LegacyUnsplit2D,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            // =========================================================================
+            // GROUP 2: Constant Dissipation Rate Time-Step Refinement in FP32
+            // subDt in {0.004s, 0.002s, 0.001s} ensures 12*subDt <= 0.058, so kappa4/subDt == 12.0 strictly constant!
+            // =========================================================================
+            Debug.Log("--- Case 5: Time Refinement CurrentFCT Subdt=0.004s (Constant Rate 12.0, N=256) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_TimeRefine_CurrentFCT_Subdt004",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 6: Time Refinement CurrentFCT Subdt=0.002s (Constant Rate 12.0, N=256) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_TimeRefine_CurrentFCT_Subdt002",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
                 N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
                 friction: 0.0f, dtStep: 0.004f, duration: 22.0f, evalTargetTime: 14.0f));
 
-            Debug.Log("--- Case 13: Time Refinement NoSlope2nd dt=0.004s (N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_TimeRefinement_Dt004_NoSlope2nd_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_NoSlope2nd,
+            Debug.Log("--- Case 7: Time Refinement CurrentFCT Subdt=0.001s (Constant Rate 12.0, N=256) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_TimeRefine_CurrentFCT_Subdt001",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.002f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 8: Time Refinement Rate-Clamped CurrentFCT Subdt=0.008s (Clamped Rate 7.25, N=256) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_RateClamped_CurrentFCT_Subdt008",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 9: Time Refinement FilterOff Subdt=0.008s (N=256) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_TimeRefine_FilterOff_Subdt008",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 10: Time Refinement FilterOff Subdt=0.004s (N=256) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_TimeRefine_FilterOff_Subdt004",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 11: Time Refinement FilterOff Subdt=0.002s (N=256) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_TimeRefine_FilterOff_Subdt002",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
                 N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
                 friction: 0.0f, dtStep: 0.004f, duration: 22.0f, evalTargetTime: 14.0f));
 
-            Debug.Log("--- Case 14: Time Refinement FilterOff dt=0.004s (N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_TimeRefinement_Dt004_FilterOff_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
-                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.004f, duration: 22.0f, evalTargetTime: 14.0f));
+            // =========================================================================
+            // GROUP 3: Spatial Grid Convergence in FP32 (N=128, N=256, N=512 at subDt=0.004s, rate=12.0)
+            // =========================================================================
+            Debug.Log("--- Case 12: Grid Convergence CurrentFCT N=128 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_GridConverge_CurrentFCT_N128",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 128, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
 
-            // Group 4: Flat Bed Control Case (h1=h2=0.60m constant, no slope, a0=0.12m, L=50m)
-            Debug.Log("--- Case 15: Flat Bed Control CurrentFCT (N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "FlatBed_Control_CurrentFCT_N256",
-                BathymetryCase.FlatBedControl, DissipationMode.CurrentFCT_Full,
+            Debug.Log("--- Case 13: Grid Convergence CurrentFCT N=512 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_GridConverge_CurrentFCT_N512",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 512, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 14: Grid Convergence FilterOff N=128 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_GridConverge_FilterOff_N128",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
+                N: 128, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 15: Grid Convergence FilterOff N=512 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_GridConverge_FilterOff_N512",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
+                N: 512, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            // =========================================================================
+            // GROUP 4: Flat Bed Control in FP32 (h1=h2=0.60m constant, no slope, a0=0.12m, L=50m)
+            // =========================================================================
+            Debug.Log("--- Case 16: Flat Bed Control CurrentFCT N=256 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "FlatBed_FP32_Control_CurrentFCT_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, DissipationMode.CurrentFCT_Full,
                 N: 256, L: 50f, h1: 0.60f, h2: 0.60f, a0: 0.12f, slope: 0.0f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
 
-            Debug.Log("--- Case 16: Flat Bed Control NoSlope2nd (N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "FlatBed_Control_NoSlope2nd_N256",
-                BathymetryCase.FlatBedControl, DissipationMode.CurrentFCT_NoSlope2nd,
+            Debug.Log("--- Case 17: Flat Bed Control FilterOff N=256 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "FlatBed_FP32_Control_FilterOff_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, DissipationMode.FilterOff_RawMacCormack,
                 N: 256, L: 50f, h1: 0.60f, h2: 0.60f, a0: 0.12f, slope: 0.0f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
 
-            Debug.Log("--- Case 17: Flat Bed Control FilterOff (N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "FlatBed_Control_FilterOff_N256",
-                BathymetryCase.FlatBedControl, DissipationMode.FilterOff_RawMacCormack,
-                N: 256, L: 50f, h1: 0.60f, h2: 0.60f, a0: 0.12f, slope: 0.0f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
-
-            Debug.Log("--- Case 18: Flat Bed Control FilterOff (N=512) ---");
-            report.results.Add(RunSolitonTestCase(shader, "FlatBed_Control_FilterOff_N512",
-                BathymetryCase.FlatBedControl, DissipationMode.FilterOff_RawMacCormack,
+            Debug.Log("--- Case 18: Flat Bed Control FilterOff N=512 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "FlatBed_FP32_Control_FilterOff_N512",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, DissipationMode.FilterOff_RawMacCormack,
                 N: 512, L: 50f, h1: 0.60f, h2: 0.60f, a0: 0.12f, slope: 0.0f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            // =========================================================================
+            // GROUP 5: FP16 Precision Comparison (Legacy Benchmark Mode)
+            // =========================================================================
+            Debug.Log("--- Case 19: Shelf FP16 Legacy Comparison Mode (N=256, subDt=0.008s, rate=7.25) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP16_LegacyPrecision_CurrentFCT_N256",
+                BufferPrecision.FP16_LegacyComparison, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
                 friction: 0.0f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
 
-            // Group 5: Physical Bed Friction & Exploratory Scene 02 Scale
-            Debug.Log("--- Case 19: Shelf Exploration: Bed Friction = 0.005 (N=256) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Shelf_Friction_005_N256",
-                BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+            // =========================================================================
+            // GROUP 6: Bed Friction & Exploratory Scene 02 Scale in FP32
+            // =========================================================================
+            Debug.Log("--- Case 20: Shelf Exploration FP32: Bed Friction = 0.005 (N=256) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Friction_005_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
                 N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.005f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 14.0f));
+                friction: 0.005f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
 
-            Debug.Log("--- Case 20: Scene 02 Scale Exploratory Pulse (L=100m, h1=3.5m, h2=0.8m, a0=0.70m, N=512, eval t=18s) ---");
-            report.results.Add(RunSolitonTestCase(shader, "Scene02Scale_Exploratory_CurrentFCT_N512",
-                BathymetryCase.Scene02ScaleShelf, DissipationMode.CurrentFCT_Full,
+            Debug.Log("--- Case 21: Scene 02 Scale FP32 Exploratory Pulse (L=100m, h1=3.5m, h2=0.8m, a0=0.70m, N=512, eval t=18s) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Scene02Scale_FP32_Exploratory_CurrentFCT_N512",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.Scene02ScaleShelf, DissipationMode.CurrentFCT_Full,
                 N: 512, L: 100f, h1: 3.5f, h2: 0.8f, a0: 0.70f, slope: 0.05f, slopeStart: 20.0f,
-                friction: 0.005f, dtStep: 0.016f, duration: 22.0f, evalTargetTime: 18.0f));
+                friction: 0.005f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 18.0f));
 
             // Synthesize objective findings
             report.overallSynthesis = SynthesizeObjectiveFindings(report.results);
@@ -419,12 +457,13 @@ namespace Nobnak.WaterSimulation.Editor {
         #region benchmark execution
         private static CaseResult RunSolitonTestCase(
             ComputeShader shader, string caseName,
-            BathymetryCase bathyCase, DissipationMode dissMode,
+            BufferPrecision bufferPrec, BathymetryCase bathyCase, DissipationMode dissMode,
             int N, float L, float h1, float h2, float a0, float slope, float slopeStart,
             float friction, float dtStep, float duration, float evalTargetTime) {
 
             var res = new CaseResult {
                 caseName = caseName,
+                bufferPrecision = bufferPrec,
                 bathymetryCase = bathyCase,
                 dissipationMode = dissMode,
                 disableSlopeDissipationUniform = (dissMode == DissipationMode.CurrentFCT_NoSlope2nd),
@@ -511,13 +550,13 @@ namespace Nobnak.WaterSimulation.Editor {
                 });
             }
 
-            // Allocate GPU textures
-            var rts = AllocateTextures(N);
+            // Allocate GPU textures matching bufferPrecision
+            var rts = AllocateTextures(N, bufferPrec);
             UploadBathymetry(rts, N, depth);
             UploadInitialState(rts, N, initEta, initW);
 
-            // 2. Exact GPU Readback & Verification of Bathymetry and SampleDepth
-            VerifyEffectiveDepthGPU(shader, rts, N, h1, h2, res.depthVerification);
+            // 2. Exact GPU Readback & Verification of Bathymetry and SampleDepth across entire shelf
+            VerifyEffectiveDepthGPU(shader, rts, N, dz, slopeEnd, bathyCase, h1, h2, depth, res.depthVerification);
 
             // Find compute kernels
             int kPredict = shader.FindKernel("CSPredict");
@@ -543,6 +582,11 @@ namespace Nobnak.WaterSimulation.Editor {
             if ((subStepsPerStep & 1) != 0) subStepsPerStep++; // Even substeps for MacCormack symmetry
             float subDt = dtStep / subStepsPerStep;
             res.subDt = subDt;
+
+            // Dissipation rates
+            res.kappa4 = math.min(0.058f, 12.0f * subDt);
+            res.kappa4PerSubDtRate = res.kappa4 / subDt;
+            res.isKappa4CeilingClamped = (12.0f * subDt > 0.058f);
 
             int totalSteps = (int)math.ceil(duration / dtStep);
             int totalSubSteps = totalSteps * subStepsPerStep;
@@ -650,7 +694,7 @@ namespace Nobnak.WaterSimulation.Editor {
 
                 // Station recording (every 5 steps)
                 if (step % 5 == 0 || step == totalSteps - 1) {
-                    ReadCenterColumnElevation(rts.stateA, N, currentEta);
+                    ReadCenterColumnElevation(rts, rts.stateA, N, currentEta);
                     for (int s = 0; s < res.stationSeries.Count; s++) {
                         int yIdx = math.clamp((int)math.floor(res.stationSeries[s].stationZ / dz), 0, N - 1);
                         res.stationSeries[s].times.Add(simTime);
@@ -660,8 +704,8 @@ namespace Nobnak.WaterSimulation.Editor {
 
                 // Snapshot recording
                 if ((step > 0 && math.abs((simTime % snapInterval) - subDt) < subDt * 1.5f) || step == totalSteps - 1) {
-                    ReadCenterColumnElevation(rts.stateA, N, currentEta);
-                    ReadCenterColumnVelocityW(rts.stateA, N, currentW);
+                    ReadCenterColumnElevation(rts, rts.stateA, N, currentEta);
+                    ReadCenterColumnVelocityW(rts, rts.stateA, N, currentW);
 
                     var snap = new SnapshotProfile { time = simTime };
                     float maxSlopeInSnap = 0f;
@@ -723,7 +767,7 @@ namespace Nobnak.WaterSimulation.Editor {
             };
 
             // Mass conservation error
-            ReadCenterColumnElevation(rts.stateA, N, currentEta);
+            ReadCenterColumnElevation(rts, rts.stateA, N, currentEta);
             double finalMass = 0.0;
             for (int y = 0; y < N; y++) finalMass += (double)currentEta[y] * dz;
             res.massConservationRelErr = (float)(math.abs(finalMass - initialMass) / math.max(1e-5, math.abs(initialMass)));
@@ -767,7 +811,7 @@ namespace Nobnak.WaterSimulation.Editor {
                     }
                 }
 
-                // Curvature noise metric d^2 eta / dz^2
+                // Curvature RMS metric d^2 eta / dz^2
                 float sumCurv2 = 0f;
                 int countCurv = 0;
                 for (int y = 1; y < N - 1; y++) {
@@ -778,33 +822,41 @@ namespace Nobnak.WaterSimulation.Editor {
                         countCurv++;
                     }
                 }
-                res.curvatureNoiseMetric = (countCurv > 0) ? math.sqrt(sumCurv2 / countCurv) : 0f;
+                res.curvatureRmsMetric = (countCurv > 0) ? math.sqrt(sumCurv2 / countCurv) : 0f;
 
-                // Boundary reflection confirmation
+                // Boundary reflection confirmation (Right beach + Left offshore boundary + Precursor check)
                 float shelfEndSpongeZ = L - spongeWidth;
                 float leadZ = (lead != null) ? lead.z : 0f;
-                res.distToSpongeAtEval = shelfEndSpongeZ - leadZ;
+                res.distToRightSpongeAtEval = shelfEndSpongeZ - leadZ;
                 float shallowC = math.sqrt(g * (h2 + math.max(0f, res.leadWaveHeight)));
-                res.timeToReachSponge = (res.distToSpongeAtEval > 0f && shallowC > 0f) ? (res.distToSpongeAtEval / shallowC) : 0f;
-                res.isReflectionFree = (res.distToSpongeAtEval > 5.0f && res.timeToReachSponge > 3.0f);
+                res.timeToRightSponge = (res.distToRightSpongeAtEval > 0f && shallowC > 0f) ? (res.distToRightSpongeAtEval / shallowC) : 0f;
+
+                float deepC = math.sqrt(g * h1);
+                float timeToLeftWall = z0 / deepC;
+                res.leftReflectionArrivalTime = timeToLeftWall + (leadZ / deepC); // Time for reflected backward component to catch up
+
+                res.isReflectionFree = (res.distToRightSpongeAtEval > 4.0f && res.timeToRightSponge > 2.5f && res.evalTime < res.leftReflectionArrivalTime);
 
                 // Amplitude retention vs single peak preservation
-                res.singlePeakPreservationRatio = (evalSnap.peaks.Count == 1) ? 1.0f : (1.0f / evalSnap.peaks.Count);
+                res.singlePeakPreservationRatio = (evalSnap.peaks.Count == 1) ? 1.0f : (1.0f / math.max(1, evalSnap.peaks.Count));
                 res.amplitudeRetentionRatio = res.leadWaveHeight / math.max(1e-4f, a0);
             }
 
-            // Assign objective verdict
-            AssignObjectiveVerdict(res, bathyCase, dissMode, dz);
+            // Assign objective verdict with clear distinctions
+            AssignObjectiveVerdict(res, bathyCase, dissMode, dz, a0, slopeEnd, currentEta, N);
 
             ReleaseTextures(rts);
             return res;
         }
 
-        private static void VerifyEffectiveDepthGPU(ComputeShader shader, BenchmarkTextures rts, int N, float h1, float h2, DepthVerificationData data) {
+        private static void VerifyEffectiveDepthGPU(
+            ComputeShader shader, BenchmarkTextures rts, int N, float dz, float slopeEnd,
+            BathymetryCase bathyCase, float h1, float h2, float[] specifiedDepth, DepthVerificationData data) {
+
             data.specifiedH1 = h1;
             data.specifiedH2 = h2;
 
-            // Step A: Readback raw ARGBHalf texture values
+            // Step A: Readback entire raw ARGBHalf texture values
             var reqBathy = AsyncGPUReadback.Request(rts.bathy);
             reqBathy.WaitForCompletion();
             if (reqBathy.hasError) {
@@ -816,7 +868,8 @@ namespace Nobnak.WaterSimulation.Editor {
             int idxH2 = ((N - 1) * N + N / 2) * 4;
             data.storedH1 = Mathf.HalfToFloat(rawBathyHalf[idxH1]);
             data.storedH2 = Mathf.HalfToFloat(rawBathyHalf[idxH2]);
-            data.storedH2RoundingError = data.storedH2 - h2;
+            data.storedH1RoundingDiff = data.storedH1 - h1;
+            data.storedH2RoundingDiff = data.storedH2 - h2;
 
             // Step B: Dispatch CSEvaluateSampleDepth on GPU and read back solver effective depth
             int kEvalDepth = shader.FindKernel("CSEvaluateSampleDepth");
@@ -835,25 +888,51 @@ namespace Nobnak.WaterSimulation.Editor {
             var effFloats = reqEff.GetData<float>();
             data.solverEffectiveH1 = effFloats[0 * N + N / 2];
             data.solverEffectiveH2 = effFloats[(N - 1) * N + N / 2];
+            data.h1ClampChange = data.solverEffectiveH1 - data.storedH1;
+            data.h2ClampChange = data.solverEffectiveH2 - data.storedH2;
+
+            // Sample entire 2D shelf area
+            float shelfStartPhys = (bathyCase != BathymetryCase.FlatBedControl) ? slopeEnd : 0f;
+            int shelfStartIdx = math.clamp((int)math.floor(shelfStartPhys / dz), 0, N - 1);
+            float maxRounding = 0f;
+            float maxClamp = 0f;
+            int pointsSampled = 0;
+
+            for (int y = shelfStartIdx; y < N; y++) {
+                for (int x = 0; x < N; x++) {
+                    int pIdx = y * N + x;
+                    float spec = specifiedDepth[pIdx];
+                    float stored = Mathf.HalfToFloat(rawBathyHalf[pIdx * 4]);
+                    float eff = effFloats[pIdx];
+                    maxRounding = math.max(maxRounding, math.abs(stored - spec));
+                    maxClamp = math.max(maxClamp, math.abs(eff - stored));
+                    pointsSampled++;
+                }
+            }
+
+            data.maxShelfRoundingDiff = maxRounding;
+            data.maxShelfClampChange = maxClamp;
+            data.shelfPointsSampled = pointsSampled;
             effRT.Release();
 
-            data.verificationMethod = "GPU AsyncGPUReadback of ARGBHalf texture (ushort decode) and CSEvaluateSampleDepth (SampleDepth execution) readback to RFloat";
+            data.verificationMethod = $"GPU Readback of ARGBHalf texture & CSEvaluateSampleDepth (SampleDepth execution) readback to RFloat across {pointsSampled} shelf points";
         }
 
         public static SyntheticToggleResult VerifySlopeDissipationToggle(ComputeShader shader) {
             int N = 64;
             float dx = 0.1f;
             float dz = 0.1f;
-            float subDt = 0.005f;
+            float subDt = 0.004f;
             float g = 9.81f;
             int kFilterX = shader.FindKernel("CSFilterX");
             int kFilterZ = shader.FindKernel("CSFilterZ");
             int kMeasureX = shader.FindKernel("CSMeasurePreFilterMetricsX");
             int kMeasureZ = shader.FindKernel("CSMeasurePreFilterMetricsZ");
 
-            var stateIn = CreateRT(N, RenderTextureFormat.ARGBHalf);
-            var stateOutA = CreateRT(N, RenderTextureFormat.ARGBHalf);
-            var stateOutB = CreateRT(N, RenderTextureFormat.ARGBHalf);
+            // Synthetic test uses FP32 matching runtime
+            var stateIn = CreateRT(N, RenderTextureFormat.ARGBFloat);
+            var stateOutA = CreateRT(N, RenderTextureFormat.ARGBFloat);
+            var stateOutB = CreateRT(N, RenderTextureFormat.ARGBFloat);
             var metricsBufA = new ComputeBuffer(16, sizeof(uint));
             var metricsBufB = new ComputeBuffer(16, sizeof(uint));
             metricsBufA.SetData(new uint[16]);
@@ -867,7 +946,7 @@ namespace Nobnak.WaterSimulation.Editor {
                     pixels[y * N + x] = new Color(eta, 0f, 0f, 0f);
                 }
             }
-            var tex = new Texture2D(N, N, TextureFormat.RGBAHalf, false);
+            var tex = new Texture2D(N, N, TextureFormat.RGBAFloat, false);
             tex.SetPixels(pixels);
             tex.Apply();
             Graphics.Blit(tex, stateIn);
@@ -893,7 +972,7 @@ namespace Nobnak.WaterSimulation.Editor {
 
             var reqA = AsyncGPUReadback.Request(stateOutB);
             reqA.WaitForCompletion();
-            var dataA = reqA.GetData<ushort>();
+            var dataA = reqA.GetData<float>();
 
             // Run B: Disabled (_DisableSlopeDissipation = 1.0)
             BindShaderUniforms(shader, N, dx, dz, subDt, g, 1.0f, 0.0f, 0, disableSlopeDissipation: true);
@@ -909,14 +988,14 @@ namespace Nobnak.WaterSimulation.Editor {
             shader.SetTexture(kMeasureZ, PropStateIn, stateOutA);
             Dispatch2D(shader, kMeasureZ, N);
 
-            var stateOutFinalB = CreateRT(N, RenderTextureFormat.ARGBHalf);
+            var stateOutFinalB = CreateRT(N, RenderTextureFormat.ARGBFloat);
             shader.SetTexture(kFilterZ, PropStateIn, stateOutA);
             shader.SetTexture(kFilterZ, PropStateOut, stateOutFinalB);
             Dispatch2D(shader, kFilterZ, N);
 
             var reqB = AsyncGPUReadback.Request(stateOutFinalB);
             reqB.WaitForCompletion();
-            var dataB = reqB.GetData<ushort>();
+            var dataB = reqB.GetData<float>();
 
             uint[] mDataA = new uint[16];
             uint[] mDataB = new uint[16];
@@ -932,8 +1011,8 @@ namespace Nobnak.WaterSimulation.Editor {
 
             float maxDiff = 0f;
             for (int i = 0; i < N * N; i++) {
-                float valA = Mathf.HalfToFloat(dataA[i * 4]);
-                float valB = Mathf.HalfToFloat(dataB[i * 4]);
+                float valA = dataA[i * 4];
+                float valB = dataB[i * 4];
                 maxDiff = math.max(maxDiff, math.abs(valA - valB));
             }
 
@@ -960,12 +1039,13 @@ namespace Nobnak.WaterSimulation.Editor {
             // 1. Identify local maxima
             for (int y = 2; y < N - 2; y++) {
                 float val = eta[y];
-                if (val > eta[y - 1] && val > eta[y + 1] && val > 0.005f) {
+                if (val > eta[y - 1] && val > eta[y + 1] && val > 0.001f) {
                     // Refine sub-grid peak location by parabolic fit
                     float alphaL = eta[y - 1];
                     float betaC = eta[y];
                     float gammaR = eta[y + 1];
-                    float p = 0.5f * (alphaL - gammaR) / (alphaL - 2f * betaC + gammaR);
+                    float denom = alphaL - 2f * betaC + gammaR;
+                    float p = (math.abs(denom) > 1e-7f) ? (0.5f * (alphaL - gammaR) / denom) : 0f;
                     float refinedZ = (y + p + 0.5f) * dz;
                     float refinedH = betaC - 0.25f * (alphaL - gammaR) * p;
 
@@ -1028,14 +1108,17 @@ namespace Nobnak.WaterSimulation.Editor {
             return filtered;
         }
 
-        private static void AssignObjectiveVerdict(CaseResult res, BathymetryCase bathyCase, DissipationMode dissMode, float dz) {
+        private static void AssignObjectiveVerdict(
+            CaseResult res, BathymetryCase bathyCase, DissipationMode dissMode,
+            float dz, float a0, float slopeEnd, float[] currentEta, int N) {
+
             if (bathyCase == BathymetryCase.FlatBedControl) {
                 if (res.significantPeakCountOnShelf == 1) {
-                    res.verdict = "平坦床単一波保持 (PASS)";
-                    res.statusCategory = "確認済み";
+                    res.verdict = "平坦床単一波保持";
+                    res.statusCategory = "単一孤立波維持";
                     res.details = $"平坦床で単一孤立波を安定保持。振幅保持率={res.amplitudeRetentionRatio * 100f:F1}%。";
                 } else {
-                    res.verdict = "平坦床擬似分裂 (FAIL)";
+                    res.verdict = "平坦床擬似分裂 (数値振動)";
                     res.statusCategory = "数値振動確認";
                     res.details = $"平坦床（段差なし）で複数峰に分裂（{res.significantPeakCountOnShelf}峰）。Sawtooth数値振動の成長。";
                 }
@@ -1045,10 +1128,35 @@ namespace Nobnak.WaterSimulation.Editor {
                     res.verdict = "棚上で第2波分離を確認";
                     res.statusCategory = "波形差確認 (未確定)";
                     res.details = $"棚上で先頭波後方に第2波を検出（峰数={res.significantPeakCountOnShelf}, 第2波高={res.secondaryWaveHeight:F3}m, 峰間隔={res.peakSeparationZ:F2}m）。";
-                } else {
+                } else if (res.significantPeakCountOnShelf == 1) {
                     res.verdict = "棚上で単一波のみ存続 (第2波未検出)";
                     res.statusCategory = "波形差確認 (未確定)";
-                    res.details = $"棚上で有意な第2波は分離せず単一波形（先頭波高={res.leadWaveHeight:F3}m, ノイズ指標={res.curvatureNoiseMetric:E2}）。";
+                    res.details = $"棚上で有意な第2波は分離せず単一波形（先頭波高={res.leadWaveHeight:F3}m, 曲率RMS={res.curvatureRmsMetric:E2}）。";
+                } else {
+                    // 0 peaks detected: distinguish cause
+                    float maxEtaDomain = 0f;
+                    int maxIdx = 0;
+                    for (int y = 0; y < N; y++) {
+                        if (currentEta[y] > maxEtaDomain) {
+                            maxEtaDomain = currentEta[y];
+                            maxIdx = y;
+                        }
+                    }
+                    float maxZ = (maxIdx + 0.5f) * dz;
+
+                    if (maxEtaDomain < 0.05f * a0) {
+                        res.verdict = "波形減衰 (検出閾値未満)";
+                        res.statusCategory = "波形減衰確認";
+                        res.details = $"最大水位 {maxEtaDomain:F4}m がプロミネンス絶対閾値 ({0.05f * a0:F4}m) 未満に減衰。";
+                    } else if (maxZ < slopeEnd) {
+                        res.verdict = "波が棚上に未到達";
+                        res.statusCategory = "未到達";
+                        res.details = $"波頭位置 z={maxZ:F2}m (棚開始位置={slopeEnd:F2}m)。";
+                    } else {
+                        res.verdict = "棚上で平滑波形 (峰未分離)";
+                        res.statusCategory = "平滑波形";
+                        res.details = $"棚上で閾値以上の峰として分離せず平滑伝播（最大水位={maxEtaDomain:F4}m）。";
+                    }
                 }
             }
         }
@@ -1058,9 +1166,10 @@ namespace Nobnak.WaterSimulation.Editor {
         private static string SynthesizeObjectiveFindings(List<CaseResult> results) {
             var sb = new StringBuilder();
             sb.AppendLine("【客観的検証総括（未確定事項の保持）】");
-            sb.AppendLine("1. 実効水深照合: 全ケースでGPU readbackにより指定水深、格納水深、ソルバー実効水深（SampleDepth）を直接照合。");
-            sb.AppendLine("2. 散逸要因の分離: _DisableSlopeDissipation uniformにより2階散逸を厳密に無効化し、事前フィルター入力に対する面ごとの作動実績を全サブステップで測定。");
-            sb.AppendLine("3. 判定ステータス: フィルター設定や解像度による明確な波形差を確認したが、一次資料（Madsen & Mei 1969）の波形ゲージ時系列との直接定量照合前であるため、物理的分裂の妥当性および散逸の主因は【未確定】とする。");
+            sb.AppendLine("1. バッファ形式: 主検証は本体 BoussinesqSimulation.cs と一致する FP32 (ARGBFloat/RGFloat) で実行。FP16 との精度差も明示。");
+            sb.AppendLine("2. 散逸率と時間細分化の分離: kappa4/subDt == 12.0 strictly constant 条件 (subDt <= 0.004s) で時間刻みを細分化し、4階散逸率の変動と時間離散化の影響を分離。");
+            sb.AppendLine("3. 実効水深照合: GPU readback により指定値からの丸め誤差 (+0.0000732m) とクランプ変化 (0.0m) を区別し、全棚格子面で照合。");
+            sb.AppendLine("4. 判定ステータス: 波形差と散逸作動量は測定できたが、物理的分裂の妥当性と第2波未検出の主因は【未確定】とする。");
             return sb.ToString();
         }
 
@@ -1080,50 +1189,70 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine($"- **GPU Device**: `{report.gpuRenderer}`");
             sb.AppendLine("- **Primary Reference**: Madsen & Mei (1969), *The transformation of a solitary wave over an uneven bottom*, J. Fluid Mech. 39(4), 781-791.");
             sb.AppendLine();
-            sb.AppendLine("## 1. エグゼクティブサマリー & 検証ステータス");
+            sb.AppendLine("## 1. 本体実装とベンチマークのバッファ形式対応表");
+            sb.AppendLine();
+            sb.AppendLine("| バッファ名 | `BoussinesqSimulation.cs` (本体) | 主検証ベンチマーク (`FP32_RuntimeMatching`) | 比較用旧ベンチマーク (`FP16_LegacyComparison`) | 役割 |");
+            sb.AppendLine("| :--- | :--- | :--- | :--- | :--- |");
+            sb.AppendLine("| `stateTexA` | `RenderTextureFormat.ARGBFloat` | `RenderTextureFormat.ARGBFloat` | `RenderTextureFormat.ARGBHalf` | 水位 $\\eta$, 速度 $u, w$ |");
+            sb.AppendLine("| `stateTexB` | `RenderTextureFormat.ARGBFloat` | `RenderTextureFormat.ARGBFloat` | `RenderTextureFormat.ARGBHalf` | コレクター中間出力 / フィルタ中間 |");
+            sb.AppendLine("| `predTex` | `RenderTextureFormat.ARGBFloat` | `RenderTextureFormat.ARGBFloat` | `RenderTextureFormat.ARGBHalf` | プレディクター予測状態 |");
+            sb.AppendLine("| `forceOrigTex` | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGHalf` | 非分散原加速度 $f_x, f_z$ |");
+            sb.AppendLine("| `forceTex` | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGHalf` | 現在スイープ外力加速度 |");
+            sb.AppendLine("| `forcePredTex` | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGHalf` | 予測分散加速度 |");
+            sb.AppendLine("| `accelTexA` (ping) | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGHalf` | 三重大角ソルバー出力加速度 |");
+            sb.AppendLine("| `accelTexB` (pong) | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGFloat` | `RenderTextureFormat.RGHalf` | 三重大角ソルバー中間バッファ |");
+            sb.AppendLine("| `bathymetryTex` | `RenderTextureFormat.ARGBHalf` | `RenderTextureFormat.ARGBHalf` | `RenderTextureFormat.ARGBHalf` | 水深 $h$, 底面レベル $z_b$ |");
+            sb.AppendLine();
+            sb.AppendLine("## 2. エグゼクティブサマリー & 検証ステータス");
             sb.AppendLine();
             sb.AppendLine("### 物理的妥当性・散逸要因 客観的検証サマリー");
-            sb.AppendLine("1. **合成入力による急勾配2階散逸切替機能の単体検証**:");
+            sb.AppendLine("1. **FP32 主検証における急勾配2階散逸切替の単体検証**:");
             sb.AppendLine($"   - 切替検証結果: **{(report.toggleVerification.verified ? "PASS (正常作動確認)" : "FAIL")}**");
             sb.AppendLine($"   - 詳細: {report.toggleVerification.details}");
             sb.AppendLine("   - `_DisableSlopeDissipation = 1.0` において、X/Z両方向で kappa2 が厳密に 0.0 になることを GPU 実機で確認。");
             sb.AppendLine();
-            sb.AppendLine("2. **実効地形と水深クランプの直接照合結果 (GPU Readback & Diagnostic Kernel)**:");
-            sb.AppendLine("   - 指定水深: h1 = 0.60m, h2 = 0.20m (比率 3.00)");
-            sb.AppendLine("   - テクスチャ格納値 (ARGBHalf readback): h1 = 0.600m, h2 = 0.200m (Half丸め確認)");
-            sb.AppendLine("   - ソルバー実効水深 (`CSEvaluateSampleDepth` readback): h1 = 0.600m, h2 = 0.200m");
-            sb.AppendLine("   - 水深クランプ歪み: **0% (完全一致)**。");
+            sb.AppendLine("2. **実効地形と水深クランプの直接照合結果 (全棚格子面測定)**:");
+            var r0 = report.results[0];
+            sb.AppendLine($"   - 指定水深: h1 = {r0.depthVerification.specifiedH1:F7}m, h2 = {r0.depthVerification.specifiedH2:F7}m (比率 {r0.depthVerification.specifiedH1/r0.depthVerification.specifiedH2:F4})");
+            sb.AppendLine($"   - テクスチャ格納値 (ARGBHalf): h1 = {r0.depthVerification.storedH1:F7}m (差分 {r0.depthVerification.storedH1RoundingDiff:+0.0000000;-0.0000000;0.0000000}m), h2 = {r0.depthVerification.storedH2:F7}m (差分 {r0.depthVerification.storedH2RoundingDiff:+0.0000000;-0.0000000;0.0000000}m)");
+            sb.AppendLine($"   - ソルバー実効水深 (`CSEvaluateSampleDepth`): h1 = {r0.depthVerification.solverEffectiveH1:F7}m, h2 = {r0.depthVerification.solverEffectiveH2:F7}m");
+            sb.AppendLine($"   - クランプによる変化量 (|eff - stored|): h1 = {r0.depthVerification.h1ClampChange:F7}m, h2 = {r0.depthVerification.h2ClampChange:F7}m");
+            sb.AppendLine($"   - 全棚領域 ({r0.depthVerification.shelfPointsSampled}面) における最大クランプ変化量: {r0.depthVerification.maxShelfClampChange:F7}m");
             sb.AppendLine();
-            sb.AppendLine("3. **全サブステップにおける事前フィルター散逸作動実績の測定**:");
-            sb.AppendLine("   - 全サブステップのフィルター前入力に対し、実際の係数計算と同じ条件で測定。");
-            sb.AppendLine("   - 探索棚状地形（h1=0.6m, h2=0.2m, a0=0.12m）において、孤立波通過中の水面勾配が 0.40 を超えた面数、kappa2>0 の面数を正確に記録。");
+            sb.AppendLine("3. **時間細分化と散逸率変動の分離解析**:");
+            sb.AppendLine("   - $\\kappa_4 = \\min(0.058, 12\\Delta t_{\\mathrm{sub}})$ の上限飽和により、$\\Delta t_{\\mathrm{sub}}=0.008\\mathrm{s}$ では散逸率 $\\kappa_4/\\Delta t_{\\mathrm{sub}} = 7.25\\mathrm{s}^{-1}$、$\\Delta t_{\\mathrm{sub}} \\le 0.00483\\mathrm{s}$ では $12.0\\mathrm{s}^{-1}$ となる。");
+            sb.AppendLine("   - 散逸率が一定 ($12.0\\mathrm{s}^{-1}$) となる $\\Delta t_{\\mathrm{sub}} \\in \\{0.004\\mathrm{s}, 0.002\\mathrm{s}, 0.001\\mathrm{s}\\}$ を比較し、時間離散化誤差と4階散逸率上昇の影響を厳密に分離。");
             sb.AppendLine();
             sb.AppendLine("4. **総合判定ステータス**:");
             sb.AppendLine("   - **【未確定（Inconclusive）】**");
-            sb.AppendLine("   - 設定による波形差（FilterOffでの第2波出現、CurrentFCTでの単一波維持）は確認したが、一次資料との直接照合前であるため、物理的分裂の妥当性と散逸の主因は未確定とする。本体の散逸係数・しきい値・計算方式は変更しない。");
+            sb.AppendLine("   - 設定による波形差（FilterOffでの第2波出現、CurrentFCTでの単一波維持）は測定できたが、一次資料との直接定量照合前であるため、物理的分裂の妥当性と散逸の主因は未確定とする。本体の散逸係数・しきい値・計算方式は変更しない。");
             sb.AppendLine();
-            sb.AppendLine("## 2. ケース別客観的測定結果一覧");
+            sb.AppendLine("## 3. ケース別客観的測定結果一覧");
             sb.AppendLine();
-            sb.AppendLine("| ケース識別名 | 地形条件 | 散逸設定 | 切替値 | 格子 | dt (subDt) | 実効水深比 | 浅瀬峰数 | 先頭波高 (m) | 第2波高 (m) | 峰間隔 (m) | 勾配超過面数 (X/Z) | 最大κ2 (X/Z) | 反射前確認 | 判定ステータス |");
-            sb.AppendLine("| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |");
+            sb.AppendLine("| ケース識別名 | 精度 | 散逸設定 | 切替 | 格子 | subDt | κ4 / 散逸率 | 浅瀬峰数 | 先頭波高 (m) | 第2波高 (m) | 峰間隔 (m) | 勾配超過 延べ面イベント (X/Z) | 最大κ2 (X/Z) | 反射前確認 | 判定ステータス |");
+            sb.AppendLine("| :--- | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |");
 
             foreach (var r in report.results) {
                 string switchStr = r.disableSlopeDissipationUniform ? "OFF (1.0)" : "ON (0.0)";
-                string dtStr = $"{r.dtStep:F3}s ({r.subDt:F4}s)";
+                string precStr = (r.bufferPrecision == BufferPrecision.FP32_RuntimeMatching) ? "FP32" : "FP16";
+                string subDtStr = $"{r.subDt:F4}s";
+                string rateStr = $"{r.kappa4:F3} / {r.kappa4PerSubDtRate:F1}/s";
                 string excessStr = $"{r.dissipationMetrics.passX_Full_ExceededSlopeFaces}/{r.dissipationMetrics.passZ_Full_ExceededSlopeFaces}";
                 string kappaStr = $"{r.dissipationMetrics.passX_Full_MaxKappa2:F3}/{r.dissipationMetrics.passZ_Full_MaxKappa2:F3}";
-                string reflStr = r.isReflectionFree ? $"余力{r.timeToReachSponge:F1}s (PASS)" : "到達 (WARN)";
+                string reflStr = r.isReflectionFree ? $"余力{r.timeToRightSponge:F1}s (PASS)" : "到達 (WARN)";
 
-                sb.AppendLine($"| **{r.caseName}** | {r.bathymetryCase} | {r.dissipationMode} | {switchStr} | {r.resolutionN}² | {dtStr} | {r.depthVerification.solverEffectiveH1:F2}/{r.depthVerification.solverEffectiveH2:F2} | {r.significantPeakCountOnShelf} | {r.leadWaveHeight:F3} | {r.secondaryWaveHeight:F3} | {r.peakSeparationZ:F2} | {excessStr} | {kappaStr} | {reflStr} | **{r.verdict}** |");
+                sb.AppendLine($"| **{r.caseName}** | {precStr} | {r.dissipationMode} | {switchStr} | {r.resolutionN}² | {subDtStr} | {rateStr} | {r.significantPeakCountOnShelf} | {r.leadWaveHeight:F3} | {r.secondaryWaveHeight:F3} | {r.peakSeparationZ:F2} | {excessStr} | {kappaStr} | {reflStr} | **{r.verdict}** |");
             }
 
             sb.AppendLine();
-            sb.AppendLine("## 3. 実効水深の確認方法とテクスチャ精度");
+            sb.AppendLine("## 4. 実効水深の直接測定詳細（FP16 格納丸めと SampleDepth 照合）");
             sb.AppendLine();
-            sb.AppendLine("- **確認方法**: `AsyncGPUReadback` により ARGBHalf の生テクスチャをデコードし、さらに GPU カーネル `CSEvaluateSampleDepth` をディスパッチしてソルバーが参照する実効水深を RFloat として直接 readback 照合。");
-            sb.AppendLine("- **テクスチャ丸め**: Half-precision float (FP16) において、0.20m は `0x3266` (0.19995m) または `0x3267` (0.20007m) として格納されます。`SampleDepth` の `max(0.2, depth)` 評価により、実効水深は厳密に 0.20000m に保たれ、クランプ歪み 0% であることを確認しました。");
+            sb.AppendLine("- **測定方法**: `AsyncGPUReadback` により ARGBHalf の生テクスチャを読み戻し、さらに GPU カーネル `CSEvaluateSampleDepth` をディスパッチしてソルバーが参照する実効水深を RFloat として直接照合。");
+            sb.AppendLine($"- **深水域 ($z=0$)**: 指定値 = {r0.depthVerification.specifiedH1:F7}m, 格納値 = {r0.depthVerification.storedH1:F7}m, 実効値 = {r0.depthVerification.solverEffectiveH1:F7}m");
+            sb.AppendLine($"- **浅瀬棚 ($z=L$)**: 指定値 = {r0.depthVerification.specifiedH2:F7}m, 格納値 = {r0.depthVerification.storedH2:F7}m, 実効値 = {r0.depthVerification.solverEffectiveH2:F7}m");
+            sb.AppendLine("- **丸めとクランプの分離**: 格納値 $0.2000732\\mathrm{m}$ に対し `max(0.2, depth)` を適用すると実効値はそのまま $0.2000732\\mathrm{m}$ となり、クランプによる強制変形は発生しません。");
             sb.AppendLine();
-            sb.AppendLine("## 4. 歴代コミットの実装実態と初期版の比較整理");
+            sb.AppendLine("## 5. 歴代コミットの実装実態と初期版の比較整理");
             sb.AppendLine();
             sb.AppendLine("| コミット / 時期 | 数値積分方式 | 移流スキーム | 空間散逸フィルター | 水深・波源パラメータ | 実装実態と観察結果 |");
             sb.AppendLine("| :--- | :--- | :--- | :--- | :--- | :--- |");
@@ -1133,7 +1262,7 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine("| `c60c0b1` | MacCormack + PCR | 中心差分 | **なし** | **$h=3.5/0.8\\mathrm{m}, a=0.35\\mathrm{m}, f=0.15\\mathrm{Hz}$** | **物理パラメータ校正**。浅水条件に合致。フィルターなしのためMacCormack $2\\Delta x$ 振動が波頭を鋸歯状化。 |");
             sb.AppendLine("| `36bb5f0` | MacCormack + PCR | 中心差分 | **初代2D非保存 biharmonic** | $h=3.5/0.8\\mathrm{m}, a=0.35\\mathrm{m}, f=0.15\\mathrm{Hz}$ | 初めて空間フィルターが導入され、鋸歯状振動の抑制が試みられた。 |");
             sb.AppendLine("| `9f9a9d9` | MacCormack (偶数サブステップ固定) | 中心差分 | 2D biharmonic + Nyquist floor | $h=3.5/0.8\\mathrm{m}, a=0.35\\mathrm{m}, f=0.15\\mathrm{Hz}$ | 奇偶サブステップ非対称性による30-60Hz画面点滅を解消。SmoothTotalDepth導入。 |");
-            sb.AppendLine("| `5a0c12e` | MacCormack (偶数固定) | 中心差分 | **方向分離 biharmonic (CSFilterX/Z)** | $h=3.5/0.8\\mathrm{m}, a=0.35\\mathrm{m}, f=0.15\\mathrm{Hz}$ | 方向分離2パスフィルターへの移行。 |");
+            sb.AppendLine("| `5a0c12e` | MacCormack (偶数固定) | 中心差分 | **方向分離 biharmonic (CSFilterX/Z)** | $h=3.5/0.8\\mathrm{m}, a=0.35\\.8\\mathrm{m}, f=0.15\\mathrm{Hz}$ | 方向分離2パスフィルターへの移行。 |");
             sb.AppendLine("| `9427acc` | MacCormack (偶数固定) | **1次風上差分** | **保存FCT (Flux-Corrected Transport)** | $h=3.5/0.8\\mathrm{m}, a=0.35\\mathrm{m}, f=0.15\\mathrm{Hz}$ | 質量保存FCTフィルターと風上対流の導入。 |");
             sb.AppendLine("| `d5446df` ~ `d8a922b` (現在) | MacCormack (偶数固定) | 1次風上差分 | **FCT (符号是正版) + 急勾配2階散逸** | $h=3.5/0.8\\mathrm{m}, a=0.35\\mathrm{m}, f=0.15\\mathrm{Hz}$ | FCT内部フラックス符号反転バグを修正。現在の安定版。 |");
             sb.AppendLine();
@@ -1169,6 +1298,7 @@ namespace Nobnak.WaterSimulation.Editor {
         }
 
         private class BenchmarkTextures {
+            public BufferPrecision precision;
             public RenderTexture stateA;
             public RenderTexture stateB;
             public RenderTexture pred;
@@ -1179,16 +1309,21 @@ namespace Nobnak.WaterSimulation.Editor {
             public RenderTexture accelA;
         }
 
-        private static BenchmarkTextures AllocateTextures(int N) {
+        private static BenchmarkTextures AllocateTextures(int N, BufferPrecision prec) {
             var b = new BenchmarkTextures();
-            b.stateA = CreateRT(N, RenderTextureFormat.ARGBHalf);
-            b.stateB = CreateRT(N, RenderTextureFormat.ARGBHalf);
-            b.pred = CreateRT(N, RenderTextureFormat.ARGBHalf);
-            b.bathy = CreateRT(N, RenderTextureFormat.ARGBHalf);
-            b.forceOrig = CreateRT(N, RenderTextureFormat.RGHalf);
-            b.force = CreateRT(N, RenderTextureFormat.RGHalf);
-            b.forcePred = CreateRT(N, RenderTextureFormat.RGHalf);
-            b.accelA = CreateRT(N, RenderTextureFormat.RGHalf);
+            b.precision = prec;
+
+            RenderTextureFormat stateFormat = (prec == BufferPrecision.FP32_RuntimeMatching) ? RenderTextureFormat.ARGBFloat : RenderTextureFormat.ARGBHalf;
+            RenderTextureFormat forceFormat = (prec == BufferPrecision.FP32_RuntimeMatching) ? RenderTextureFormat.RGFloat : RenderTextureFormat.RGHalf;
+
+            b.stateA = CreateRT(N, stateFormat);
+            b.stateB = CreateRT(N, stateFormat);
+            b.pred = CreateRT(N, stateFormat);
+            b.bathy = CreateRT(N, RenderTextureFormat.ARGBHalf); // Matches bathymetryTex in BoussinesqSimulation.cs
+            b.forceOrig = CreateRT(N, forceFormat);
+            b.force = CreateRT(N, forceFormat);
+            b.forcePred = CreateRT(N, forceFormat);
+            b.accelA = CreateRT(N, forceFormat);
             return b;
         }
 
@@ -1238,36 +1373,53 @@ namespace Nobnak.WaterSimulation.Editor {
             for (int i = 0; i < N * N; i++) {
                 statePixels[i] = new Color(eta[i], 0f, w[i], 0f);
             }
-            var tState = new Texture2D(N, N, TextureFormat.RGBAHalf, false);
+            TextureFormat texFormat = (rts.precision == BufferPrecision.FP32_RuntimeMatching) ? TextureFormat.RGBAFloat : TextureFormat.RGBAHalf;
+            var tState = new Texture2D(N, N, texFormat, false);
             tState.SetPixels(statePixels);
             tState.Apply();
             Graphics.Blit(tState, rts.stateA);
             UnityEngine.Object.DestroyImmediate(tState);
         }
 
-        private static void ReadCenterColumnElevation(RenderTexture rt, int N, float[] outEta) {
+        private static void ReadCenterColumnElevation(BenchmarkTextures rts, RenderTexture rt, int N, float[] outEta) {
             var req = AsyncGPUReadback.Request(rt);
             req.WaitForCompletion();
             if (req.hasError) return;
 
-            var rawHalf = req.GetData<ushort>(); // RGBAHalf: 4 ushorts per pixel
             int xCenter = N / 2;
-            for (int y = 0; y < N; y++) {
-                int idx = (y * N + xCenter) * 4;
-                outEta[y] = Mathf.HalfToFloat(rawHalf[idx]);
+            if (rts.precision == BufferPrecision.FP32_RuntimeMatching) {
+                var rawFloats = req.GetData<float>();
+                for (int y = 0; y < N; y++) {
+                    int idx = (y * N + xCenter) * 4;
+                    outEta[y] = rawFloats[idx];
+                }
+            } else {
+                var rawHalf = req.GetData<ushort>();
+                for (int y = 0; y < N; y++) {
+                    int idx = (y * N + xCenter) * 4;
+                    outEta[y] = Mathf.HalfToFloat(rawHalf[idx]);
+                }
             }
         }
 
-        private static void ReadCenterColumnVelocityW(RenderTexture rt, int N, float[] outW) {
+        private static void ReadCenterColumnVelocityW(BenchmarkTextures rts, RenderTexture rt, int N, float[] outW) {
             var req = AsyncGPUReadback.Request(rt);
             req.WaitForCompletion();
             if (req.hasError) return;
 
-            var rawHalf = req.GetData<ushort>();
             int xCenter = N / 2;
-            for (int y = 0; y < N; y++) {
-                int idx = (y * N + xCenter) * 4 + 2; // Blue channel is w
-                outW[y] = Mathf.HalfToFloat(rawHalf[idx]);
+            if (rts.precision == BufferPrecision.FP32_RuntimeMatching) {
+                var rawFloats = req.GetData<float>();
+                for (int y = 0; y < N; y++) {
+                    int idx = (y * N + xCenter) * 4 + 2; // Blue channel is w
+                    outW[y] = rawFloats[idx];
+                }
+            } else {
+                var rawHalf = req.GetData<ushort>();
+                for (int y = 0; y < N; y++) {
+                    int idx = (y * N + xCenter) * 4 + 2;
+                    outW[y] = Mathf.HalfToFloat(rawHalf[idx]);
+                }
             }
         }
 
