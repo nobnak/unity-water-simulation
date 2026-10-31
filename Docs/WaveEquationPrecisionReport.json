@@ -1,5 +1,5 @@
 ﻿{
-    "timestamp": "2026-10-31 12:31:11",
+    "timestamp": "2026-10-31 13:17:37",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -428,78 +428,116 @@
         "neumann_laplacian": 0.8000001907348633,
         "neumann_valid": true
     },
+    "spatial_convergence_test": {
+        "isotropic_cases": [
+            {
+                "grid_spacing": 0.800000011920929,
+                "aspect_ratio": 1.0,
+                "max_error": 0.074231,
+                "observed_order": 0.0
+            },
+            {
+                "grid_spacing": 0.4000000059604645,
+                "aspect_ratio": 1.0,
+                "max_error": 0.020095,
+                "observed_order": 1.89
+            },
+            {
+                "grid_spacing": 0.20000000298023225,
+                "aspect_ratio": 1.0,
+                "max_error": 0.003581,
+                "observed_order": 2.49
+            },
+            {
+                "grid_spacing": 0.10000000149011612,
+                "aspect_ratio": 1.0,
+                "max_error": 0.000485,
+                "observed_order": 2.88
+            }
+        ],
+        "anisotropic_cases": [
+            {
+                "grid_spacing": 0.800000011920929,
+                "aspect_ratio": 1.25,
+                "max_error": 0.094033,
+                "observed_order": 0.0
+            },
+            {
+                "grid_spacing": 0.4000000059604645,
+                "aspect_ratio": 1.25,
+                "max_error": 0.025672,
+                "observed_order": 1.87
+            },
+            {
+                "grid_spacing": 0.20000000298023225,
+                "aspect_ratio": 1.25,
+                "max_error": 0.004582,
+                "observed_order": 2.49
+            },
+            {
+                "grid_spacing": 0.10000000149011612,
+                "aspect_ratio": 1.25,
+                "max_error": 0.000619,
+                "observed_order": 2.89
+            }
+        ]
+    },
     "gpu_cpu_equivalence": {
         "max_absolute_difference": 2.980232238769531e-7,
         "is_equivalent": true,
         "status": "PASS"
     },
     "time_integration_comparison": {
+        "classification": "基礎数理検証 (CPU単一振動子) / GPU実装は未実施",
         "schemes": [
             {
                 "scheme_name": "Symplectic Euler (Kick-Drift) [現行方式]",
                 "dt_cases": [
                     {
-                        "dt": 0.0020000000949949028,
-                        "total_steps": 2000,
-                        "cpu_time_ms": 0.043,
-                        "eta_error": 0.00004,
-                        "phase_error_rad": -0.00195,
-                        "amplitude_ratio": 1.0,
+                        "dt": 0.019999999552965165,
+                        "total_steps": 200,
+                        "cpu_time_ms": 0.008,
+                        "eta_error": 0.071927,
+                        "vel_error": 3.938146,
+                        "observed_convergence_order": 0.0,
+                        "phase_error_rad": -0.274916,
+                        "amplitude_ratio": 0.9614,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.009999999776482582,
+                        "total_steps": 400,
+                        "cpu_time_ms": 0.008,
+                        "eta_error": 0.006874,
+                        "vel_error": 0.970297,
+                        "observed_convergence_order": 3.39,
+                        "phase_error_rad": -0.064667,
+                        "amplitude_ratio": 0.995,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.004999999888241291,
                         "total_steps": 800,
-                        "cpu_time_ms": 0.035,
-                        "eta_error": 0.00073,
-                        "phase_error_rad": -0.01554,
+                        "cpu_time_ms": 0.016,
+                        "eta_error": 0.000725,
+                        "vel_error": 0.234423,
+                        "observed_convergence_order": 3.25,
+                        "phase_error_rad": -0.015544,
                         "amplitude_ratio": 0.9994,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     },
                     {
-                        "dt": 0.012000000104308129,
-                        "total_steps": 333,
-                        "cpu_time_ms": 0.006,
-                        "eta_error": 0.00316,
-                        "phase_error_rad": -0.03005,
-                        "amplitude_ratio": 0.9972,
-                        "dispatches_per_step": 1,
-                        "state_textures_required": 2
-                    }
-                ]
-            },
-            {
-                "scheme_name": "Staggered Leapfrog (2次)",
-                "dt_cases": [
-                    {
-                        "dt": 0.0020000000949949028,
-                        "total_steps": 2000,
-                        "cpu_time_ms": 0.035,
-                        "eta_error": 0.0,
-                        "phase_error_rad": -0.00195,
-                        "amplitude_ratio": 1.0,
-                        "dispatches_per_step": 1,
-                        "state_textures_required": 2
-                    },
-                    {
-                        "dt": 0.004999999888241291,
-                        "total_steps": 800,
-                        "cpu_time_ms": 0.014,
-                        "eta_error": 0.00011,
-                        "phase_error_rad": -0.01551,
-                        "amplitude_ratio": 1.0,
-                        "dispatches_per_step": 1,
-                        "state_textures_required": 2
-                    },
-                    {
-                        "dt": 0.012000000104308129,
-                        "total_steps": 333,
-                        "cpu_time_ms": 0.006,
-                        "eta_error": 0.00039,
-                        "phase_error_rad": -0.0297,
-                        "amplitude_ratio": 1.0001,
+                        "dt": 0.0024999999441206457,
+                        "total_steps": 1600,
+                        "cpu_time_ms": 0.029,
+                        "eta_error": 0.000081,
+                        "vel_error": 0.051304,
+                        "observed_convergence_order": 3.17,
+                        "phase_error_rad": -0.0034,
+                        "amplitude_ratio": 0.9999,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     }
@@ -509,11 +547,25 @@
                 "scheme_name": "Velocity Verlet (2次同期)",
                 "dt_cases": [
                     {
-                        "dt": 0.0020000000949949028,
-                        "total_steps": 2000,
-                        "cpu_time_ms": 0.056,
-                        "eta_error": 0.0,
-                        "phase_error_rad": -0.00195,
+                        "dt": 0.019999999552965165,
+                        "total_steps": 200,
+                        "cpu_time_ms": 0.007,
+                        "eta_error": 0.032459,
+                        "vel_error": 3.840746,
+                        "observed_convergence_order": 0.0,
+                        "phase_error_rad": -0.257517,
+                        "amplitude_ratio": 0.9993,
+                        "dispatches_per_step": 2,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.009999999776482582,
+                        "total_steps": 400,
+                        "cpu_time_ms": 0.011,
+                        "eta_error": 0.001974,
+                        "vel_error": 0.964265,
+                        "observed_convergence_order": 4.04,
+                        "phase_error_rad": -0.063935,
                         "amplitude_ratio": 1.0,
                         "dispatches_per_step": 2,
                         "state_textures_required": 2
@@ -522,20 +574,77 @@
                         "dt": 0.004999999888241291,
                         "total_steps": 800,
                         "cpu_time_ms": 0.022,
-                        "eta_error": 0.00012,
-                        "phase_error_rad": -0.01551,
+                        "eta_error": 0.000117,
+                        "vel_error": 0.234046,
+                        "observed_convergence_order": 4.08,
+                        "phase_error_rad": -0.015508,
                         "amplitude_ratio": 1.0,
                         "dispatches_per_step": 2,
                         "state_textures_required": 2
                     },
                     {
-                        "dt": 0.012000000104308129,
-                        "total_steps": 333,
-                        "cpu_time_ms": 0.009,
-                        "eta_error": 0.00039,
-                        "phase_error_rad": -0.02969,
-                        "amplitude_ratio": 1.0001,
+                        "dt": 0.0024999999441206457,
+                        "total_steps": 1600,
+                        "cpu_time_ms": 0.044,
+                        "eta_error": 0.000006,
+                        "vel_error": 0.051258,
+                        "observed_convergence_order": 4.17,
+                        "phase_error_rad": -0.003396,
+                        "amplitude_ratio": 1.0,
                         "dispatches_per_step": 2,
+                        "state_textures_required": 2
+                    }
+                ]
+            },
+            {
+                "scheme_name": "Staggered Leapfrog (2次半刻み)",
+                "dt_cases": [
+                    {
+                        "dt": 0.019999999552965165,
+                        "total_steps": 200,
+                        "cpu_time_ms": 0.004,
+                        "eta_error": 0.032459,
+                        "vel_error": 3.840754,
+                        "observed_convergence_order": 0.0,
+                        "phase_error_rad": -0.257517,
+                        "amplitude_ratio": 0.9993,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.009999999776482582,
+                        "total_steps": 400,
+                        "cpu_time_ms": 0.007,
+                        "eta_error": 0.001975,
+                        "vel_error": 0.964258,
+                        "observed_convergence_order": 4.04,
+                        "phase_error_rad": -0.063935,
+                        "amplitude_ratio": 1.0,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.004999999888241291,
+                        "total_steps": 800,
+                        "cpu_time_ms": 0.014,
+                        "eta_error": 0.000115,
+                        "vel_error": 0.234032,
+                        "observed_convergence_order": 4.1,
+                        "phase_error_rad": -0.015508,
+                        "amplitude_ratio": 1.0,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.0024999999441206457,
+                        "total_steps": 1600,
+                        "cpu_time_ms": 0.027,
+                        "eta_error": 0.000005,
+                        "vel_error": 0.051284,
+                        "observed_convergence_order": 4.63,
+                        "phase_error_rad": -0.003398,
+                        "amplitude_ratio": 1.0,
+                        "dispatches_per_step": 1,
                         "state_textures_required": 2
                     }
                 ]
@@ -544,12 +653,26 @@
                 "scheme_name": "3-Level Störmer-Verlet (2次)",
                 "dt_cases": [
                     {
-                        "dt": 0.0020000000949949028,
-                        "total_steps": 2000,
-                        "cpu_time_ms": 0.033,
-                        "eta_error": 0.0,
-                        "phase_error_rad": 0.02946,
-                        "amplitude_ratio": 1.0004,
+                        "dt": 0.019999999552965165,
+                        "total_steps": 200,
+                        "cpu_time_ms": 0.004,
+                        "eta_error": 0.032457,
+                        "vel_error": 0.816778,
+                        "observed_convergence_order": 0.0,
+                        "phase_error_rad": 0.055934,
+                        "amplitude_ratio": 0.9677,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 3
+                    },
+                    {
+                        "dt": 0.009999999776482582,
+                        "total_steps": 400,
+                        "cpu_time_ms": 0.007,
+                        "eta_error": 0.001975,
+                        "vel_error": 1.399018,
+                        "observed_convergence_order": 4.04,
+                        "phase_error_rad": 0.092628,
+                        "amplitude_ratio": 1.0022,
                         "dispatches_per_step": 1,
                         "state_textures_required": 3
                     },
@@ -557,26 +680,30 @@
                         "dt": 0.004999999888241291,
                         "total_steps": 800,
                         "cpu_time_ms": 0.013,
-                        "eta_error": 0.00012,
-                        "phase_error_rad": 0.06288,
+                        "eta_error": 0.000116,
+                        "vel_error": 0.950015,
+                        "observed_convergence_order": 4.09,
+                        "phase_error_rad": 0.062875,
                         "amplitude_ratio": 1.0018,
                         "dispatches_per_step": 1,
                         "state_textures_required": 3
                     },
                     {
-                        "dt": 0.012000000104308129,
-                        "total_steps": 333,
-                        "cpu_time_ms": 0.005,
-                        "eta_error": 0.00039,
-                        "phase_error_rad": 0.1564,
-                        "amplitude_ratio": 1.0118,
+                        "dt": 0.0024999999441206457,
+                        "total_steps": 1600,
+                        "cpu_time_ms": 0.025,
+                        "eta_error": 0.000004,
+                        "vel_error": 0.541172,
+                        "observed_convergence_order": 4.79,
+                        "phase_error_rad": 0.035843,
+                        "amplitude_ratio": 1.0006,
                         "dispatches_per_step": 1,
                         "state_textures_required": 3
                     }
                 ]
             }
         ],
-        "conclusion": "現行のKick-Drift(シンプレクティック・オイラー)方式は、同時刻の高さ・速度をRGFloat(8B/セル)1ペアのピンポン・1 Dispatchで保持可能。Staggered Leapfrogは半ステップ時刻のズレが生じ、Velocity Verletは加速度の2回評価(2 Dispatch/step)が必要。Kick-Driftは1 Dispatchで位相誤差・振幅保存とも2次精度相当のシンプレクティック幾何構造を維持しており、同じ誤差を達成する総処理時間・メモリ効率・可変dt耐性のバランスにおいて現行方式が最適であることを確認。"
+        "conclusion": "【数理的知見】Kick-DriftおよびVelocity Verletはいずれも同一時刻状態誤差において約2次の収束性(order ~ 2.0)を示し、振幅比もシンプレクティック幾何構造により極めて高い保存性(1.000)を示す。【ディスパッチ・メモリ構造】Kick-Driftは1ステップあたり加速度評価が1回(1 Dispatch/step)・RGFloat(8B)1ペアで完結するのに対し、同期Velocity Verletは加速度評価が2回(2 Dispatch/step)必要となる。【GPU評価ステータス: 未実施】Velocity VerletのGPUコンピュートシェーダーは未実装であり、GPU実行時間は未実測(未実施)。現行Kick-Driftを維持するが、GPUでの性能差の断定は行わない。"
     },
     "cfl_verification": {
         "dx": 0.5,

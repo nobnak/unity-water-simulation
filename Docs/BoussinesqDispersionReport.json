@@ -1,5 +1,5 @@
 ﻿{
-    "timestamp": "2026-10-31 12:31:13",
+    "timestamp": "2026-10-31 13:17:40",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "sweep_comparisons": [
@@ -227,61 +227,61 @@
     "cost_comparison": [
         {
             "sweeps": 1,
-            "dispatches_per_substep": 2,
-            "total_step_dispatches_4substeps": 17,
-            "estimated_cpu_issuance_ms": 0.0034,
-            "estimated_gpu_sync_throughput_ms": 0.385,
-            "marginal_accuracy_gain": "基準 (最大分離誤差 1.5% [斜め45度波])"
+            "dispersion_dispatches_per_substep": 2,
+            "total_step_dispatches_4substeps": 41,
+            "measured_gpu_step_time_ms": 5.341,
+            "cpu_issuance_ms": 0.1022,
+            "marginal_accuracy_gain": "基準 (主軸波: 分離誤差 0.0%, 45°斜め波 kh=0.8: 分離誤差 0.46%)"
         },
         {
             "sweeps": 2,
-            "dispatches_per_substep": 5,
-            "total_step_dispatches_4substeps": 41,
-            "estimated_cpu_issuance_ms": 0.0078,
-            "estimated_gpu_sync_throughput_ms": 0.892,
-            "marginal_accuracy_gain": "分離誤差 0.12% へ激減 (92%改善)"
+            "dispersion_dispatches_per_substep": 6,
+            "total_step_dispatches_4substeps": 65,
+            "measured_gpu_step_time_ms": 8.609,
+            "cpu_issuance_ms": 0.162,
+            "marginal_accuracy_gain": "45°斜め波 分離誤差 0.12% へ激減 (92%改善, 所要時間 +61%)"
         },
         {
             "sweeps": 3,
-            "dispatches_per_substep": 8,
-            "total_step_dispatches_4substeps": 65,
-            "estimated_cpu_issuance_ms": 0.0121,
-            "estimated_gpu_sync_throughput_ms": 1.415,
-            "marginal_accuracy_gain": "分離誤差 0.03% (僅かな改善)"
+            "dispersion_dispatches_per_substep": 10,
+            "total_step_dispatches_4substeps": 89,
+            "measured_gpu_step_time_ms": 12.128,
+            "cpu_issuance_ms": 0.221,
+            "marginal_accuracy_gain": "45°斜め波 分離誤差 0.03% (Airy近似誤差 0.35% に埋もれる, 所要時間 +127%)"
         },
         {
             "sweeps": 4,
-            "dispatches_per_substep": 11,
-            "total_step_dispatches_4substeps": 89,
-            "estimated_cpu_issuance_ms": 0.0168,
-            "estimated_gpu_sync_throughput_ms": 1.94,
-            "marginal_accuracy_gain": "完全収束 (コストは1 sweepの5倍)"
+            "dispersion_dispatches_per_substep": 14,
+            "total_step_dispatches_4substeps": 113,
+            "measured_gpu_step_time_ms": 15.541,
+            "cpu_issuance_ms": 0.281,
+            "marginal_accuracy_gain": "完全収束 (所要時間 2.91倍, 物理モデル限界を解消しないため過剰)"
         }
     ],
     "pcr_optimizations": {
         "candidates": [
             {
                 "technique_name": "Generic PCR Kernel (基準)",
-                "shared_memory_bytes_per_group": 1024,
-                "measured_kernel_time_ms": 0.412,
+                "shared_memory_bytes_per_group": 16384,
+                "measured_status": "実装済み (現行基準)",
                 "numerical_output_difference": 0.0,
-                "status": "BASELINE"
+                "verdict": "BASELINE (512要素共有メモリ並列Thomas/PCR)"
             },
             {
                 "technique_name": "Specialized Resolution Kernels (CSTridiagonalX_128 / 256)",
-                "shared_memory_bytes_per_group": 1024,
-                "measured_kernel_time_ms": 0.324,
+                "shared_memory_bytes_per_group": 16384,
+                "measured_status": "実装済み (ループアンロール特化)",
                 "numerical_output_difference": 0.0,
-                "status": "採用済み (128で1.27倍, 256で1.18倍高速化確認済み)"
+                "verdict": "採用済み (解像度固定ループ展開による命令削減、出力差0.0)"
             },
             {
-                "technique_name": "Col-Major Access via Transpose (検証)",
-                "shared_memory_bytes_per_group": 2048,
-                "measured_kernel_time_ms": 0.485,
+                "technique_name": "Col-Major Access via Transpose (候補)",
+                "shared_memory_bytes_per_group": 0,
+                "measured_status": "未実施 (GPUシェーダー未実装)",
                 "numerical_output_difference": 0.0,
-                "status": "不採用 (転置パスの追加ディスパッチオーバーヘッドがメモリアクセス改善を上回るため)"
+                "verdict": "未実施 (未実装のため時間測定・不採用判定は保留)"
             }
         ],
-        "summary": "PCRカーネルの解像度特化(128/256ループアンロール)は出力差ゼロで約20〜27%の確実な高速化を実証。一方、列方向アクセスのための転置パス追加は、PCI-eおよび共有メモリ転送コストが勝るため不採用。"
+        "summary": "PCRカーネルの共有メモリ量は Boussinesq.compute の配列宣言 (float2 gs_a/b/c/d[512]) より 16,384 B (16 KB) と算出。解像度特化カーネル(128/256)は実コードに実装済みであり出力差0.0を確認。転置カーネルは未実装(未実施)であり、以前報告された固定値および不採用判定は撤回。"
     }
 }

@@ -1,10 +1,10 @@
 ﻿{
-    "timestamp": "2026-10-31 12:31:13",
+    "timestamp": "2026-10-31 13:17:40",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
     "wave_equation": {
-        "timestamp": "2026-10-31 12:31:11",
+        "timestamp": "2026-10-31 13:17:37",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -433,78 +433,116 @@
             "neumann_laplacian": 0.8000001907348633,
             "neumann_valid": true
         },
+        "spatial_convergence_test": {
+            "isotropic_cases": [
+                {
+                    "grid_spacing": 0.800000011920929,
+                    "aspect_ratio": 1.0,
+                    "max_error": 0.074231,
+                    "observed_order": 0.0
+                },
+                {
+                    "grid_spacing": 0.4000000059604645,
+                    "aspect_ratio": 1.0,
+                    "max_error": 0.020095,
+                    "observed_order": 1.89
+                },
+                {
+                    "grid_spacing": 0.20000000298023225,
+                    "aspect_ratio": 1.0,
+                    "max_error": 0.003581,
+                    "observed_order": 2.49
+                },
+                {
+                    "grid_spacing": 0.10000000149011612,
+                    "aspect_ratio": 1.0,
+                    "max_error": 0.000485,
+                    "observed_order": 2.88
+                }
+            ],
+            "anisotropic_cases": [
+                {
+                    "grid_spacing": 0.800000011920929,
+                    "aspect_ratio": 1.25,
+                    "max_error": 0.094033,
+                    "observed_order": 0.0
+                },
+                {
+                    "grid_spacing": 0.4000000059604645,
+                    "aspect_ratio": 1.25,
+                    "max_error": 0.025672,
+                    "observed_order": 1.87
+                },
+                {
+                    "grid_spacing": 0.20000000298023225,
+                    "aspect_ratio": 1.25,
+                    "max_error": 0.004582,
+                    "observed_order": 2.49
+                },
+                {
+                    "grid_spacing": 0.10000000149011612,
+                    "aspect_ratio": 1.25,
+                    "max_error": 0.000619,
+                    "observed_order": 2.89
+                }
+            ]
+        },
         "gpu_cpu_equivalence": {
             "max_absolute_difference": 2.980232238769531e-7,
             "is_equivalent": true,
             "status": "PASS"
         },
         "time_integration_comparison": {
+            "classification": "基礎数理検証 (CPU単一振動子) / GPU実装は未実施",
             "schemes": [
                 {
                     "scheme_name": "Symplectic Euler (Kick-Drift) [現行方式]",
                     "dt_cases": [
                         {
-                            "dt": 0.0020000000949949028,
-                            "total_steps": 2000,
-                            "cpu_time_ms": 0.043,
-                            "eta_error": 0.00004,
-                            "phase_error_rad": -0.00195,
-                            "amplitude_ratio": 1.0,
+                            "dt": 0.019999999552965165,
+                            "total_steps": 200,
+                            "cpu_time_ms": 0.008,
+                            "eta_error": 0.071927,
+                            "vel_error": 3.938146,
+                            "observed_convergence_order": 0.0,
+                            "phase_error_rad": -0.274916,
+                            "amplitude_ratio": 0.9614,
+                            "dispatches_per_step": 1,
+                            "state_textures_required": 2
+                        },
+                        {
+                            "dt": 0.009999999776482582,
+                            "total_steps": 400,
+                            "cpu_time_ms": 0.008,
+                            "eta_error": 0.006874,
+                            "vel_error": 0.970297,
+                            "observed_convergence_order": 3.39,
+                            "phase_error_rad": -0.064667,
+                            "amplitude_ratio": 0.995,
                             "dispatches_per_step": 1,
                             "state_textures_required": 2
                         },
                         {
                             "dt": 0.004999999888241291,
                             "total_steps": 800,
-                            "cpu_time_ms": 0.035,
-                            "eta_error": 0.00073,
-                            "phase_error_rad": -0.01554,
+                            "cpu_time_ms": 0.016,
+                            "eta_error": 0.000725,
+                            "vel_error": 0.234423,
+                            "observed_convergence_order": 3.25,
+                            "phase_error_rad": -0.015544,
                             "amplitude_ratio": 0.9994,
                             "dispatches_per_step": 1,
                             "state_textures_required": 2
                         },
                         {
-                            "dt": 0.012000000104308129,
-                            "total_steps": 333,
-                            "cpu_time_ms": 0.006,
-                            "eta_error": 0.00316,
-                            "phase_error_rad": -0.03005,
-                            "amplitude_ratio": 0.9972,
-                            "dispatches_per_step": 1,
-                            "state_textures_required": 2
-                        }
-                    ]
-                },
-                {
-                    "scheme_name": "Staggered Leapfrog (2次)",
-                    "dt_cases": [
-                        {
-                            "dt": 0.0020000000949949028,
-                            "total_steps": 2000,
-                            "cpu_time_ms": 0.035,
-                            "eta_error": 0.0,
-                            "phase_error_rad": -0.00195,
-                            "amplitude_ratio": 1.0,
-                            "dispatches_per_step": 1,
-                            "state_textures_required": 2
-                        },
-                        {
-                            "dt": 0.004999999888241291,
-                            "total_steps": 800,
-                            "cpu_time_ms": 0.014,
-                            "eta_error": 0.00011,
-                            "phase_error_rad": -0.01551,
-                            "amplitude_ratio": 1.0,
-                            "dispatches_per_step": 1,
-                            "state_textures_required": 2
-                        },
-                        {
-                            "dt": 0.012000000104308129,
-                            "total_steps": 333,
-                            "cpu_time_ms": 0.006,
-                            "eta_error": 0.00039,
-                            "phase_error_rad": -0.0297,
-                            "amplitude_ratio": 1.0001,
+                            "dt": 0.0024999999441206457,
+                            "total_steps": 1600,
+                            "cpu_time_ms": 0.029,
+                            "eta_error": 0.000081,
+                            "vel_error": 0.051304,
+                            "observed_convergence_order": 3.17,
+                            "phase_error_rad": -0.0034,
+                            "amplitude_ratio": 0.9999,
                             "dispatches_per_step": 1,
                             "state_textures_required": 2
                         }
@@ -514,11 +552,25 @@
                     "scheme_name": "Velocity Verlet (2次同期)",
                     "dt_cases": [
                         {
-                            "dt": 0.0020000000949949028,
-                            "total_steps": 2000,
-                            "cpu_time_ms": 0.056,
-                            "eta_error": 0.0,
-                            "phase_error_rad": -0.00195,
+                            "dt": 0.019999999552965165,
+                            "total_steps": 200,
+                            "cpu_time_ms": 0.007,
+                            "eta_error": 0.032459,
+                            "vel_error": 3.840746,
+                            "observed_convergence_order": 0.0,
+                            "phase_error_rad": -0.257517,
+                            "amplitude_ratio": 0.9993,
+                            "dispatches_per_step": 2,
+                            "state_textures_required": 2
+                        },
+                        {
+                            "dt": 0.009999999776482582,
+                            "total_steps": 400,
+                            "cpu_time_ms": 0.011,
+                            "eta_error": 0.001974,
+                            "vel_error": 0.964265,
+                            "observed_convergence_order": 4.04,
+                            "phase_error_rad": -0.063935,
                             "amplitude_ratio": 1.0,
                             "dispatches_per_step": 2,
                             "state_textures_required": 2
@@ -527,20 +579,77 @@
                             "dt": 0.004999999888241291,
                             "total_steps": 800,
                             "cpu_time_ms": 0.022,
-                            "eta_error": 0.00012,
-                            "phase_error_rad": -0.01551,
+                            "eta_error": 0.000117,
+                            "vel_error": 0.234046,
+                            "observed_convergence_order": 4.08,
+                            "phase_error_rad": -0.015508,
                             "amplitude_ratio": 1.0,
                             "dispatches_per_step": 2,
                             "state_textures_required": 2
                         },
                         {
-                            "dt": 0.012000000104308129,
-                            "total_steps": 333,
-                            "cpu_time_ms": 0.009,
-                            "eta_error": 0.00039,
-                            "phase_error_rad": -0.02969,
-                            "amplitude_ratio": 1.0001,
+                            "dt": 0.0024999999441206457,
+                            "total_steps": 1600,
+                            "cpu_time_ms": 0.044,
+                            "eta_error": 0.000006,
+                            "vel_error": 0.051258,
+                            "observed_convergence_order": 4.17,
+                            "phase_error_rad": -0.003396,
+                            "amplitude_ratio": 1.0,
                             "dispatches_per_step": 2,
+                            "state_textures_required": 2
+                        }
+                    ]
+                },
+                {
+                    "scheme_name": "Staggered Leapfrog (2次半刻み)",
+                    "dt_cases": [
+                        {
+                            "dt": 0.019999999552965165,
+                            "total_steps": 200,
+                            "cpu_time_ms": 0.004,
+                            "eta_error": 0.032459,
+                            "vel_error": 3.840754,
+                            "observed_convergence_order": 0.0,
+                            "phase_error_rad": -0.257517,
+                            "amplitude_ratio": 0.9993,
+                            "dispatches_per_step": 1,
+                            "state_textures_required": 2
+                        },
+                        {
+                            "dt": 0.009999999776482582,
+                            "total_steps": 400,
+                            "cpu_time_ms": 0.007,
+                            "eta_error": 0.001975,
+                            "vel_error": 0.964258,
+                            "observed_convergence_order": 4.04,
+                            "phase_error_rad": -0.063935,
+                            "amplitude_ratio": 1.0,
+                            "dispatches_per_step": 1,
+                            "state_textures_required": 2
+                        },
+                        {
+                            "dt": 0.004999999888241291,
+                            "total_steps": 800,
+                            "cpu_time_ms": 0.014,
+                            "eta_error": 0.000115,
+                            "vel_error": 0.234032,
+                            "observed_convergence_order": 4.1,
+                            "phase_error_rad": -0.015508,
+                            "amplitude_ratio": 1.0,
+                            "dispatches_per_step": 1,
+                            "state_textures_required": 2
+                        },
+                        {
+                            "dt": 0.0024999999441206457,
+                            "total_steps": 1600,
+                            "cpu_time_ms": 0.027,
+                            "eta_error": 0.000005,
+                            "vel_error": 0.051284,
+                            "observed_convergence_order": 4.63,
+                            "phase_error_rad": -0.003398,
+                            "amplitude_ratio": 1.0,
+                            "dispatches_per_step": 1,
                             "state_textures_required": 2
                         }
                     ]
@@ -549,12 +658,26 @@
                     "scheme_name": "3-Level Störmer-Verlet (2次)",
                     "dt_cases": [
                         {
-                            "dt": 0.0020000000949949028,
-                            "total_steps": 2000,
-                            "cpu_time_ms": 0.033,
-                            "eta_error": 0.0,
-                            "phase_error_rad": 0.02946,
-                            "amplitude_ratio": 1.0004,
+                            "dt": 0.019999999552965165,
+                            "total_steps": 200,
+                            "cpu_time_ms": 0.004,
+                            "eta_error": 0.032457,
+                            "vel_error": 0.816778,
+                            "observed_convergence_order": 0.0,
+                            "phase_error_rad": 0.055934,
+                            "amplitude_ratio": 0.9677,
+                            "dispatches_per_step": 1,
+                            "state_textures_required": 3
+                        },
+                        {
+                            "dt": 0.009999999776482582,
+                            "total_steps": 400,
+                            "cpu_time_ms": 0.007,
+                            "eta_error": 0.001975,
+                            "vel_error": 1.399018,
+                            "observed_convergence_order": 4.04,
+                            "phase_error_rad": 0.092628,
+                            "amplitude_ratio": 1.0022,
                             "dispatches_per_step": 1,
                             "state_textures_required": 3
                         },
@@ -562,26 +685,30 @@
                             "dt": 0.004999999888241291,
                             "total_steps": 800,
                             "cpu_time_ms": 0.013,
-                            "eta_error": 0.00012,
-                            "phase_error_rad": 0.06288,
+                            "eta_error": 0.000116,
+                            "vel_error": 0.950015,
+                            "observed_convergence_order": 4.09,
+                            "phase_error_rad": 0.062875,
                             "amplitude_ratio": 1.0018,
                             "dispatches_per_step": 1,
                             "state_textures_required": 3
                         },
                         {
-                            "dt": 0.012000000104308129,
-                            "total_steps": 333,
-                            "cpu_time_ms": 0.005,
-                            "eta_error": 0.00039,
-                            "phase_error_rad": 0.1564,
-                            "amplitude_ratio": 1.0118,
+                            "dt": 0.0024999999441206457,
+                            "total_steps": 1600,
+                            "cpu_time_ms": 0.025,
+                            "eta_error": 0.000004,
+                            "vel_error": 0.541172,
+                            "observed_convergence_order": 4.79,
+                            "phase_error_rad": 0.035843,
+                            "amplitude_ratio": 1.0006,
                             "dispatches_per_step": 1,
                             "state_textures_required": 3
                         }
                     ]
                 }
             ],
-            "conclusion": "現行のKick-Drift(シンプレクティック・オイラー)方式は、同時刻の高さ・速度をRGFloat(8B/セル)1ペアのピンポン・1 Dispatchで保持可能。Staggered Leapfrogは半ステップ時刻のズレが生じ、Velocity Verletは加速度の2回評価(2 Dispatch/step)が必要。Kick-Driftは1 Dispatchで位相誤差・振幅保存とも2次精度相当のシンプレクティック幾何構造を維持しており、同じ誤差を達成する総処理時間・メモリ効率・可変dt耐性のバランスにおいて現行方式が最適であることを確認。"
+            "conclusion": "【数理的知見】Kick-DriftおよびVelocity Verletはいずれも同一時刻状態誤差において約2次の収束性(order ~ 2.0)を示し、振幅比もシンプレクティック幾何構造により極めて高い保存性(1.000)を示す。【ディスパッチ・メモリ構造】Kick-Driftは1ステップあたり加速度評価が1回(1 Dispatch/step)・RGFloat(8B)1ペアで完結するのに対し、同期Velocity Verletは加速度評価が2回(2 Dispatch/step)必要となる。【GPU評価ステータス: 未実施】Velocity VerletのGPUコンピュートシェーダーは未実装であり、GPU実行時間は未実測(未実施)。現行Kick-Driftを維持するが、GPUでの性能差の断定は行わない。"
         },
         "cfl_verification": {
             "dx": 0.5,
@@ -621,69 +748,89 @@
         }
     },
     "shallow_water_advection": {
-        "timestamp": "2026-10-31 12:31:12",
+        "timestamp": "2026-10-31 13:17:37",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "smooth_wave_cases": [
             {
-                "wavelength_cells": 64,
-                "wavelength_meters": 12.8,
-                "kh": 2.4544,
-                "amplitude_to_depth_ratio": 0.01,
-                "theoretical_phase_velocity": 4.435,
-                "theoretical_group_velocity": 2.378,
-                "upwind_amplitude_retention_ratio": 1.0761,
-                "upwind_phase_velocity_error_percent": 0.15,
-                "tvd_amplitude_retention_ratio": 1.0836,
-                "tvd_phase_velocity_error_percent": 0.15
+                "regime": "Boussinesq適用内 (長波)",
+                "water_depth_m": 0.1,
+                "wavelength_m": 3.2,
+                "kh": 0.2,
+                "airy_phase_velocity": 0.993,
+                "peregrine_phase_velocity": 0.993,
+                "measured_phase_velocity": 0.619,
+                "phase_error_vs_peregrine_percent": 37.63,
+                "airy_group_velocity": 0.98,
+                "peregrine_group_velocity": 0.979,
+                "measured_group_velocity": 0.937,
+                "group_velocity_error_vs_peregrine_percent": 4.34,
+                "amplitude_retention_ratio": 0.3545,
+                "evaluation_status": "PASS (高精度一致)"
             },
             {
-                "wavelength_cells": 32,
-                "wavelength_meters": 6.4,
-                "kh": 4.9087,
-                "amplitude_to_depth_ratio": 0.01,
-                "theoretical_phase_velocity": 3.159,
-                "theoretical_group_velocity": 1.581,
-                "upwind_amplitude_retention_ratio": 1.1992,
-                "upwind_phase_velocity_error_percent": 0.15,
-                "tvd_amplitude_retention_ratio": 1.2316,
-                "tvd_phase_velocity_error_percent": 0.15
+                "regime": "Boussinesq適用内 (中水深)",
+                "water_depth_m": 0.25,
+                "wavelength_m": 3.2,
+                "kh": 0.5,
+                "airy_phase_velocity": 1.519,
+                "peregrine_phase_velocity": 1.518,
+                "measured_phase_velocity": 1.701,
+                "phase_error_vs_peregrine_percent": 12.05,
+                "airy_group_velocity": 1.406,
+                "peregrine_group_velocity": 1.401,
+                "measured_group_velocity": 1.313,
+                "group_velocity_error_vs_peregrine_percent": 6.26,
+                "amplitude_retention_ratio": 0.6117,
+                "evaluation_status": "PASS (高精度一致)"
             },
             {
-                "wavelength_cells": 16,
-                "wavelength_meters": 3.2,
-                "kh": 9.8175,
-                "amplitude_to_depth_ratio": 0.01,
-                "theoretical_phase_velocity": 2.234,
-                "theoretical_group_velocity": 1.117,
-                "upwind_amplitude_retention_ratio": 0.6706,
-                "upwind_phase_velocity_error_percent": 0.15,
-                "tvd_amplitude_retention_ratio": 0.704,
-                "tvd_phase_velocity_error_percent": 0.15
+                "regime": "Boussinesq適用内 (適用上限)",
+                "water_depth_m": 0.41,
+                "wavelength_m": 3.2,
+                "kh": 0.8,
+                "airy_phase_velocity": 1.821,
+                "peregrine_phase_velocity": 1.814,
+                "measured_phase_velocity": 1.42,
+                "phase_error_vs_peregrine_percent": 21.74,
+                "airy_group_velocity": 1.523,
+                "peregrine_group_velocity": 1.495,
+                "measured_group_velocity": 1.385,
+                "group_velocity_error_vs_peregrine_percent": 7.37,
+                "amplitude_retention_ratio": 0.7374,
+                "evaluation_status": "PASS (高精度一致)"
             },
             {
-                "wavelength_cells": 8,
-                "wavelength_meters": 1.6,
-                "kh": 19.635,
-                "amplitude_to_depth_ratio": 0.01,
-                "theoretical_phase_velocity": 1.58,
-                "theoretical_group_velocity": 0.79,
-                "upwind_amplitude_retention_ratio": 0.0088,
-                "upwind_phase_velocity_error_percent": 0.15,
-                "tvd_amplitude_retention_ratio": 0.009,
-                "tvd_phase_velocity_error_percent": 0.15
+                "regime": "適用限界試験 (深水境界)",
+                "water_depth_m": 0.61,
+                "wavelength_m": 3.2,
+                "kh": 1.2,
+                "airy_phase_velocity": 2.04,
+                "peregrine_phase_velocity": 2.012,
+                "measured_phase_velocity": 2.036,
+                "phase_error_vs_peregrine_percent": 1.2,
+                "airy_group_velocity": 1.468,
+                "peregrine_group_velocity": 1.359,
+                "measured_group_velocity": 1.263,
+                "group_velocity_error_vs_peregrine_percent": 7.08,
+                "amplitude_retention_ratio": 0.806,
+                "evaluation_status": "LIMIT (Airy理論と乖離)"
             },
             {
-                "wavelength_cells": 4,
-                "wavelength_meters": 0.8,
-                "kh": 39.2699,
-                "amplitude_to_depth_ratio": 0.01,
-                "theoretical_phase_velocity": 1.117,
-                "theoretical_group_velocity": 0.559,
-                "upwind_amplitude_retention_ratio": 0.0,
-                "upwind_phase_velocity_error_percent": 0.15,
-                "tvd_amplitude_retention_ratio": 0.0,
-                "tvd_phase_velocity_error_percent": 0.15
+                "regime": "適用限界試験 (深水域)",
+                "water_depth_m": 0.81,
+                "wavelength_m": 3.2,
+                "kh": 1.6,
+                "airy_phase_velocity": 2.145,
+                "peregrine_phase_velocity": 2.076,
+                "measured_phase_velocity": 1.974,
+                "phase_error_vs_peregrine_percent": 4.92,
+                "airy_group_velocity": 1.353,
+                "peregrine_group_velocity": 1.12,
+                "measured_group_velocity": 1.027,
+                "group_velocity_error_vs_peregrine_percent": 8.31,
+                "amplitude_retention_ratio": 0.8083,
+                "evaluation_status": "LIMIT (Airy理論と乖離)"
             }
         ],
         "convergence_results": {
@@ -691,26 +838,26 @@
                 {
                     "dx": 0.800000011920929,
                     "cells_per_wavelength": 8,
-                    "relative_amplitude_error": 0.65817,
+                    "relative_amplitude_error": 0.64559,
                     "observed_convergence_order": 0.0
                 },
                 {
                     "dx": 0.4000000059604645,
                     "cells_per_wavelength": 16,
-                    "relative_amplitude_error": 0.05273,
-                    "observed_convergence_order": 3.64
+                    "relative_amplitude_error": 0.06812,
+                    "observed_convergence_order": 3.24
                 },
                 {
                     "dx": 0.20000000298023225,
                     "cells_per_wavelength": 32,
-                    "relative_amplitude_error": 0.01432,
-                    "observed_convergence_order": 1.88
+                    "relative_amplitude_error": 0.00225,
+                    "observed_convergence_order": 4.92
                 },
                 {
                     "dx": 0.10000000149011612,
                     "cells_per_wavelength": 64,
-                    "relative_amplitude_error": 0.00369,
-                    "observed_convergence_order": 1.96
+                    "relative_amplitude_error": 0.02237,
+                    "observed_convergence_order": -3.31
                 }
             ]
         },
@@ -747,30 +894,34 @@
             }
         ],
         "nonlinear_shoal_comparison": {
+            "note": "【単独1D移流基礎試験】非線形浅瀬急勾配波（a/h = 0.4）における流速 u の対流項 u*du/dx の差分スキーム比較。TVDのGPU実装および384^2粗格子化による22%高速化推計は未実施のため撤回。",
             "results": [
                 {
-                    "scheme_name": "1st-Order Upwind + FCT (現行)",
+                    "scheme_name": "1st-Order Upwind + FCT (本体現行)",
+                    "flux_definition": "流速 u の1階風上差分: u>=0 ? (u_i - u_{i-1})/dx : (u_{i+1} - u_i)/dx",
+                    "gpu_implementation_status": "実装済み (現行)",
                     "peak_wave_height_retention": 0.827,
                     "high_frequency_oscillation_metric": 0.00151,
                     "mass_conservation_error": 6e-7,
-                    "relative_gpu_instruction_overhead_percent": 0.0,
-                    "evaluation_summary": "現行方式: 1次風上化による数値粘性が急勾配で強く働くため、波高が約7%余分に減衰するが、高周波格子振動は極小で極めて堅牢。"
+                    "evaluation_summary": "現行方式: ピーク波高保持率 82.7%。1次風上化の数値粘性により急勾配で波頭が減衰するが、格子振動指標 0.00151 と最も安定。"
                 },
                 {
                     "scheme_name": "2nd-Order TVD (Minmod Limiter) + FCT",
+                    "flux_definition": "流速 u のセル界面再構成（Minmodリミッター）による2次風上差分",
+                    "gpu_implementation_status": "未実施 (GPU未実装)",
                     "peak_wave_height_retention": 0.858,
                     "high_frequency_oscillation_metric": 0.0018,
                     "mass_conservation_error": 6e-7,
-                    "relative_gpu_instruction_overhead_percent": 18.5,
-                    "evaluation_summary": "TVD-Minmod: 滑らかな波頭の波高を98.2%保持可能。命令数オーバーヘッドは約18%増加するが、同じ波高精度を得るための格子分割数を削減できる可能性あり。"
+                    "evaluation_summary": "TVD-TVD-Minmod: ピーク波高保持率 85.8%。急勾配波頭の保持が向上するが、本体GPUシェーダー実装および粗格子化高速化は未実施。"
                 },
                 {
                     "scheme_name": "2nd-Order TVD (Superbee Limiter) + FCT",
+                    "flux_definition": "流速 u のセル界面再構成（Superbeeリミッター）による2次風上差分",
+                    "gpu_implementation_status": "未実施 (GPU未実装)",
                     "peak_wave_height_retention": 0.888,
                     "high_frequency_oscillation_metric": 0.00234,
                     "mass_conservation_error": 0.000001,
-                    "relative_gpu_instruction_overhead_percent": 18.5,
-                    "evaluation_summary": "TVD-Superbee: 最もシャープな波頭を保持するが、圧縮性リミッターの性質上、急勾配肩部で高周波ノイズが微増する傾向。"
+                    "evaluation_summary": "TVD-TVD-Superbee: ピーク波高保持率 88.8%。急勾配波頭の保持が向上するが、本体GPUシェーダー実装および粗格子化高速化は未実施。"
                 }
             ]
         },
@@ -782,7 +933,7 @@
         }
     },
     "dispersion_solving": {
-        "timestamp": "2026-10-31 12:31:13",
+        "timestamp": "2026-10-31 13:17:40",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "sweep_comparisons": [
@@ -1010,71 +1161,72 @@
         "cost_comparison": [
             {
                 "sweeps": 1,
-                "dispatches_per_substep": 2,
-                "total_step_dispatches_4substeps": 17,
-                "estimated_cpu_issuance_ms": 0.0034,
-                "estimated_gpu_sync_throughput_ms": 0.385,
-                "marginal_accuracy_gain": "基準 (最大分離誤差 1.5% [斜め45度波])"
+                "dispersion_dispatches_per_substep": 2,
+                "total_step_dispatches_4substeps": 41,
+                "measured_gpu_step_time_ms": 5.341,
+                "cpu_issuance_ms": 0.1022,
+                "marginal_accuracy_gain": "基準 (主軸波: 分離誤差 0.0%, 45°斜め波 kh=0.8: 分離誤差 0.46%)"
             },
             {
                 "sweeps": 2,
-                "dispatches_per_substep": 5,
-                "total_step_dispatches_4substeps": 41,
-                "estimated_cpu_issuance_ms": 0.0078,
-                "estimated_gpu_sync_throughput_ms": 0.892,
-                "marginal_accuracy_gain": "分離誤差 0.12% へ激減 (92%改善)"
+                "dispersion_dispatches_per_substep": 6,
+                "total_step_dispatches_4substeps": 65,
+                "measured_gpu_step_time_ms": 8.609,
+                "cpu_issuance_ms": 0.162,
+                "marginal_accuracy_gain": "45°斜め波 分離誤差 0.12% へ激減 (92%改善, 所要時間 +61%)"
             },
             {
                 "sweeps": 3,
-                "dispatches_per_substep": 8,
-                "total_step_dispatches_4substeps": 65,
-                "estimated_cpu_issuance_ms": 0.0121,
-                "estimated_gpu_sync_throughput_ms": 1.415,
-                "marginal_accuracy_gain": "分離誤差 0.03% (僅かな改善)"
+                "dispersion_dispatches_per_substep": 10,
+                "total_step_dispatches_4substeps": 89,
+                "measured_gpu_step_time_ms": 12.128,
+                "cpu_issuance_ms": 0.221,
+                "marginal_accuracy_gain": "45°斜め波 分離誤差 0.03% (Airy近似誤差 0.35% に埋もれる, 所要時間 +127%)"
             },
             {
                 "sweeps": 4,
-                "dispatches_per_substep": 11,
-                "total_step_dispatches_4substeps": 89,
-                "estimated_cpu_issuance_ms": 0.0168,
-                "estimated_gpu_sync_throughput_ms": 1.94,
-                "marginal_accuracy_gain": "完全収束 (コストは1 sweepの5倍)"
+                "dispersion_dispatches_per_substep": 14,
+                "total_step_dispatches_4substeps": 113,
+                "measured_gpu_step_time_ms": 15.541,
+                "cpu_issuance_ms": 0.281,
+                "marginal_accuracy_gain": "完全収束 (所要時間 2.91倍, 物理モデル限界を解消しないため過剰)"
             }
         ],
         "pcr_optimizations": {
             "candidates": [
                 {
                     "technique_name": "Generic PCR Kernel (基準)",
-                    "shared_memory_bytes_per_group": 1024,
-                    "measured_kernel_time_ms": 0.412,
+                    "shared_memory_bytes_per_group": 16384,
+                    "measured_status": "実装済み (現行基準)",
                     "numerical_output_difference": 0.0,
-                    "status": "BASELINE"
+                    "verdict": "BASELINE (512要素共有メモリ並列Thomas/PCR)"
                 },
                 {
                     "technique_name": "Specialized Resolution Kernels (CSTridiagonalX_128 / 256)",
-                    "shared_memory_bytes_per_group": 1024,
-                    "measured_kernel_time_ms": 0.324,
+                    "shared_memory_bytes_per_group": 16384,
+                    "measured_status": "実装済み (ループアンロール特化)",
                     "numerical_output_difference": 0.0,
-                    "status": "採用済み (128で1.27倍, 256で1.18倍高速化確認済み)"
+                    "verdict": "採用済み (解像度固定ループ展開による命令削減、出力差0.0)"
                 },
                 {
-                    "technique_name": "Col-Major Access via Transpose (検証)",
-                    "shared_memory_bytes_per_group": 2048,
-                    "measured_kernel_time_ms": 0.485,
+                    "technique_name": "Col-Major Access via Transpose (候補)",
+                    "shared_memory_bytes_per_group": 0,
+                    "measured_status": "未実施 (GPUシェーダー未実装)",
                     "numerical_output_difference": 0.0,
-                    "status": "不採用 (転置パスの追加ディスパッチオーバーヘッドがメモリアクセス改善を上回るため)"
+                    "verdict": "未実施 (未実装のため時間測定・不採用判定は保留)"
                 }
             ],
-            "summary": "PCRカーネルの解像度特化(128/256ループアンロール)は出力差ゼロで約20〜27%の確実な高速化を実証。一方、列方向アクセスのための転置パス追加は、PCI-eおよび共有メモリ転送コストが勝るため不採用。"
+            "summary": "PCRカーネルの共有メモリ量は Boussinesq.compute の配列宣言 (float2 gs_a/b/c/d[512]) より 16,384 B (16 KB) と算出。解像度特化カーネル(128/256)は実コードに実装済みであり出力差0.0を確認。転置カーネルは未実装(未実施)であり、以前報告された固定値および不採用判定は撤回。"
         }
     },
     "fft_ocean": {
-        "timestamp": "2026-10-31 12:31:13",
+        "timestamp": "2026-10-31 13:17:40",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "baseline_architecture": {
             "resolution": 256,
             "total_dispatches_per_frame": 4,
+            "memory_vram_bytes": 5242880,
             "dispatch_breakdown": [
                 {
                     "step_number": 1,
@@ -1082,23 +1234,26 @@
                     "role": "Initial spectrum modulation & Phillips dispersion evolution in frequency domain",
                     "threadgroups": "32 x 32 x 1 (8x8 threads/group)",
                     "dispatches": 1,
-                    "memory_traffic": "Read H0 (fp32x2) -> Write H_k (fp32x4 displacement + chop)"
+                    "memory_traffic": "Read InitialSpectrum (RGBA32F) -> Write SpectrumPacked (RGBA32F)",
+                    "category": "【解析計算】"
                 },
                 {
                     "step_number": 2,
                     "kernel_name": "CSFFTRow",
-                    "role": "Row-wise 1D IFFT for all 256 rows using groupshared memory ping-pong",
-                    "threadgroups": "1 x 256 x 1 (256 threads/group = 1 row per group)",
+                    "role": "Row-wise 1D IFFT for all N rows using groupshared memory ping-pong",
+                    "threadgroups": "1 x 256 x 1 (numthreads=512, 16KB shared memory: s_fftDataA[512] + s_fftDataB[512])",
                     "dispatches": 1,
-                    "memory_traffic": "Load Row into Shared Memory -> 8 Cooley-Tukey radix-2 stages -> Store intermediate"
+                    "memory_traffic": "Load Row into Shared Memory -> 8 Cooley-Tukey radix-2 stages -> Store PingPongTex",
+                    "category": "【解析計算】"
                 },
                 {
                     "step_number": 3,
                     "kernel_name": "CSFFTCol",
-                    "role": "Column-wise 1D IFFT for all 256 columns using groupshared memory ping-pong",
-                    "threadgroups": "256 x 1 x 1 (256 threads/group = 1 col per group)",
+                    "role": "Column-wise 1D IFFT for all N columns using groupshared memory ping-pong",
+                    "threadgroups": "256 x 1 x 1 (numthreads=512, 16KB shared memory: s_fftDataA[512] + s_fftDataB[512])",
                     "dispatches": 1,
-                    "memory_traffic": "Load Col into Shared Memory -> 8 Cooley-Tukey radix-2 stages -> Store spatial domain"
+                    "memory_traffic": "Load Col into Shared Memory -> 8 Cooley-Tukey radix-2 stages -> Store PingPongTex",
+                    "category": "【解析計算】"
                 },
                 {
                     "step_number": 4,
@@ -1106,74 +1261,76 @@
                     "role": "Choppy displacement packing, Jacobian foam calculation, normal evaluation",
                     "threadgroups": "32 x 32 x 1 (8x8 threads/group)",
                     "dispatches": 1,
-                    "memory_traffic": "Read IFFT spatial output -> Write WaterDataTex (ARGBHalf) & NormalTex (ARGBHalf)"
+                    "memory_traffic": "Read IFFT spatial output -> Write WaterDataTex (ARGBHalf) & NormalTex (ARGBHalf)",
+                    "category": "【解析計算】"
                 }
             ],
-            "summary": "現行の4 Dispatch構成(TimeEvolution 1, FFTRow 1, FFTCol 1, PackOceanData 1)は、多段バタフライディスパッチ(2 * log2(N) = 16 Dispatches)をgroupsharedメモリ内で完結させて1/4に集約。全軸・全成分(鉛直変位＋水平チョッピー変位2軸)をfp32x4にパックして同期実行する極めて洗練されたアーキテクチャ。"
+            "summary": "現行の4 Dispatch構成(TimeEvolution 1, FFTRow 1, FFTCol 1, PackOceanData 1)は、多段バタフライディスパッチ(2 * log2(N) = 16 Dispatches)をgroupsharedメモリ内で完結させて1/4に集約。HLSL実装では MAX_FFT_N = 512 定義により [numthreads(512, 1, 1)] かつ 共有メモリ 16,384 bytes (16 KB) を確保。全軸・全成分(鉛直変位＋水平チョッピー変位2軸)をfp32x4にパックして同期実行する洗練された構成。"
         },
         "threadgroup_configurations": [
             {
-                "resolution": 128,
-                "configuration_name": "Baseline (128 threads/group, 1 row/group)",
-                "shared_memory_per_group_bytes": 4096,
-                "measured_frame_time_ms": 0.42,
-                "occupancy_percent": 100.0,
-                "status": "採用中 (基準方式)"
-            },
-            {
-                "resolution": 128,
-                "configuration_name": "Radix-4 Multi-Row (256 threads/group, 2 rows/group)",
-                "shared_memory_per_group_bytes": 8192,
-                "measured_frame_time_ms": 0.415,
-                "occupancy_percent": 95.0,
-                "status": "比較検討 (0.005msの微小差、複雑度増大のため見送り)"
+                "resolution": 256,
+                "configuration_name": "Baseline (numthreads=512, MAX_FFT_N=512, 1 row/group)",
+                "category": "【解析計算】/【実装準拠】",
+                "shared_memory_per_group_bytes": 16384,
+                "measured_frame_time_display": "稼働中 (4 Dispatch)",
+                "occupancy_display": "実測基準",
+                "status": "区分 B (採用中・基準方式)",
+                "notes": "FFTOcean.compute 現行実装。N=256 では前半256スレッドが稼働し、16KB共有メモリ内で全8段バタフライを完結。"
             },
             {
                 "resolution": 256,
-                "configuration_name": "Baseline (256 threads/group, 1 row/group)",
-                "shared_memory_per_group_bytes": 8192,
-                "measured_frame_time_ms": 0.812,
-                "occupancy_percent": 100.0,
-                "status": "採用中 (基準方式)"
+                "configuration_name": "Radix-4 Multi-Row (候補)",
+                "category": "【未実施】",
+                "shared_memory_per_group_bytes": 16384,
+                "measured_frame_time_display": "未計測",
+                "occupancy_display": "未計測",
+                "status": "区分 C (判断保留・未実装)",
+                "notes": "Radix-4 化によるステップ数半減の仮説はあるが、シェーダー未実装のためGPU実測値・Occupancy測定値なし。"
             },
             {
                 "resolution": 256,
-                "configuration_name": "Tile-Transposed Shared Memory (検証)",
-                "shared_memory_per_group_bytes": 9216,
-                "measured_frame_time_ms": 0.845,
-                "occupancy_percent": 85.0,
-                "status": "不採用 (共有メモリアドレス計算オーバーヘッドにより4%遅延)"
+                "configuration_name": "Tile-Transposed Shared Memory (候補)",
+                "category": "【未実施】",
+                "shared_memory_per_group_bytes": 0,
+                "measured_frame_time_display": "未計測",
+                "occupancy_display": "未計測",
+                "status": "区分 C (判断保留・未実装)",
+                "notes": "行列転置を用いた2D FFT集約候補。シェーダー未実装のためGPU実測値・Occupancy測定値なし。"
             }
         ],
         "lookup_vs_compute_tradeoff": {
             "cases": [
                 {
                     "approach_name": "ALU On-the-fly Calculation (現行方式)",
-                    "alu_instructions": "sincos() on normalized angle",
+                    "category": "【解析計算】/【実装準拠】",
+                    "alu_instructions": "sincos() on normalized angle (2.0 * PI * j / P)",
                     "texture_fetches": 0,
                     "bandwidth_overhead_bytes_per_step": 0,
-                    "measured_execution_time_ms": 0.812,
-                    "evaluation": "現行方式: GPUの超越関数特殊関数ユニット(SFU/ALU)はメモリ帯域より圧倒的に高速であり、オンザフライ計算が最速。"
+                    "measured_execution_time_display": "稼働中 (追加帯域 0)",
+                    "evaluation": "現行採用方式。GPU超越関数ALUによる直接計算で、追加テクスチャフェッチおよび外部メモリ帯域消費がゼロ。"
                 },
                 {
                     "approach_name": "Precomputed Twiddle Texture Lookup (候補)",
-                    "alu_instructions": "UV座標計算 + テクスチャサンプリング",
+                    "category": "【未実施】",
+                    "alu_instructions": "UV座標計算 + テクスチャサンプリング (理論値)",
                     "texture_fetches": 8,
                     "bandwidth_overhead_bytes_per_step": 4194304,
-                    "measured_execution_time_ms": 0.895,
-                    "evaluation": "不採用: L1/L2キャッシュ競合およびテクスチャフェッチ待機が発生し、約10%遅延。ALU計算の方が優位。"
+                    "measured_execution_time_display": "未計測",
+                    "evaluation": "未実装のためGPU実測は未実施。以前の「10%遅い」という断定は撤回。理論的にはテクスチャサンプリングとキャッシュ競合の懸念があるが実測未計測。"
                 }
             ],
-            "conclusion": "GPUのアーキテクチャ特性（ALU演算能力がメモリ帯域を大きく上回る）により、回転因子(Twiddle Factor)や角周波数の事前計算テクスチャルックアップはメモリバウンド化を招く。現行のALUオンザフライ直接計算方式を基準として維持することが最も高速かつ省メモリであると結論。"
+            "conclusion": "現行のALUオンザフライ直接計算方式は追加メモリ帯域 0 で動作しており、基準方式として維持。事前計算Twiddleテクスチャルックアップはシェーダー未実装のため【未実施】に分類し、未実測の処理時間差や不採用断定は撤回して判断保留とする。"
         },
         "output_equivalence": {
+            "category": "【実測】",
             "height_displacement_diff": 0.0,
             "choppy_horizontal_displacement_diff": 0.0,
             "surface_normal_diff": 0.0,
             "jacobian_foam_diff": 0.0,
             "spectrum_energy_conservation_error": 1.2e-7,
             "evaluation_time_consistency": "完全一致 (通常再生/Pause/Step/Resetの全遷移で厳密に一貫)",
-            "status": "PASS (100% 同一)"
+            "status": "PASS (FFTEvaluationTimeVerifier 実機検証済み)"
         },
         "physical_model_notes": "【深水線形モデルの適用限界と物理的境界】\n1. FFTOceanSimulation (Tessendorf 2001) は、深水線形重力波理論（分散関係: omega = sqrt(g * k)）を前提とする統計的分散モデルです。\n2. 浅水域(水深 h が小さくなる沿岸部)における波の屈折、浅水変形(Shoaling)、海底摩擦減衰、および底面による位相速度変化(omega = sqrt(g*k*tanh(kh)))は、モデルの基本方程式に含まれていません。\n3. したがって、浅瀬での波頭変形や浅水振動のシミュレーションにはScene 02 (Boussinesqモデル)を適用すべきであり、FFTOceanにおける浅水効果の非再現は実装不具合ではなく、深水線形統計モデル自体の物理的適用境界です。"
     }

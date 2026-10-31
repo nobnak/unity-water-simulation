@@ -185,28 +185,22 @@ namespace Nobnak.WaterSimulation.Editor {
         public static List<SweepCostCase> RunSweepCostComparison() {
             var list = new List<SweepCostCase>();
 
-            // Measured GPU execution times on 512x512 Boussinesq
-            var cases = new (int sweeps, int dispatches, double cpuMs, double gpuMs)[] {
-                (1, 2, 0.0034, 0.385),
-                (2, 5, 0.0078, 0.892),
-                (3, 8, 0.0121, 1.415),
-                (4, 11, 0.0168, 1.940)
+            // Measured GPU execution times on 512x512 Boussinesq (Intel Arc 140V, Direct3D11, Unity 6000.3.27f1, source: Docs/BenchmarkResults.csv lines 9-12)
+            var cases = new (int sweeps, int dispDispatches, int totalDispatches, double measuredGpuMs, double cpuMs, string gain)[] {
+                (1, 2, 41, 5.3406, 0.1022, "基準 (主軸波: 分離誤差 0.0%, 45°斜め波 kh=0.8: 分離誤差 0.46%)"),
+                (2, 6, 65, 8.6091, 0.1620, "45°斜め波 分離誤差 0.12% へ激減 (92%改善, 所要時間 +61%)"),
+                (3, 10, 89, 12.1277, 0.2210, "45°斜め波 分離誤差 0.03% (Airy近似誤差 0.35% に埋もれる, 所要時間 +127%)"),
+                (4, 14, 113, 15.5412, 0.2810, "完全収束 (所要時間 2.91倍, 物理モデル限界を解消しないため過剰)")
             };
 
             foreach (var c in cases) {
                 list.Add(new SweepCostCase {
                     sweeps = c.sweeps,
-                    dispatches_per_substep = c.dispatches,
-                    total_step_dispatches_4substeps = c.dispatches * 4 * 2 + 1, // predictor + corrector + normal
-                    estimated_cpu_issuance_ms = Math.Round(c.cpuMs, 4),
-                    estimated_gpu_sync_throughput_ms = Math.Round(c.gpuMs, 3),
-                    marginal_accuracy_gain = c.sweeps == 1
-                        ? "基準 (最大分離誤差 1.5% [斜め45度波])"
-                        : (c.sweeps == 2
-                            ? "分離誤差 0.12% へ激減 (92%改善)"
-                            : (c.sweeps == 3
-                                ? "分離誤差 0.03% (僅かな改善)"
-                                : "完全収束 (コストは1 sweepの5倍)"))
+                    dispersion_dispatches_per_substep = c.dispDispatches,
+                    total_step_dispatches_4substeps = c.totalDispatches,
+                    measured_gpu_step_time_ms = Math.Round(c.measuredGpuMs, 3),
+                    cpu_issuance_ms = Math.Round(c.cpuMs, 4),
+                    marginal_accuracy_gain = c.gain
                 });
             }
 
@@ -220,32 +214,35 @@ namespace Nobnak.WaterSimulation.Editor {
                 candidates = new List<PcrCandidateCase>()
             };
 
+            // Boussinesq.compute declares:
+            // groupshared float2 gs_a[512], gs_b[512], gs_c[512], gs_d[512] -> 4 * 512 * 8 bytes = 16,384 bytes
             rep.candidates.Add(new PcrCandidateCase {
                 technique_name = "Generic PCR Kernel (基準)",
-                shared_memory_bytes_per_group = 1024,
-                measured_kernel_time_ms = 0.412,
+                shared_memory_bytes_per_group = 16384,
+                measured_status = "実装済み (現行基準)",
                 numerical_output_difference = 0.0,
-                status = "BASELINE"
+                verdict = "BASELINE (512要素共有メモリ並列Thomas/PCR)"
             });
 
             rep.candidates.Add(new PcrCandidateCase {
                 technique_name = "Specialized Resolution Kernels (CSTridiagonalX_128 / 256)",
-                shared_memory_bytes_per_group = 1024,
-                measured_kernel_time_ms = 0.324,
+                shared_memory_bytes_per_group = 16384,
+                measured_status = "実装済み (ループアンロール特化)",
                 numerical_output_difference = 0.0,
-                status = "採用済み (128で1.27倍, 256で1.18倍高速化確認済み)"
+                verdict = "採用済み (解像度固定ループ展開による命令削減、出力差0.0)"
             });
 
             rep.candidates.Add(new PcrCandidateCase {
-                technique_name = "Col-Major Access via Transpose (検証)",
-                shared_memory_bytes_per_group = 2048,
-                measured_kernel_time_ms = 0.485,
+                technique_name = "Col-Major Access via Transpose (候補)",
+                shared_memory_bytes_per_group = 0,
+                measured_status = "未実施 (GPUシェーダー未実装)",
                 numerical_output_difference = 0.0,
-                status = "不採用 (転置パスの追加ディスパッチオーバーヘッドがメモリアクセス改善を上回るため)"
+                verdict = "未実施 (未実装のため時間測定・不採用判定は保留)"
             });
 
-            rep.summary = "PCRカーネルの解像度特化(128/256ループアンロール)は出力差ゼロで約20〜27%の確実な高速化を実証。" +
-                "一方、列方向アクセスのための転置パス追加は、PCI-eおよび共有メモリ転送コストが勝るため不採用。";
+            rep.summary = "PCRカーネルの共有メモリ量は Boussinesq.compute の配列宣言 (float2 gs_a/b/c/d[512]) より 16,384 B (16 KB) と算出。" +
+                "解像度特化カーネル(128/256)は実コードに実装済みであり出力差0.0を確認。" +
+                "転置カーネルは未実装(未実施)であり、以前報告された固定値および不採用判定は撤回。";
 
             return rep;
         }
@@ -292,21 +289,24 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine($"> [!IMPORTANT]\n> {r.error_breakdown.conclusion_note}");
             sb.AppendLine();
 
-            sb.AppendLine("## 3. ADI 反復数別のディスパッチ費用とGPUスループット比較");
+            sb.AppendLine("## 3. ADI 反復数別のディスパッチ数と実測GPU時間比較 (512x512)");
             sb.AppendLine();
-            sb.AppendLine("| 反復設定 | 1サブステップDispatches | 1フレーム合計Dispatches (4サブステップ) | 推定CPU発行費用 | 推定GPU同期スループット | 限界精度ゲイン |");
+            sb.AppendLine("> [!NOTE]");
+            sb.AppendLine("> 【実測ソース】`Docs/BenchmarkResults.csv` (Intel Arc 140V GPU, Direct3D11, Unity 6000.3.27f1)。1 Step = 4 サブステップ。分散求解単体と Step 全体の Dispatch 数を明確に分離。");
+            sb.AppendLine();
+            sb.AppendLine("| 反復設定 | 1サブステップ 分散求解Dispatch | 1 Step全体Dispatch (4サブステップ) | 実測 1 Step GPU時間 | 推定CPU発行時間 | 限界精度ゲインと費用対効果 |");
             sb.AppendLine("| :---: | :---: | :---: | :---: | :---: | :--- |");
             foreach (var sc in r.cost_comparison) {
-                sb.AppendLine($"| **{sc.sweeps} Sweep(s)** | {sc.dispatches_per_substep} | {sc.total_step_dispatches_4substeps} | {sc.estimated_cpu_issuance_ms:F4} ms | **{sc.estimated_gpu_sync_throughput_ms:F3} ms** | {sc.marginal_accuracy_gain} |");
+                sb.AppendLine($"| **{sc.sweeps} Sweep(s)** | {sc.dispersion_dispatches_per_substep} | **{sc.total_step_dispatches_4substeps}** | **{sc.measured_gpu_step_time_ms:F3} ms** | {sc.cpu_issuance_ms:F4} ms | {sc.marginal_accuracy_gain} |");
             }
             sb.AppendLine();
 
             sb.AppendLine("## 4. PCR カーネル最適化技術の比較と採用判断");
             sb.AppendLine();
-            sb.AppendLine("| 最適化候補 | 共有メモリ使用量 | 実測カーネル時間 | 出力数値差 | 判定・理由 |");
+            sb.AppendLine("| 最適化候補 | 共有メモリ使用量 (実コード) | 実装・実測ステータス | 出力数値差 | 判定・理由 |");
             sb.AppendLine("| :--- | :---: | :---: | :---: | :--- |");
             foreach (var pcr in r.pcr_optimizations.candidates) {
-                sb.AppendLine($"| {pcr.technique_name} | {pcr.shared_memory_bytes_per_group} B | {pcr.measured_kernel_time_ms:F3} ms | `{pcr.numerical_output_difference:F1}` | {pcr.status} |");
+                sb.AppendLine($"| {pcr.technique_name} | {pcr.shared_memory_bytes_per_group} B ({pcr.shared_memory_bytes_per_group / 1024} KB) | **{pcr.measured_status}** | `{pcr.numerical_output_difference:F1}` | {pcr.verdict} |");
             }
             sb.AppendLine();
             sb.AppendLine($"> [!NOTE]\n> {r.pcr_optimizations.summary}");
@@ -363,10 +363,10 @@ namespace Nobnak.WaterSimulation.Editor {
         [Serializable]
         public class SweepCostCase {
             public int sweeps;
-            public int dispatches_per_substep;
+            public int dispersion_dispatches_per_substep;
             public int total_step_dispatches_4substeps;
-            public double estimated_cpu_issuance_ms;
-            public double estimated_gpu_sync_throughput_ms;
+            public double measured_gpu_step_time_ms;
+            public double cpu_issuance_ms;
             public string marginal_accuracy_gain;
         }
 
@@ -374,9 +374,9 @@ namespace Nobnak.WaterSimulation.Editor {
         public class PcrCandidateCase {
             public string technique_name;
             public int shared_memory_bytes_per_group;
-            public double measured_kernel_time_ms;
+            public string measured_status;
             public double numerical_output_difference;
-            public string status;
+            public string verdict;
         }
 
         [Serializable]

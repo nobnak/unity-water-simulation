@@ -75,7 +75,6 @@ namespace Nobnak.WaterSimulation.Editor {
             }
         }
 
-
         private static string GenerateMasterMarkdown(MasterBalanceReport m) {
             var sb = new StringBuilder();
             sb.AppendLine("# Water Simulation Speed vs Precision Balance Master Report");
@@ -88,40 +87,53 @@ namespace Nobnak.WaterSimulation.Editor {
 
             sb.AppendLine("## 1. 比較・採用の基準と許容誤差の定義");
             sb.AppendLine();
-            sb.AppendLine("シミュレーションモデルごとに、目標とする対象現象、物理スケール、および許容誤差基準を以下のように定義して評価を実施しました：");
+            sb.AppendLine("各シミュレーションモデルの物理適用範囲、目標スケール、および許容誤差基準を以下のように定義して検証を実施しました：");
             sb.AppendLine();
             sb.AppendLine("| モデル / シーン | 対象波長・振幅・水深 | 許容波高減衰 (10s) | 許容位相/波速誤差 | 許容質量誤差 | 許容格子振動指標 | 目標フレーム予算 |");
             sb.AppendLine("| :--- | :--- | :---: | :---: | :---: | :---: | :---: |");
             sb.AppendLine("| **WaveEquation (Scene 01)** | $\\lambda \\ge 8\\Delta x, a \\le 1.0\\mathrm{m}$ (線形波・リップル) | $< 1.0\\%$ | $< 2.0\\%$ (位相) | N/A (電位ポテンシャル) | $< 10^{-4}$ | $< 0.8\\,\\mathrm{ms}$ (1 Step) |");
-            sb.AppendLine("| **Boussinesq (Scene 02)** | $h \\in [0.5, 5.0]\\mathrm{m}, a/h \\le 0.5$ (浅瀬・分散砕波) | $< 5.0\\%$ (滑らかな波) | $< 3.0\\%$ (群速度) | $< 10^{-6}$ (相対) | $< 5 \\times 10^{-4}$ | $< 6.0\\,\\mathrm{ms}$ (1 Step) |");
+            sb.AppendLine("| **Boussinesq (Scene 02)** | $h \\in [0.5, 5.0]\\mathrm{m}, a/h \\le 0.5, kh \\le 0.8$ (浅水・分散砕波) | $< 5.0\\%$ (滑らかな波) | $< 3.0\\%$ (群速度) | $< 10^{-6}$ (相対) | $< 5 \\times 10^{-4}$ | $< 6.0\\,\\mathrm{ms}$ (1 Step) |");
             sb.AppendLine("| **FFTOcean (Scene 03)** | 深水外洋統計波 ($kh > 1.0, h \\gg \\lambda$) | 完全保存 | $< 0.1\\%$ (解析解) | $< 10^{-6}$ (エネルギー) | なし (平滑統計面) | $< 1.5\\,\\mathrm{ms}$ (1 Step) |");
             sb.AppendLine();
 
-            sb.AppendLine("## 2. 不具合修正・改善候補の採用 / 不採用 判定一覧");
+            sb.AppendLine("## 2. 不具合修正・改善候補の3区分 採用判断一覧");
             sb.AppendLine();
-            sb.AppendLine("| 項目 / 対象モジュール | 施策内容 | 分類 | 判定 | 理由・エビデンス |");
-            sb.AppendLine("| :--- | :--- | :---: | :---: | :--- |");
-            sb.AppendLine("| **WaveEquation ラプラシアン** | 正方/非正方格子の統一高次コンパクト化 | **不具合修正** | **採用** | $dx=1, dz=1.0001$ における周波数跳躍が **2.60% から 0.005% 未満へ解消**。定数・線形・2次多項式で厳密解一致。 |");
-            sb.AppendLine("| **WaveEquation 時間積分** | Kick-Drift から Leapfrog/Verlet への置換 | 改善候補 | **不採用 (現行維持)** | Kick-Drift は 1 Dispatch・2面テクスチャで 2次シンプレクティック構造を保ち、Velocity Verlet (2 Dispatch) と同等の位相精度を半分のディスパッチ費用で達成。 |");
-            sb.AppendLine("| **Boussinesq 移流スキーム** | 1次風上から 2次TVD (Minmod) への置換 | 改善候補 | **評価・保持** | 浅瀬急勾配での波高保持率が 92.8% から **98.2%** へ向上。ただし命令数 +18% 増となるため、粗い格子で同等精度を得る最適化オプションとして位置付け。 |");
-            sb.AppendLine("| **Boussinesq ADI 反復数** | 通常 1 Sweep (2 Dispatches) の維持 | 改善候補 | **採用 (現行維持)** | 方向分離誤差は $kh \\le 0.8$ で $0.2\\% \\sim 1.5\\%$ と極小であり、Airy理論近似誤差 (0.5%〜4.2%) より小さい。過剰な 3〜4 反復は処理時間を 2.5〜5倍 浪費。 |");
-            sb.AppendLine("| **Boussinesq PCR カーネル** | 解像度特化カーネル (128/256 アンロール) | 最適化 | **採用済み** | 出力数値差 0.0 で Generic比 **1.18〜1.27倍** の高速化。 |");
-            sb.AppendLine("| **FFTOcean アーキテクチャ** | Packed IFFT 4-Dispatch + ALU直接計算 | 改善候補 | **採用 (現行維持)** | 事前計算 Twiddle テクスチャ参照は帯域競合で 10% 低速化。ALU オンザフライ計算が最速。 |");
+            sb.AppendLine("本検証におけるすべての判定を以下の3区分に明確に整理しました：");
+            sb.AppendLine("- **区分 A: 修正を確認できた不具合** (Bugs confirmed fixed)");
+            sb.AppendLine("- **区分 B: 実測で優位性を確認できた改善** (Improvements with verified empirical superiority)");
+            sb.AppendLine("- **区分 C: 未実施、または結論を出せない候補** (Unimplemented candidates or without conclusive evidence)");
+            sb.AppendLine();
+            sb.AppendLine("| 区分 | 項目 / 対象モジュール | 施策内容 | 分類 | 判断 | 理由・エビデンス |");
+            sb.AppendLine("| :---: | :--- | :--- | :---: | :---: | :--- |");
+            sb.AppendLine("| **区分 A** | **WaveEquation ラプラシアン** | 正方/非正方格子の統一高次コンパクト化 | 【実測】/【解析計算】 | **採用 (修正確認済み)** | $dx=1, dz=1.0001$ における周波数跳躍が **2.60% から 0.005% 未満へ解消**。定数・線形・2次多項式で厳密解一致。格子細分化による空間収束次数（正方4次、非正方2次）を確認。 |");
+            sb.AppendLine("| **区分 A** | **Boussinesq FCT 散逸符号・保存性** | 高周波双調和散逸の符号是正と質量保存フラックス | 【実測】 | **採用 (修正確認済み)** | 散逸符号の反転バグを解消し、数値振動を抑えつつ総質量相対誤差 $< 10^{-6}$ を維持。 |");
+            sb.AppendLine("| **区分 B** | **Boussinesq PCR 特化カーネル** | 解像度特化カーネル (128/256 アンロール) | 【実測】 | **採用済み (優位性確認)** | `Docs/BenchmarkResults.csv` 実測にて出力数値差 0.0 を確認しつつ、Generic比 **1.18〜1.27倍** の高速化を達成。 |");
+            sb.AppendLine("| **区分 B** | **FFTOcean 4-Dispatch 集約** | Packed IFFT + ALUオンザフライ計算 | 【実測】/【解析計算】 | **採用中 (基準維持)** | 16 Dispatches を groupshared (16KB) 内完結で 4 Dispatches に集約。評価時刻一貫性誤差 0.0 を確認済み。 |");
+            sb.AppendLine("| **区分 C** | **WaveEquation 時間積分** | Kick-Drift vs Leapfrog vs Velocity Verlet | 【解析計算】/【未実施】 | **判断保留 (現行維持)** | CPU基礎検証で3方式とも2次シンプレクティック収束($\\approx 2.0$)を確認。GPU複数Dispatch・テクスチャ帯域比較は【未実施】のため現行1-Dispatch Kick-Driftを維持。 |");
+            sb.AppendLine("| **区分 C** | **Boussinesq TVD 界面再構成** | 1次風上から 2次TVD (Minmod) への置換 | 【未実施】 | **判断保留 (未実装)** | 1D単独移流基礎試験では波高保持率向上が見られるが、2D GPU ComputeShader実装・Well-Balancing地形項結合・粗格子(384²)短縮効果は【未実施】。 |");
+            sb.AppendLine("| **区分 C** | **Boussinesq ADI 反復数** | 1 Sweep vs 2..4 Sweeps (過剰反復性) | 【実測】/【解析計算】 | **判断保留 (1 Sweep暫定)** | 実測GPU時間(`Docs/BenchmarkResults.csv`): 1 Sweep(41 Disp) 5.34ms、2 Sweeps(65 Disp) 8.61ms、3 Sweeps 12.13ms、4 Sweeps 15.54ms。$kh \\le 0.8$ では理論近似誤差が支配的であり反復効果は逓減するが、極端な急勾配条件での必要性は未断定。 |");
+            sb.AppendLine("| **区分 C** | **FFTOcean 事前計算 / Radix-4** | Twiddleテクスチャ事前計算 / Radix-4化 | 【未実施】 | **判断保留 (未実装)** | シェーダー未実装のためGPU実測値なし。以前の「10%遅延」という断定は撤回し、未実施として扱う。 |");
             sb.AppendLine();
 
-            sb.AppendLine("## 3. 「同じ誤差を達成する費用」と「同じ時間予算で得られる精度」の総合比較");
+            sb.AppendLine("## 3. 実装実態に基づくリソース・計算費用の総合比較");
             sb.AppendLine();
-            sb.AppendLine("| 手法 | 達成相対波高誤差 | 格子解像度 | 所要時間 (物理1秒進行) | 状態メモリ量 | Dispatch数 (物理1秒) | 総合コスト効率 |");
-            sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |");
-            sb.AppendLine("| **WaveEq (修正後 Compact 9pt)** | **< 0.01%** | 512x512 | **41.5 ms** | 16 MB (RGFloat x 2) | 252 (63 steps x 4) | **極めて高効率 (最適解)** |");
-            sb.AppendLine("| **Boussinesq (1st Upwind + FCT)** | ~3.8% | 512x512 | **343.6 ms** | 32 MB | 2583 (63 steps x 41) | **標準堅牢解 (ショック安定)** |");
-            sb.AppendLine("| **Boussinesq (TVD-Minmod)** | ~1.8% | 384x384 (粗格子化) | **268.0 ms** | 18 MB | 2583 (63 steps x 41) | **同等誤差を粗い格子で達成可能 (-22%時間節約)** |");
-            sb.AppendLine("| **FFTOcean (4 Dispatch Packed)** | < 0.001% | 256x256 | **38.9 ms** | 12 MB | 252 (63 steps x 4) | **深水最適解 (4 Dispatch集約)** |");
+            sb.AppendLine("各手法のメモリ使用量はシェーダーコードおよびスクリプトの RenderTexture 定義から厳密に計算（【解析計算】）、Dispatch数および実行時間は実測値（【実測】）に基づいて整理しています：");
+            sb.AppendLine();
+            sb.AppendLine("| モジュール | 解像度 | 状態メモリ (VRAM) | スクラッチ/出力 | 合計 VRAM | 1 Step Dispatch数 | 実測 GPU 時間 (1 Step) | 備考・エビデンス |");
+            sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |");
+            sb.AppendLine("| **WaveEquation** | 512x512 | **4.0 MB** (RGFloat x2) | 4.25 MB (ARGBHalf x2 + R8 x1) | **8.25 MB** 【解析計算】 | 4 Dispatches (Init/Step/Norm/Imp) | ~0.65 ms 【実測】 | Compact 9pt ラプラシアン不連続修正済み |");
+            sb.AppendLine("| **Boussinesq (1 Sweep)** | 512x512 | **12.0 MB** (ARGBFloat x3) | 16.0 MB (RGFloat x5 + ARGBHalf x3) | **28.0 MB** 【解析計算】 | **41 Dispatches** 【実測】 | **5.341 ms** 【実測】 | `Docs/BenchmarkResults.csv` Arc 140V 実測 |");
+            sb.AppendLine("| **Boussinesq (2 Sweeps)** | 512x512 | **12.0 MB** (ARGBFloat x3) | 16.0 MB (RGFloat x5 + ARGBHalf x3) | **28.0 MB** 【解析計算】 | **65 Dispatches** 【実測】 | **8.609 ms** 【実測】 | `Docs/BenchmarkResults.csv` Arc 140V 実測 |");
+            sb.AppendLine("| **Boussinesq (3 Sweeps)** | 512x512 | **12.0 MB** (ARGBFloat x3) | 16.0 MB (RGFloat x5 + ARGBHalf x3) | **28.0 MB** 【解析計算】 | **89 Dispatches** 【実測】 | **12.128 ms** 【実測】 | `Docs/BenchmarkResults.csv` Arc 140V 実測 |");
+            sb.AppendLine("| **Boussinesq (4 Sweeps)** | 512x512 | **12.0 MB** (ARGBFloat x3) | 16.0 MB (RGFloat x5 + ARGBHalf x3) | **28.0 MB** 【解析計算】 | **113 Dispatches** 【実測】 | **15.541 ms** 【実測】 | `Docs/BenchmarkResults.csv` Arc 140V 実測 |");
+            sb.AppendLine("| **FFTOcean** | 256x256 | **3.0 MB** (ARGBFloat x3) | 2.0 MB (ARGBHalf x2) | **5.0 MB** 【解析計算】 | **4 Dispatches** 【実測】 | ~0.82 ms 【実測】 | 512x512 時は 20.0 MB 【解析計算】 |");
+            sb.AppendLine();
+            sb.AppendLine("> [!IMPORTANT]\n> 未実装候補（TVD 384² による22%時間短縮、FFT事前計算Twiddleの10%遅延など）の未実測固定値はすべて撤回し、上記の実装・実測テーブルに一元化しました。");
             sb.AppendLine();
 
             sb.AppendLine("## 4. 各モジュールの詳細検証サマリー");
             sb.AppendLine();
-            sb.AppendLine("各モジュールの詳細な測定値、誤差テーブル、および検証エビデンスは以下の個別レポートに保存されています：");
+            sb.AppendLine("各モジュールの詳細な測定コード、生データ、および検証エビデンスは以下の個別レポートに保存されています：");
             sb.AppendLine($"- [`Docs/WaveEquationPrecisionReport.md`](file:///{Path.GetFullPath("Docs/WaveEquationPrecisionReport.md").Replace('\\', '/')})");
             sb.AppendLine($"- [`Docs/ShallowWaterAdvectionReport.md`](file:///{Path.GetFullPath("Docs/ShallowWaterAdvectionReport.md").Replace('\\', '/')})");
             sb.AppendLine($"- [`Docs/BoussinesqDispersionReport.md`](file:///{Path.GetFullPath("Docs/BoussinesqDispersionReport.md").Replace('\\', '/')})");
