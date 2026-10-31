@@ -173,6 +173,18 @@ namespace Nobnak.WaterSimulation {
             }
             return true;
         }
+
+        public override bool AreTexturesValidAndMatchingResolution() {
+            if (!base.AreTexturesValidAndMatchingResolution()) return false;
+            return obstacleTex != null && obstacleTex.width == resolution.x && obstacleTex.height == resolution.y &&
+                   stateTexA != null && stateTexA.width == resolution.x && stateTexA.height == resolution.y;
+        }
+
+        protected override void OnAreaSizeChanged(Vector2 oldSize, Vector2 newSize) {
+            if (stateTexA != null && stateTexA.IsCreated()) {
+                ComputeNormalAndPackOutput();
+            }
+        }
         #endregion
 
         #region private methods

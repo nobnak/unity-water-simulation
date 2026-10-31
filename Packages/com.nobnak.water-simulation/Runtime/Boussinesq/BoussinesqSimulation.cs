@@ -384,53 +384,166 @@ namespace Nobnak.WaterSimulation {
             return true;
         }
 
+        public override bool AreTexturesValidAndMatchingResolution() {
+            if (!base.AreTexturesValidAndMatchingResolution()) return false;
+            return bathymetryTex != null && bathymetryTex.width == resolution.x && bathymetryTex.height == resolution.y &&
+                   stateTexA != null && stateTexA.width == resolution.x && stateTexA.height == resolution.y;
+        }
+
+        protected override void OnAreaSizeChanged(Vector2 oldSize, Vector2 newSize) {
+            if (bathymetryTex != null && bathymetryTex.IsCreated()) {
+                UpdateBathymetryTexture();
+                ComputeNormalAndPackOutput();
+            }
+        }
+
+        public enum DispersionStatus {
+            Ok = 0,
+            InsufficientResolution = 1,
+            ResolutionLimitExceeded = 2,
+            CutoffExceeded = 3,
+            Unevaluated = 4
+        }
+
+        public struct DispersionDiagnostics {
+            public DispersionStatus status;
+            public string message;
+            public float lambdaDeep;
+            public float lambdaShallow;
+            public float shortestLambda;
+            public float cellsDeep;
+            public float cellsShallow;
+            public float minCells;
+            public float dx;
+            public float dz;
+            public int recommendedResolution;
+            public bool isCutoff;
+
+            public void Deconstruct(out float lDeep, out float lShallow, out float cDeep, out float cShallow, out float gridX, out float gridZ) {
+                lDeep = lambdaDeep;
+                lShallow = lambdaShallow;
+                cDeep = cellsDeep;
+                cShallow = cellsShallow;
+                gridX = dx;
+                gridZ = dz;
+            }
+        }
+
         /// <summary>
-        /// Evaluates local wavelengths and grid resolution metrics using the exact linear Peregrine dispersion relation:
-        /// omega^2 = gh k^2 / (1 + h^2 k^2 / 3) -> k = omega / sqrt(gh * (1 - omega^2 h / (3g))).
+        /// Evaluates local wavelengths and grid resolution metrics using the exact linear Peregrine dispersion relation
+        /// incorporating actual dispersionAlpha: omega^2 = gh k^2 / (1 + alpha * h^2 k^2 / 3).
+        /// When frequency exceeds cutoff, no shallow-water substitution is made.
         /// </summary>
-        public (float lambdaDeep, float lambdaShallow, float cellsDeep, float cellsShallow, float dx, float dz) GetDispersionWavelengthDiagnostics() {
+        public DispersionDiagnostics GetDispersionWavelengthDiagnostics() {
             float dx = areaSize.x / math.max(1, resolution.x);
             float dz = areaSize.y / math.max(1, resolution.y);
             float maxGrid = math.max(dx, dz);
 
-            float f = math.max(0.01f, wavemakerFrequency);
+            var diag = new DispersionDiagnostics {
+                dx = dx,
+                dz = dz,
+                lambdaDeep = 0f,
+                lambdaShallow = 0f,
+                shortestLambda = 0f,
+                cellsDeep = 0f,
+                cellsShallow = 0f,
+                minCells = 0f,
+                recommendedResolution = 0,
+                isCutoff = false
+            };
+
+            if (initialCondition != InitialConditionType.ContinuousWavemaker) {
+                diag.status = DispersionStatus.Unevaluated;
+                if (initialCondition == InitialConditionType.GaussianPulse || initialCondition == InitialConditionType.PeriodicPulses) {
+                    float minDim = math.min(areaSize.x, areaSize.y);
+                    float pulseScale = math.max(2.0f, 4.0f * sourceRadius * minDim);
+                    float cellsOnPulse = pulseScale / maxGrid;
+                    diag.shortestLambda = pulseScale;
+                    diag.minCells = cellsOnPulse;
+                    diag.message = $"[未評価: 広帯域パルス]\n" +
+                        $"パルス空間特徴幅: ~{pulseScale:F1}m ({cellsOnPulse:F1} cells/width)。" +
+                        $"広帯域スペクトルを含むため単一波長線形分散は未評価です。OK判定は行いません。";
+                } else {
+                    diag.message = $"[未評価: {initialCondition}]\n" +
+                        $"波源周波数が定常定義されていないか対話入力のため波長診断は未評価です。OK判定は行いません。";
+                }
+                return diag;
+            }
+
+            float f = math.max(0.001f, wavemakerFrequency);
             float omega = 2.0f * math.PI * f;
+            float hDeep = math.max(0.1f, deepWaterDepth);
+            float hShallow = math.max(0.1f, shallowWaterDepth);
+            float alpha = math.clamp(dispersionAlpha, 0f, 1.5f);
 
-            float hDeep = math.max(0.2f, deepWaterDepth);
-            float hShallow = math.max(0.2f, shallowWaterDepth);
+            float discDeep = (alpha > 1e-4f) ? (1.0f - (alpha * omega * omega * hDeep) / (3.0f * Gravity)) : 1.0f;
+            float discShallow = (alpha > 1e-4f) ? (1.0f - (alpha * omega * omega * hShallow) / (3.0f * Gravity)) : 1.0f;
 
-            float discDeep = Gravity * hDeep * (1.0f - (omega * omega * hDeep) / (3.0f * Gravity));
-            float kDeep = discDeep > 1e-4f ? omega / math.sqrt(discDeep) : (omega / math.sqrt(Gravity * hDeep));
+            if (discDeep <= 0f || discShallow <= 0f) {
+                diag.status = DispersionStatus.CutoffExceeded;
+                diag.isCutoff = true;
+                float fcDeep = (alpha > 1e-4f) ? (1.0f / (2.0f * math.PI)) * math.sqrt(3.0f * Gravity / (alpha * hDeep)) : float.PositiveInfinity;
+                diag.message = $"[モデル条件外: 遮断周波数超過]\n" +
+                    $"波源周波数 {f:F2}Hz がPeregrine遮断周波数 (深水側 fc = {fcDeep:F2}Hz, alpha = {alpha:F2}) 以上です。\n" +
+                    $"伝播波長を算出できません（モデル条件外）。長波近似での正常値代用は行いません。\n" +
+                    $"対策: 周波数を下げるか水深を深くしてください。";
+                return diag;
+            }
+
+            float kDeep = omega / math.sqrt(Gravity * hDeep * discDeep);
             float lambdaDeep = (2.0f * math.PI) / math.max(1e-4f, kDeep);
 
-            float discShallow = Gravity * hShallow * (1.0f - (omega * omega * hShallow) / (3.0f * Gravity));
-            float kShallow = discShallow > 1e-4f ? omega / math.sqrt(discShallow) : (omega / math.sqrt(Gravity * hShallow));
+            float kShallow = omega / math.sqrt(Gravity * hShallow * discShallow);
             float lambdaShallow = (2.0f * math.PI) / math.max(1e-4f, kShallow);
 
             float cellsDeep = lambdaDeep / maxGrid;
             float cellsShallow = lambdaShallow / maxGrid;
 
-            return (lambdaDeep, lambdaShallow, cellsDeep, cellsShallow, dx, dz);
+            float shortestLambda = math.min(lambdaDeep, lambdaShallow);
+            float minCells = shortestLambda / maxGrid;
+
+            diag.lambdaDeep = lambdaDeep;
+            diag.lambdaShallow = lambdaShallow;
+            diag.shortestLambda = shortestLambda;
+            diag.cellsDeep = cellsDeep;
+            diag.cellsShallow = cellsShallow;
+            diag.minCells = minCells;
+
+            float targetCells = 32.0f;
+            float reqDx = shortestLambda / targetCells;
+            int reqRes = (int)math.ceil(math.max(areaSize.x, areaSize.y) / reqDx);
+            diag.recommendedResolution = reqRes;
+
+            if (minCells < targetCells) {
+                if (reqRes > MaxTridiagonalN) {
+                    diag.status = DispersionStatus.ResolutionLimitExceeded;
+                    diag.message = $"[解像度上限超過: 最短波長側 {minCells:F1} cells/wl < 32 cells/wl]\n" +
+                        $"最短波長側 ({shortestLambda:F1}m) で32セルを確保するための推奨解像度 (~{reqRes}x{reqRes}) が実装上限 ({MaxTridiagonalN}) を超過しています。\n" +
+                        $"解像度引き上げ単独では解決できません。\n" +
+                        $"対策候補:\n" +
+                        $"1. 領域寸法の縮小 (AreaSize を小さくして格子間隔を縮小)\n" +
+                        $"2. 波源周波数の引き下げ (波長を伸ばす)\n" +
+                        $"3. 水深の再設定";
+                } else {
+                    diag.status = DispersionStatus.InsufficientResolution;
+                    diag.message = $"[解像度不足: 最短波長側 {minCells:F1} cells/wl < 32 cells/wl]\n" +
+                        $"沖 (h={hDeep:F1}m): λ={lambdaDeep:F1}m ({cellsDeep:F1} cells) | 浅瀬 (h={hShallow:F1}m): λ={lambdaShallow:F1}m ({cellsShallow:F1} cells)。\n" +
+                        $"推奨解像度: ~{reqRes}x{reqRes} (現在の実装上限 {MaxTridiagonalN} 内)。";
+                }
+            } else {
+                diag.status = DispersionStatus.Ok;
+                diag.message = $"[解像度十分: 最短波長側 {minCells:F1} cells/wl >= 32 cells/wl]\n" +
+                    $"沖 (h={hDeep:F1}m): λ={lambdaDeep:F1}m ({cellsDeep:F1} cells) | 浅瀬 (h={hShallow:F1}m): λ={lambdaShallow:F1}m ({cellsShallow:F1} cells)。\n" +
+                    $"CPU参照研究に基づく32セル推奨を満たしています。";
+            }
+
+            return diag;
         }
 
-        /// <summary>
-        /// Checks whether grid resolution satisfies the provisional recommendation (>= 32 cells / shortest local wavelength
-        /// based on CPU reference studies). Does NOT silently modify frequency, depth, or resolution.
-        /// </summary>
-        public bool IsResolutionSufficientForPeregrine(out string warningMessage) {
+        public bool IsResolutionSufficientForPeregrine(out string message) {
             var diag = GetDispersionWavelengthDiagnostics();
-            if (diag.cellsShallow < 32.0f) {
-                float reqDx = diag.lambdaShallow / 32.0f;
-                int recResX = (int)math.ceil(areaSize.x / reqDx);
-                int recResZ = (int)math.ceil(areaSize.y / reqDx);
-                warningMessage = $"[Provisional Resolution Warning]\n" +
-                    $"Shallow water wavelength has {diag.cellsShallow:F1} cells/wavelength (< 32 cells/wl provisional recommendation based on CPU reference studies; not a codebase GPU guarantee).\n" +
-                    $"Grid: dx={diag.dx:F2}m, dz={diag.dz:F2}m | Deep (h={deepWaterDepth:F1}m): λ={diag.lambdaDeep:F1}m ({diag.cellsDeep:F1} cells/wl) | Shallow (h={shallowWaterDepth:F1}m): λ={diag.lambdaShallow:F1}m ({diag.cellsShallow:F1} cells/wl).\n" +
-                    $"Adjustment candidates: increase resolution to ~{recResX}x{recResZ}, or decrease wave frequency.";
-                return false;
-            }
-            warningMessage = string.Empty;
-            return true;
+            message = diag.message;
+            return diag.status == DispersionStatus.Ok;
         }
         #endregion
 

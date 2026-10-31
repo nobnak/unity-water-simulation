@@ -45,18 +45,33 @@ namespace Nobnak.WaterSimulation.Editor {
 
             var diag = sim.GetDispersionWavelengthDiagnostics();
             EditorGUILayout.LabelField("Dispersion & Resolution Diagnostics", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField($"Grid Spacing: dx = {diag.dx:F2}m, dz = {diag.dz:F2}m");
-            EditorGUILayout.LabelField($"Deep Water (h={sim.DeepWaterDepth:F1}m): λ = {diag.lambdaDeep:F1}m ({diag.cellsDeep:F1} cells/wl)");
-            EditorGUILayout.LabelField($"Shallow Shoal (h={sim.ShallowWaterDepth:F1}m): λ = {diag.lambdaShallow:F1}m ({diag.cellsShallow:F1} cells/wl)");
+            EditorGUILayout.LabelField($"Grid Spacing: dx = {diag.dx:F2}m, dz = {diag.dz:F2}m (dispersionAlpha = {sim.DispersionAlpha:F2})");
 
-            if (!sim.IsResolutionSufficientForPeregrine(out string resWarning)) {
-                EditorGUILayout.HelpBox(resWarning, MessageType.Warning);
+            if (diag.status == BoussinesqSimulation.DispersionStatus.CutoffExceeded) {
+                EditorGUILayout.HelpBox(diag.message, MessageType.Error);
+            } else if (diag.status == BoussinesqSimulation.DispersionStatus.Unevaluated) {
+                if (diag.shortestLambda > 0f) {
+                    EditorGUILayout.LabelField($"Pulse Feature Scale: ~{diag.shortestLambda:F1}m ({diag.minCells:F1} cells/width)");
+                }
+                EditorGUILayout.HelpBox(diag.message, MessageType.Info);
+            } else if (diag.status == BoussinesqSimulation.DispersionStatus.ResolutionLimitExceeded) {
+                EditorGUILayout.LabelField($"Deep Water (h={sim.DeepWaterDepth:F1}m): λ = {diag.lambdaDeep:F1}m ({diag.cellsDeep:F1} cells/wl)");
+                EditorGUILayout.LabelField($"Shallow Shoal (h={sim.ShallowWaterDepth:F1}m): λ = {diag.lambdaShallow:F1}m ({diag.cellsShallow:F1} cells/wl)");
+                EditorGUILayout.HelpBox(diag.message, MessageType.Error);
+            } else if (diag.status == BoussinesqSimulation.DispersionStatus.InsufficientResolution) {
+                EditorGUILayout.LabelField($"Deep Water (h={sim.DeepWaterDepth:F1}m): λ = {diag.lambdaDeep:F1}m ({diag.cellsDeep:F1} cells/wl)");
+                EditorGUILayout.LabelField($"Shallow Shoal (h={sim.ShallowWaterDepth:F1}m): λ = {diag.lambdaShallow:F1}m ({diag.cellsShallow:F1} cells/wl)");
+                EditorGUILayout.HelpBox(diag.message, MessageType.Warning);
             } else {
-                EditorGUILayout.HelpBox(
-                    $"[Resolution Status: OK]\n" +
-                    $"Shallow water wavelength has {diag.cellsShallow:F1} cells/wavelength (>= 32 cells/wl provisional recommendation based on CPU reference studies; not an official GPU guarantee).",
-                    MessageType.Info);
+                EditorGUILayout.LabelField($"Deep Water (h={sim.DeepWaterDepth:F1}m): λ = {diag.lambdaDeep:F1}m ({diag.cellsDeep:F1} cells/wl)");
+                EditorGUILayout.LabelField($"Shallow Shoal (h={sim.ShallowWaterDepth:F1}m): λ = {diag.lambdaShallow:F1}m ({diag.cellsShallow:F1} cells/wl)");
+                EditorGUILayout.HelpBox(diag.message, MessageType.Info);
             }
+
+            EditorGUILayout.HelpBox(
+                "※ 注意: 本診断は線形分散に基づく代表水深の目安です。\n" +
+                "Custom地形の局所急変・極浅瀬、および非線形急峻化・高調波・砕波による短波成分の解像度を保証するものではありません。",
+                MessageType.None);
             EditorGUILayout.Space(4);
 
             base.OnInspectorGUI();

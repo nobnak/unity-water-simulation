@@ -1,6 +1,6 @@
 ﻿# Water Simulation Speed vs Precision Balance Master Report
 
-- **Timestamp**: `2026-10-31 16:15:00`
+- **Timestamp**: `2026-10-31 16:39:38`
 - **Unity Version**: `6000.3.27f1`
 - **GPU**: `Intel(R) Arc(TM) 140V GPU (16GB)`
 - **CPU**: `Intel(R) Core(TM) Ultra 7 258V`
@@ -13,7 +13,8 @@
 | WaveEquation: 空間ラプラシアン多項式厳密解一致 & 格子アスペクト比不連続解消 | 空間精度・不連続解消 | **PASS** | 多項式最大誤差 < 3e-5 (PASS), dz=1.0001周波数跳躍 = 0.00499% (< 0.005%) |
 | WaveEquation: GPU ComputeShader (CSStep) vs CPU 解析数値等価性 | 本体GPU実測 | **PASS** | 最大絶対差 = 2.98E-007 (< 1e-4, PASS) |
 | WaveEquation: CFL安定性限界 (理論限界 dt <= 0.04782s) | 時間安定性 | **PASS** | 1.00x限界比で安定、1.02xで発散を正確に検出 (PASS) |
-| SimulationBase: 解像度・領域実装制約バリデーション (WaveEq, Boussinesq, FFTOcean) | 入力バリデーション | **PASS** | WaveEq(16..), Boussinesq(32..512), FFTOcean(正方・2の冪..512)の全制約拒絶・受理を確認 (PASS) |
+| SimulationBase: 解像度・領域変更と実動作検証 (WaveEq, Boussinesq, FFTOcean) 【本体GPU実測】 | 本体GPU実動作検証 | **PASS** | 3方式で初期化→1ステップ→解像度変更→1ステップ、Inspector/setter、無効設定拒否/復旧、有限性、テクスチャ解放を確認 (PASS) |
+| Boussinesq: 波長・解像度診断 (alpha反映, 遮断判定, パルス未評価, 512上限超過) 【解析・単体】 | 診断ロジック単体テスト | **PASS** | alpha分散反映、遮断判定(長波代用なし)、パルス未評価、512上限超過検出を全て確認 (PASS) |
 | ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力) 【CPU参照】 | 測定器単体テスト | **PASS** | 正方向/逆方向/多周期/任意初期位相の4ケース全てで絶対誤差 < 8e-6 (PASS) |
 | ShallowWater: 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法) 【CPU参照】 | 境界条件・線形ソルバー | **PASS** | 定数解誤差 = 2.86E-006, 離散固有値誤差 = 5.50E-007 (PASS) |
 | ShallowWater: 半離散群速度 導関数照合 (dDenom = (2h^2/3Δx)sin(kΔx) vs 数値微分) 【解析・単体】 | 数理解析単体テスト | **PASS** | 全波数条件で解析導関数と数値微分の相対誤差 < 1e-4 (PASS) |
@@ -76,6 +77,7 @@
 2. **Boussinesq ADI 反復別 壁時計時間 & Dispatch 数計測**: 512x512、4サブステップ条件において、1 Sweep (41 Disp / 5.341ms) から 4 Sweeps (113 Disp / 15.541ms) までの同期を含む壁時計時間を実機計測 (`Docs/BenchmarkResults.csv`, Commit `d5446df`)。
 3. **Boussinesq PCR 特化カーネル高速化実測**: 解像度固定アンロールカーネル (128/256) で出力差 0.0 を確認しつつ 1.18〜1.27倍 の高速化を確認 (`Docs/BenchmarkResults.csv`, Commit `d5446df`)。
 4. **FFTOcean 評価時刻一貫性実フレーム検証**: 通常再生、Pause、Step、Reset の各遷移において変位・法線・白波の最大差分が 0.0 (完全一致) であることを実機検証 (`Docs/FftEvaluationTimeVerification.json`, Commit `18ef6b8`, PASS)。
+5. **SimulationBase 解像度・領域変更と実動作検証**: WaveEquation, Boussinesq, FFTOcean の3方式において、初期化→1ステップ→解像度変更→1ステップ、Inspector/setter、無効設定拒否/復旧、有限性、テクスチャ解放を本体GPU上で実機検証 (`RunConfigurationRealExecutionValidationTests`, PASS)。
 
 ### 4.2 CPU参照モデルで実行した試験 (CPU Reference Model Studies)
 1. **ShallowWater 位相速度測定器 単体テスト**: PDE を解かず既知進行波 $\cos(kx - \omega t)$ を入力し、正方向・逆方向・多周期・任意位相で既知速度を完全復元できることを確認 (4ケース全て PASS)。
@@ -102,6 +104,7 @@
 2. **Boussinesq 16セル波長における群速度精度 (7.6% 誤差)**: 16セル波長では2階中心差分の半離散誤差 $\cos(k\Delta x)$ により群速度誤差が 7.6% (許容閾値 5.0% 超過) となります。ただし32セル波長では 1.9% に収束し合格するため、本体GPUの不具合ではなく空間離散化解像度の設計基準として整理されます。
 3. **TVD 界面再構成の 2D GPU 実装と Well-Balancing 結合**: 1D CPU 試験では波高保持率向上が見られるが、2D 斜面地形項との Well-Balanced な結合および GPU 実装は未着手（未実施）。
 4. **Boussinesq 適用限界域 ($kh > 0.8$) における Airy 理論との乖離**: 深水域 ($kh = 1.2, 1.6$) では Peregrine 理論自体の物理的限界により Airy 理論との乖離が生じる。これは数値誤差ではなく弱分散物理モデル自体の適用限界。
+5. **Scene 02 Shoal の波高波打ち・高速上下動の要因**: 設定検証やCPU参照試験の合格（主波 94.4 cells/wl 確保）のみで解消済みと結論せず、非線形浅水変形に伴う高調波成分の急峻化、地形屈折、砕波モデル、および2D FCT散逸フィルターの相互作用として継続課題とする。
 
 ## 6. 解像度スケーリングと計算負荷の評価 (Resolution Scaling vs Computational Workload)
 

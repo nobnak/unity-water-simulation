@@ -231,6 +231,19 @@ namespace Nobnak.WaterSimulation {
             }
             return true;
         }
+
+        public override bool AreTexturesValidAndMatchingResolution() {
+            if (!base.AreTexturesValidAndMatchingResolution()) return false;
+            return initialSpectrumTex != null && initialSpectrumTex.width == resolution.x && initialSpectrumTex.height == resolution.y;
+        }
+
+        protected override void OnAreaSizeChanged(Vector2 oldSize, Vector2 newSize) {
+            MarkSpectrumDirty();
+            if (initialSpectrumTex != null && initialSpectrumTex.IsCreated()) {
+                FlushInitialSpectrumIfDirty();
+                OnStepSimulation(0f);
+            }
+        }
         #endregion
 
         #region private methods

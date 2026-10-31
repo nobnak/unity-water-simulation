@@ -1,5 +1,5 @@
 ﻿{
-    "timestamp": "2026-10-31 16:15:00",
+    "timestamp": "2026-10-31 16:39:38",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -25,10 +25,16 @@
             "details": "1.00x限界比で安定、1.02xで発散を正確に検出 (PASS)"
         },
         {
-            "name": "SimulationBase: 解像度・領域実装制約バリデーション (WaveEq, Boussinesq, FFTOcean)",
-            "category": "入力バリデーション",
+            "name": "SimulationBase: 解像度・領域変更と実動作検証 (WaveEq, Boussinesq, FFTOcean) 【本体GPU実測】",
+            "category": "本体GPU実動作検証",
             "status": "PASS",
-            "details": "WaveEq(16..), Boussinesq(32..512), FFTOcean(正方・2の冪..512)の全制約拒絶・受理を確認 (PASS)"
+            "details": "3方式で初期化→1ステップ→解像度変更→1ステップ、Inspector/setter、無効設定拒否/復旧、有限性、テクスチャ解放を確認 (PASS)"
+        },
+        {
+            "name": "Boussinesq: 波長・解像度診断 (alpha反映, 遮断判定, パルス未評価, 512上限超過) 【解析・単体】",
+            "category": "診断ロジック単体テスト",
+            "status": "PASS",
+            "details": "alpha分散反映、遮断判定(長波代用なし)、パルス未評価、512上限超過検出を全て確認 (PASS)"
         },
         {
             "name": "ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力) 【CPU参照】",
@@ -74,7 +80,7 @@
         }
     ],
     "wave_equation": {
-        "timestamp": "2026-10-31 16:14:36",
+        "timestamp": "2026-10-31 16:39:13",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -461,7 +467,7 @@
                         {
                             "dt": 0.019999999552965165,
                             "total_steps": 62,
-                            "cpu_time_ms": 0.005,
+                            "cpu_time_ms": 0.009,
                             "eta_error": 0.159472,
                             "vel_error": 1.389544,
                             "normalized_state_error": 0.182364,
@@ -557,7 +563,7 @@
                         {
                             "dt": 0.0024999999441206457,
                             "total_steps": 500,
-                            "cpu_time_ms": 0.011,
+                            "cpu_time_ms": 0.012,
                             "eta_error": 0.001358,
                             "vel_error": 0.001528,
                             "normalized_state_error": 0.001361,
@@ -724,7 +730,7 @@
         }
     },
     "shallow_water_advection": {
-        "timestamp": "2026-10-31 16:14:36",
+        "timestamp": "2026-10-31 16:39:13",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "meter_unit_test": {
@@ -1305,7 +1311,7 @@
         "failure_details": []
     },
     "dispersion_solving": {
-        "timestamp": "2026-10-31 16:14:59",
+        "timestamp": "2026-10-31 16:39:38",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "sweep_comparisons": [
@@ -1592,7 +1598,7 @@
         }
     },
     "fft_ocean": {
-        "timestamp": "2026-10-31 16:14:59",
+        "timestamp": "2026-10-31 16:39:38",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "baseline_architecture": {
