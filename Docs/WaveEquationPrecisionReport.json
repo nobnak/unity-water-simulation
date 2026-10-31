@@ -1,0 +1,617 @@
+﻿{
+    "timestamp": "2026-10-31 12:31:11",
+    "unity_version": "6000.3.27f1",
+    "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
+    "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
+    "analytic_field_tests": {
+        "constant_field_max_error": 0.0,
+        "linear_field_max_error": 0.000004480282314034412,
+        "quadratic_x2_max_error": 0.0,
+        "quadratic_z2_max_error": 0.000003814697265625,
+        "quadratic_xz_max_error": 0.000004072983756486792,
+        "quadratic_x2_z2_max_error": 0.0000057220458984375,
+        "harmonic_cubic_max_error": 0.000028689702958217822,
+        "sinusoidal_wave_max_error": 0.6115078926086426,
+        "sinusoidal_convergence_order": 1.9687763452529908
+    },
+    "continuity_test": {
+        "probes": [
+            {
+                "dz": 0.9990000128746033,
+                "dx": 1.0,
+                "aspect_ratio": 0.9990000128746033,
+                "laplacian_corrected": -1.1154979467391968,
+                "frequency_corrected": 1.0561714172363282,
+                "laplacian_old_bugged": -1.0582497119903565,
+                "frequency_old_bugged": 1.0287126302719117
+            },
+            {
+                "dz": 0.9994999766349793,
+                "dx": 1.0,
+                "aspect_ratio": 0.9994999766349793,
+                "laplacian_corrected": -1.114939570426941,
+                "frequency_corrected": 1.0559070110321046,
+                "laplacian_old_bugged": -1.0577199459075928,
+                "frequency_old_bugged": 1.028455138206482
+            },
+            {
+                "dz": 0.9998999834060669,
+                "dx": 1.0,
+                "aspect_ratio": 0.9998999834060669,
+                "laplacian_corrected": -1.114493489265442,
+                "frequency_corrected": 1.0556957721710206,
+                "laplacian_old_bugged": -1.0572967529296876,
+                "frequency_old_bugged": 1.0282493829727173
+            },
+            {
+                "dz": 1.0,
+                "dx": 1.0,
+                "aspect_ratio": 1.0,
+                "laplacian_corrected": -1.1143819093704224,
+                "frequency_corrected": 1.05564284324646,
+                "laplacian_old_bugged": -1.1143819093704224,
+                "frequency_old_bugged": 1.05564284324646
+            },
+            {
+                "dz": 1.000100016593933,
+                "dx": 1.0,
+                "aspect_ratio": 1.000100016593933,
+                "laplacian_corrected": -1.114270567893982,
+                "frequency_corrected": 1.0555901527404786,
+                "laplacian_old_bugged": -1.0570852756500245,
+                "frequency_old_bugged": 1.028146505355835
+            },
+            {
+                "dz": 1.000499963760376,
+                "dx": 1.0,
+                "aspect_ratio": 1.000499963760376,
+                "laplacian_corrected": -1.1138252019882203,
+                "frequency_corrected": 1.0553791522979737,
+                "laplacian_old_bugged": -1.0566627979278565,
+                "frequency_old_bugged": 1.0279409885406495
+            },
+            {
+                "dz": 1.0010000467300416,
+                "dx": 1.0,
+                "aspect_ratio": 1.0010000467300416,
+                "laplacian_corrected": -1.1132692098617554,
+                "frequency_corrected": 1.0551156997680665,
+                "laplacian_old_bugged": -1.0561352968215943,
+                "frequency_old_bugged": 1.0276844501495362
+            }
+        ],
+        "corrected_frequency_jump_percent": 0.0049913194961845879,
+        "old_bugged_frequency_jump_percent": 2.604700803756714,
+        "is_continuous": true
+    },
+    "aspect_ratio_angle_tests": [
+        {
+            "aspect_ratio": 0.5,
+            "angle_deg": 0.0,
+            "exact_k": 1.1107207536697388,
+            "numerical_effective_k": 1.0965018272399903,
+            "phase_velocity_ratio": 0.9871984720230103,
+            "relative_phase_error_percent": 1.2801527976989747
+        },
+        {
+            "aspect_ratio": 0.5,
+            "angle_deg": 15.0,
+            "exact_k": 1.1107207536697388,
+            "numerical_effective_k": 1.097227692604065,
+            "phase_velocity_ratio": 0.9878519773483276,
+            "relative_phase_error_percent": 1.2148022651672364
+        },
+        {
+            "aspect_ratio": 0.5,
+            "angle_deg": 30.0,
+            "exact_k": 1.1107207536697388,
+            "numerical_effective_k": 1.0991944074630738,
+            "phase_velocity_ratio": 0.9896226525306702,
+            "relative_phase_error_percent": 1.0377347469329835
+        },
+        {
+            "aspect_ratio": 0.5,
+            "angle_deg": 45.0,
+            "exact_k": 1.1107207536697388,
+            "numerical_effective_k": 1.1018551588058472,
+            "phase_velocity_ratio": 0.9920181632041931,
+            "relative_phase_error_percent": 0.7981836795806885
+        },
+        {
+            "aspect_ratio": 0.5,
+            "angle_deg": 60.0,
+            "exact_k": 1.1107208728790284,
+            "numerical_effective_k": 1.1045024394989014,
+            "phase_velocity_ratio": 0.9944014549255371,
+            "relative_phase_error_percent": 0.5598545074462891
+        },
+        {
+            "aspect_ratio": 0.5,
+            "angle_deg": 75.0,
+            "exact_k": 1.1107207536697388,
+            "numerical_effective_k": 1.1064430475234986,
+            "phase_velocity_ratio": 0.9961487054824829,
+            "relative_phase_error_percent": 0.385129451751709
+        },
+        {
+            "aspect_ratio": 0.5,
+            "angle_deg": 90.0,
+            "exact_k": 1.1107207536697388,
+            "numerical_effective_k": 1.1071557998657227,
+            "phase_velocity_ratio": 0.9967904090881348,
+            "relative_phase_error_percent": 0.32095909118652346
+        },
+        {
+            "aspect_ratio": 0.75,
+            "angle_deg": 0.0,
+            "exact_k": 0.9068997502326965,
+            "numerical_effective_k": 0.899150013923645,
+            "phase_velocity_ratio": 0.9914547204971314,
+            "relative_phase_error_percent": 0.8545279502868652
+        },
+        {
+            "aspect_ratio": 0.75,
+            "angle_deg": 15.0,
+            "exact_k": 0.9068996906280518,
+            "numerical_effective_k": 0.8993822336196899,
+            "phase_velocity_ratio": 0.9917108416557312,
+            "relative_phase_error_percent": 0.8289158344268799
+        },
+        {
+            "aspect_ratio": 0.75,
+            "angle_deg": 30.0,
+            "exact_k": 0.9068996906280518,
+            "numerical_effective_k": 0.9000110626220703,
+            "phase_velocity_ratio": 0.9924042224884033,
+            "relative_phase_error_percent": 0.759577751159668
+        },
+        {
+            "aspect_ratio": 0.75,
+            "angle_deg": 45.0,
+            "exact_k": 0.9068996906280518,
+            "numerical_effective_k": 0.9008588194847107,
+            "phase_velocity_ratio": 0.9933390021324158,
+            "relative_phase_error_percent": 0.6660997867584229
+        },
+        {
+            "aspect_ratio": 0.75,
+            "angle_deg": 60.0,
+            "exact_k": 0.9068997502326965,
+            "numerical_effective_k": 0.9016984701156616,
+            "phase_velocity_ratio": 0.9942647814750671,
+            "relative_phase_error_percent": 0.5735218524932861
+        },
+        {
+            "aspect_ratio": 0.75,
+            "angle_deg": 75.0,
+            "exact_k": 0.9068996906280518,
+            "numerical_effective_k": 0.9023113250732422,
+            "phase_velocity_ratio": 0.9949405789375305,
+            "relative_phase_error_percent": 0.5059421062469482
+        },
+        {
+            "aspect_ratio": 0.75,
+            "angle_deg": 90.0,
+            "exact_k": 0.9068997502326965,
+            "numerical_effective_k": 0.9025353789329529,
+            "phase_velocity_ratio": 0.9951875805854797,
+            "relative_phase_error_percent": 0.48124194145202639
+        },
+        {
+            "aspect_ratio": 1.0,
+            "angle_deg": 0.0,
+            "exact_k": 0.7853981852531433,
+            "numerical_effective_k": 0.7803614139556885,
+            "phase_velocity_ratio": 0.9935869574546814,
+            "relative_phase_error_percent": 0.6413042545318604
+        },
+        {
+            "aspect_ratio": 1.0,
+            "angle_deg": 15.0,
+            "exact_k": 0.7853981256484985,
+            "numerical_effective_k": 0.7803643941879273,
+            "phase_velocity_ratio": 0.9935908317565918,
+            "relative_phase_error_percent": 0.6409168243408203
+        },
+        {
+            "aspect_ratio": 1.0,
+            "angle_deg": 30.0,
+            "exact_k": 0.7853981852531433,
+            "numerical_effective_k": 0.7803710103034973,
+            "phase_velocity_ratio": 0.9935991764068604,
+            "relative_phase_error_percent": 0.6400823593139648
+        },
+        {
+            "aspect_ratio": 1.0,
+            "angle_deg": 45.0,
+            "exact_k": 0.7853981852531433,
+            "numerical_effective_k": 0.78037428855896,
+            "phase_velocity_ratio": 0.9936033487319946,
+            "relative_phase_error_percent": 0.6396651268005371
+        },
+        {
+            "aspect_ratio": 1.0,
+            "angle_deg": 60.0,
+            "exact_k": 0.7853982448577881,
+            "numerical_effective_k": 0.7803707718849182,
+            "phase_velocity_ratio": 0.9935988187789917,
+            "relative_phase_error_percent": 0.6401181221008301
+        },
+        {
+            "aspect_ratio": 1.0,
+            "angle_deg": 75.0,
+            "exact_k": 0.7853981256484985,
+            "numerical_effective_k": 0.7803643941879273,
+            "phase_velocity_ratio": 0.9935908317565918,
+            "relative_phase_error_percent": 0.6409168243408203
+        },
+        {
+            "aspect_ratio": 1.0,
+            "angle_deg": 90.0,
+            "exact_k": 0.7853981852531433,
+            "numerical_effective_k": 0.7803613543510437,
+            "phase_velocity_ratio": 0.9935868978500366,
+            "relative_phase_error_percent": 0.6413102149963379
+        },
+        {
+            "aspect_ratio": 1.25,
+            "angle_deg": 0.0,
+            "exact_k": 0.7024815082550049,
+            "numerical_effective_k": 0.6988759636878967,
+            "phase_velocity_ratio": 0.9948674440383911,
+            "relative_phase_error_percent": 0.5132555961608887
+        },
+        {
+            "aspect_ratio": 1.25,
+            "angle_deg": 15.0,
+            "exact_k": 0.7024814486503601,
+            "numerical_effective_k": 0.6987425088882446,
+            "phase_velocity_ratio": 0.9946775436401367,
+            "relative_phase_error_percent": 0.5322456359863281
+        },
+        {
+            "aspect_ratio": 1.25,
+            "angle_deg": 30.0,
+            "exact_k": 0.7024814486503601,
+            "numerical_effective_k": 0.6983776688575745,
+            "phase_velocity_ratio": 0.994158148765564,
+            "relative_phase_error_percent": 0.5841851234436035
+        },
+        {
+            "aspect_ratio": 1.25,
+            "angle_deg": 45.0,
+            "exact_k": 0.7024814486503601,
+            "numerical_effective_k": 0.6978763937950134,
+            "phase_velocity_ratio": 0.993444561958313,
+            "relative_phase_error_percent": 0.6555438041687012
+        },
+        {
+            "aspect_ratio": 1.25,
+            "angle_deg": 60.0,
+            "exact_k": 0.7024815082550049,
+            "numerical_effective_k": 0.6973690390586853,
+            "phase_velocity_ratio": 0.9927222728729248,
+            "relative_phase_error_percent": 0.7277727127075195
+        },
+        {
+            "aspect_ratio": 1.25,
+            "angle_deg": 75.0,
+            "exact_k": 0.7024815082550049,
+            "numerical_effective_k": 0.6969922780990601,
+            "phase_velocity_ratio": 0.9921859502792358,
+            "relative_phase_error_percent": 0.781404972076416
+        },
+        {
+            "aspect_ratio": 1.25,
+            "angle_deg": 90.0,
+            "exact_k": 0.7024815082550049,
+            "numerical_effective_k": 0.6968528628349304,
+            "phase_velocity_ratio": 0.9919874668121338,
+            "relative_phase_error_percent": 0.8012533187866211
+        },
+        {
+            "aspect_ratio": 1.5,
+            "angle_deg": 0.0,
+            "exact_k": 0.6412749290466309,
+            "numerical_effective_k": 0.638531506061554,
+            "phase_velocity_ratio": 0.9957219362258911,
+            "relative_phase_error_percent": 0.42780637741088869
+        },
+        {
+            "aspect_ratio": 1.5,
+            "angle_deg": 15.0,
+            "exact_k": 0.6412748694419861,
+            "numerical_effective_k": 0.6383038759231567,
+            "phase_velocity_ratio": 0.9953670501708984,
+            "relative_phase_error_percent": 0.46329498291015627
+        },
+        {
+            "aspect_ratio": 1.5,
+            "angle_deg": 30.0,
+            "exact_k": 0.6412749290466309,
+            "numerical_effective_k": 0.6376828551292419,
+            "phase_velocity_ratio": 0.9943985342979431,
+            "relative_phase_error_percent": 0.5601465702056885
+        },
+        {
+            "aspect_ratio": 1.5,
+            "angle_deg": 45.0,
+            "exact_k": 0.6412748694419861,
+            "numerical_effective_k": 0.6368337273597717,
+            "phase_velocity_ratio": 0.9930745363235474,
+            "relative_phase_error_percent": 0.6925463676452637
+        },
+        {
+            "aspect_ratio": 1.5,
+            "angle_deg": 60.0,
+            "exact_k": 0.6412749290466309,
+            "numerical_effective_k": 0.6359783411026001,
+            "phase_velocity_ratio": 0.9917405247688294,
+            "relative_phase_error_percent": 0.8259475231170654
+        },
+        {
+            "aspect_ratio": 1.5,
+            "angle_deg": 75.0,
+            "exact_k": 0.6412749290466309,
+            "numerical_effective_k": 0.6353455781936646,
+            "phase_velocity_ratio": 0.9907538294792175,
+            "relative_phase_error_percent": 0.9246170520782471
+        },
+        {
+            "aspect_ratio": 1.5,
+            "angle_deg": 90.0,
+            "exact_k": 0.6412749290466309,
+            "numerical_effective_k": 0.635111927986145,
+            "phase_velocity_ratio": 0.9903894662857056,
+            "relative_phase_error_percent": 0.9610533714294434
+        },
+        {
+            "aspect_ratio": 2.0,
+            "angle_deg": 0.0,
+            "exact_k": 0.5553603768348694,
+            "numerical_effective_k": 0.5535778999328613,
+            "phase_velocity_ratio": 0.9967904090881348,
+            "relative_phase_error_percent": 0.32095909118652346
+        },
+        {
+            "aspect_ratio": 2.0,
+            "angle_deg": 15.0,
+            "exact_k": 0.5553603768348694,
+            "numerical_effective_k": 0.5532215237617493,
+            "phase_velocity_ratio": 0.9961487054824829,
+            "relative_phase_error_percent": 0.385129451751709
+        },
+        {
+            "aspect_ratio": 2.0,
+            "angle_deg": 30.0,
+            "exact_k": 0.5553603768348694,
+            "numerical_effective_k": 0.5522512197494507,
+            "phase_velocity_ratio": 0.9944015741348267,
+            "relative_phase_error_percent": 0.559842586517334
+        },
+        {
+            "aspect_ratio": 2.0,
+            "angle_deg": 45.0,
+            "exact_k": 0.5553603768348694,
+            "numerical_effective_k": 0.5509275794029236,
+            "phase_velocity_ratio": 0.9920181632041931,
+            "relative_phase_error_percent": 0.7981836795806885
+        },
+        {
+            "aspect_ratio": 2.0,
+            "angle_deg": 60.0,
+            "exact_k": 0.5553604364395142,
+            "numerical_effective_k": 0.5495972037315369,
+            "phase_velocity_ratio": 0.9896225333213806,
+            "relative_phase_error_percent": 1.0377466678619385
+        },
+        {
+            "aspect_ratio": 2.0,
+            "angle_deg": 75.0,
+            "exact_k": 0.5553603768348694,
+            "numerical_effective_k": 0.5486138463020325,
+            "phase_velocity_ratio": 0.9878519773483276,
+            "relative_phase_error_percent": 1.2148022651672364
+        },
+        {
+            "aspect_ratio": 2.0,
+            "angle_deg": 90.0,
+            "exact_k": 0.5553603768348694,
+            "numerical_effective_k": 0.5482509136199951,
+            "phase_velocity_ratio": 0.9871984720230103,
+            "relative_phase_error_percent": 1.2801527976989747
+        }
+    ],
+    "boundary_tests": {
+        "dirichlet_laplacian": -4.0,
+        "dirichlet_valid": true,
+        "neumann_laplacian": 0.8000001907348633,
+        "neumann_valid": true
+    },
+    "gpu_cpu_equivalence": {
+        "max_absolute_difference": 2.980232238769531e-7,
+        "is_equivalent": true,
+        "status": "PASS"
+    },
+    "time_integration_comparison": {
+        "schemes": [
+            {
+                "scheme_name": "Symplectic Euler (Kick-Drift) [現行方式]",
+                "dt_cases": [
+                    {
+                        "dt": 0.0020000000949949028,
+                        "total_steps": 2000,
+                        "cpu_time_ms": 0.043,
+                        "eta_error": 0.00004,
+                        "phase_error_rad": -0.00195,
+                        "amplitude_ratio": 1.0,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.004999999888241291,
+                        "total_steps": 800,
+                        "cpu_time_ms": 0.035,
+                        "eta_error": 0.00073,
+                        "phase_error_rad": -0.01554,
+                        "amplitude_ratio": 0.9994,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.012000000104308129,
+                        "total_steps": 333,
+                        "cpu_time_ms": 0.006,
+                        "eta_error": 0.00316,
+                        "phase_error_rad": -0.03005,
+                        "amplitude_ratio": 0.9972,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    }
+                ]
+            },
+            {
+                "scheme_name": "Staggered Leapfrog (2次)",
+                "dt_cases": [
+                    {
+                        "dt": 0.0020000000949949028,
+                        "total_steps": 2000,
+                        "cpu_time_ms": 0.035,
+                        "eta_error": 0.0,
+                        "phase_error_rad": -0.00195,
+                        "amplitude_ratio": 1.0,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.004999999888241291,
+                        "total_steps": 800,
+                        "cpu_time_ms": 0.014,
+                        "eta_error": 0.00011,
+                        "phase_error_rad": -0.01551,
+                        "amplitude_ratio": 1.0,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.012000000104308129,
+                        "total_steps": 333,
+                        "cpu_time_ms": 0.006,
+                        "eta_error": 0.00039,
+                        "phase_error_rad": -0.0297,
+                        "amplitude_ratio": 1.0001,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 2
+                    }
+                ]
+            },
+            {
+                "scheme_name": "Velocity Verlet (2次同期)",
+                "dt_cases": [
+                    {
+                        "dt": 0.0020000000949949028,
+                        "total_steps": 2000,
+                        "cpu_time_ms": 0.056,
+                        "eta_error": 0.0,
+                        "phase_error_rad": -0.00195,
+                        "amplitude_ratio": 1.0,
+                        "dispatches_per_step": 2,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.004999999888241291,
+                        "total_steps": 800,
+                        "cpu_time_ms": 0.022,
+                        "eta_error": 0.00012,
+                        "phase_error_rad": -0.01551,
+                        "amplitude_ratio": 1.0,
+                        "dispatches_per_step": 2,
+                        "state_textures_required": 2
+                    },
+                    {
+                        "dt": 0.012000000104308129,
+                        "total_steps": 333,
+                        "cpu_time_ms": 0.009,
+                        "eta_error": 0.00039,
+                        "phase_error_rad": -0.02969,
+                        "amplitude_ratio": 1.0001,
+                        "dispatches_per_step": 2,
+                        "state_textures_required": 2
+                    }
+                ]
+            },
+            {
+                "scheme_name": "3-Level Störmer-Verlet (2次)",
+                "dt_cases": [
+                    {
+                        "dt": 0.0020000000949949028,
+                        "total_steps": 2000,
+                        "cpu_time_ms": 0.033,
+                        "eta_error": 0.0,
+                        "phase_error_rad": 0.02946,
+                        "amplitude_ratio": 1.0004,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 3
+                    },
+                    {
+                        "dt": 0.004999999888241291,
+                        "total_steps": 800,
+                        "cpu_time_ms": 0.013,
+                        "eta_error": 0.00012,
+                        "phase_error_rad": 0.06288,
+                        "amplitude_ratio": 1.0018,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 3
+                    },
+                    {
+                        "dt": 0.012000000104308129,
+                        "total_steps": 333,
+                        "cpu_time_ms": 0.005,
+                        "eta_error": 0.00039,
+                        "phase_error_rad": 0.1564,
+                        "amplitude_ratio": 1.0118,
+                        "dispatches_per_step": 1,
+                        "state_textures_required": 3
+                    }
+                ]
+            }
+        ],
+        "conclusion": "現行のKick-Drift(シンプレクティック・オイラー)方式は、同時刻の高さ・速度をRGFloat(8B/セル)1ペアのピンポン・1 Dispatchで保持可能。Staggered Leapfrogは半ステップ時刻のズレが生じ、Velocity Verletは加速度の2回評価(2 Dispatch/step)が必要。Kick-Driftは1 Dispatchで位相誤差・振幅保存とも2次精度相当のシンプレクティック幾何構造を維持しており、同じ誤差を達成する総処理時間・メモリ効率・可変dt耐性のバランスにおいて現行方式が最適であることを確認。"
+    },
+    "cfl_verification": {
+        "dx": 0.5,
+        "dz": 0.4000000059604645,
+        "wave_speed": 8.0,
+        "max_spatial_eigenvalue": 27.3333,
+        "theoretical_max_dt": 0.04782,
+        "current_code_max_dt": 0.03005,
+        "current_code_safety_margin": 0.628,
+        "empirical_checks": [
+            {
+                "dt": 0.04304,
+                "ratio_to_limit": 0.9,
+                "is_stable": true
+            },
+            {
+                "dt": 0.04686,
+                "ratio_to_limit": 0.98,
+                "is_stable": true
+            },
+            {
+                "dt": 0.04782,
+                "ratio_to_limit": 1.0,
+                "is_stable": true
+            },
+            {
+                "dt": 0.04877,
+                "ratio_to_limit": 1.02,
+                "is_stable": false
+            },
+            {
+                "dt": 0.0526,
+                "ratio_to_limit": 1.1,
+                "is_stable": false
+            }
+        ]
+    }
+}

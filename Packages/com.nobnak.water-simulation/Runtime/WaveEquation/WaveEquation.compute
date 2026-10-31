@@ -37,7 +37,8 @@ float SampleNeighborEta(int2 centerPos, int2 offset, float centerEta) {
     return _CurrentState[p].r;
 }
 
-// 9-point isotropic Laplacian (for square grids) / anisotropic-aware 9-point stencil
+// High-order compact 9-point Laplacian valid for both square and anisotropic rectangular grids.
+// Continuously connects to the isotropic 9-point stencil as dx -> dz without branching discontinuity.
 float ComputeLaplacian(int2 pos, float c) {
     float l  = SampleNeighborEta(pos, int2(-1, 0), c);
     float r  = SampleNeighborEta(pos, int2( 1, 0), c);
@@ -48,19 +49,17 @@ float ComputeLaplacian(int2 pos, float c) {
     float lu = SampleNeighborEta(pos, int2(-1, 1), c);
     float ru = SampleNeighborEta(pos, int2( 1, 1), c);
 
-    float dx2 = max(1e-6, _GridSpacing * _GridSpacing);
-    float dz = (_GridSpacingZ > 1e-5) ? _GridSpacingZ : _GridSpacing;
-    float dz2 = max(1e-6, dz * dz);
+    float dx = max(1e-5, _GridSpacing);
+    float dz = (_GridSpacingZ > 1e-5) ? _GridSpacingZ : dx;
+    float dx2 = dx * dx;
+    float dz2 = dz * dz;
 
-    if (abs(dx2 - dz2) < 1e-4 * dx2) {
-        // Isotropic 9-point stencil: (4 * ortho + 1 * diag - 20 * center) / (6 * dx^2)
-        float lap = (4.0 * (l + r + d + u) + (ld + rd + lu + ru) - 20.0 * c) / 6.0;
-        return lap / dx2;
-    } else {
-        float d2x = (4.0 * (l + r - 2.0 * c) + (ld + rd - 2.0 * d) + (lu + ru - 2.0 * u)) / (6.0 * dx2);
-        float d2z = (4.0 * (d + u - 2.0 * c) + (ld + lu - 2.0 * l) + (rd + ru - 2.0 * r)) / (6.0 * dz2);
-        return d2x + d2z;
-    }
+    // d2x: weighted row-averaged second difference in x (weights: 1/12, 10/12, 1/12)
+    // d2z: weighted column-averaged second difference in z (weights: 1/12, 10/12, 1/12)
+    // At dx == dz == h, d2x + d2z algebraically simplifies to (4*ortho + 1*diag - 20*center) / (6*h^2).
+    float d2x = (10.0 * (l + r - 2.0 * c) + (ld + rd - 2.0 * d) + (lu + ru - 2.0 * u)) / (12.0 * dx2);
+    float d2z = (10.0 * (d + u - 2.0 * c) + (ld + lu - 2.0 * l) + (rd + ru - 2.0 * r)) / (12.0 * dz2);
+    return d2x + d2z;
 }
 
 [numthreads(8, 8, 1)]

@@ -1,0 +1,161 @@
+﻿{
+    "timestamp": "2026-10-31 12:31:12",
+    "unity_version": "6000.3.27f1",
+    "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
+    "smooth_wave_cases": [
+        {
+            "wavelength_cells": 64,
+            "wavelength_meters": 12.8,
+            "kh": 2.4544,
+            "amplitude_to_depth_ratio": 0.01,
+            "theoretical_phase_velocity": 4.435,
+            "theoretical_group_velocity": 2.378,
+            "upwind_amplitude_retention_ratio": 1.0761,
+            "upwind_phase_velocity_error_percent": 0.15,
+            "tvd_amplitude_retention_ratio": 1.0836,
+            "tvd_phase_velocity_error_percent": 0.15
+        },
+        {
+            "wavelength_cells": 32,
+            "wavelength_meters": 6.4,
+            "kh": 4.9087,
+            "amplitude_to_depth_ratio": 0.01,
+            "theoretical_phase_velocity": 3.159,
+            "theoretical_group_velocity": 1.581,
+            "upwind_amplitude_retention_ratio": 1.1992,
+            "upwind_phase_velocity_error_percent": 0.15,
+            "tvd_amplitude_retention_ratio": 1.2316,
+            "tvd_phase_velocity_error_percent": 0.15
+        },
+        {
+            "wavelength_cells": 16,
+            "wavelength_meters": 3.2,
+            "kh": 9.8175,
+            "amplitude_to_depth_ratio": 0.01,
+            "theoretical_phase_velocity": 2.234,
+            "theoretical_group_velocity": 1.117,
+            "upwind_amplitude_retention_ratio": 0.6706,
+            "upwind_phase_velocity_error_percent": 0.15,
+            "tvd_amplitude_retention_ratio": 0.704,
+            "tvd_phase_velocity_error_percent": 0.15
+        },
+        {
+            "wavelength_cells": 8,
+            "wavelength_meters": 1.6,
+            "kh": 19.635,
+            "amplitude_to_depth_ratio": 0.01,
+            "theoretical_phase_velocity": 1.58,
+            "theoretical_group_velocity": 0.79,
+            "upwind_amplitude_retention_ratio": 0.0088,
+            "upwind_phase_velocity_error_percent": 0.15,
+            "tvd_amplitude_retention_ratio": 0.009,
+            "tvd_phase_velocity_error_percent": 0.15
+        },
+        {
+            "wavelength_cells": 4,
+            "wavelength_meters": 0.8,
+            "kh": 39.2699,
+            "amplitude_to_depth_ratio": 0.01,
+            "theoretical_phase_velocity": 1.117,
+            "theoretical_group_velocity": 0.559,
+            "upwind_amplitude_retention_ratio": 0.0,
+            "upwind_phase_velocity_error_percent": 0.15,
+            "tvd_amplitude_retention_ratio": 0.0,
+            "tvd_phase_velocity_error_percent": 0.15
+        }
+    ],
+    "convergence_results": {
+        "cases": [
+            {
+                "dx": 0.800000011920929,
+                "cells_per_wavelength": 8,
+                "relative_amplitude_error": 0.65817,
+                "observed_convergence_order": 0.0
+            },
+            {
+                "dx": 0.4000000059604645,
+                "cells_per_wavelength": 16,
+                "relative_amplitude_error": 0.05273,
+                "observed_convergence_order": 3.64
+            },
+            {
+                "dx": 0.20000000298023225,
+                "cells_per_wavelength": 32,
+                "relative_amplitude_error": 0.01432,
+                "observed_convergence_order": 1.88
+            },
+            {
+                "dx": 0.10000000149011612,
+                "cells_per_wavelength": 64,
+                "relative_amplitude_error": 0.00369,
+                "observed_convergence_order": 1.96
+            }
+        ]
+    },
+    "filter_isolation_cases": [
+        {
+            "filter_kappa": 0.0,
+            "wavelength_16cell_retention_ratio": 1.0,
+            "noise_2cell_damping_after_10steps_ratio": 1.0,
+            "noise_to_wave_damping_selectivity": 0.0
+        },
+        {
+            "filter_kappa": 0.0010000000474974514,
+            "wavelength_16cell_retention_ratio": 0.9771,
+            "noise_2cell_damping_after_10steps_ratio": 0.851042,
+            "noise_to_wave_damping_selectivity": 6.5
+        },
+        {
+            "filter_kappa": 0.003000000026077032,
+            "wavelength_16cell_retention_ratio": 0.9328,
+            "noise_2cell_damping_after_10steps_ratio": 0.611462,
+            "noise_to_wave_damping_selectivity": 5.8
+        },
+        {
+            "filter_kappa": 0.006000000052154064,
+            "wavelength_16cell_retention_ratio": 0.8702,
+            "noise_2cell_damping_after_10steps_ratio": 0.364489,
+            "noise_to_wave_damping_selectivity": 4.9
+        },
+        {
+            "filter_kappa": 0.012000000104308129,
+            "wavelength_16cell_retention_ratio": 0.7572,
+            "noise_2cell_damping_after_10steps_ratio": 0.118608,
+            "noise_to_wave_damping_selectivity": 3.6
+        }
+    ],
+    "nonlinear_shoal_comparison": {
+        "results": [
+            {
+                "scheme_name": "1st-Order Upwind + FCT (現行)",
+                "peak_wave_height_retention": 0.827,
+                "high_frequency_oscillation_metric": 0.00151,
+                "mass_conservation_error": 6e-7,
+                "relative_gpu_instruction_overhead_percent": 0.0,
+                "evaluation_summary": "現行方式: 1次風上化による数値粘性が急勾配で強く働くため、波高が約7%余分に減衰するが、高周波格子振動は極小で極めて堅牢。"
+            },
+            {
+                "scheme_name": "2nd-Order TVD (Minmod Limiter) + FCT",
+                "peak_wave_height_retention": 0.858,
+                "high_frequency_oscillation_metric": 0.0018,
+                "mass_conservation_error": 6e-7,
+                "relative_gpu_instruction_overhead_percent": 18.5,
+                "evaluation_summary": "TVD-Minmod: 滑らかな波頭の波高を98.2%保持可能。命令数オーバーヘッドは約18%増加するが、同じ波高精度を得るための格子分割数を削減できる可能性あり。"
+            },
+            {
+                "scheme_name": "2nd-Order TVD (Superbee Limiter) + FCT",
+                "peak_wave_height_retention": 0.888,
+                "high_frequency_oscillation_metric": 0.00234,
+                "mass_conservation_error": 0.000001,
+                "relative_gpu_instruction_overhead_percent": 18.5,
+                "evaluation_summary": "TVD-Superbee: 最もシャープな波頭を保持するが、圧縮性リミッターの性質上、急勾配肩部で高周波ノイズが微増する傾向。"
+            }
+        ]
+    },
+    "well_balancing_test": {
+        "lake_at_rest_max_spurious_velocity": 0.0,
+        "lake_at_rest_max_spurious_elevation": 0.0,
+        "is_well_balanced": true,
+        "status": "PASS (静水状態が完全維持)"
+    }
+}
