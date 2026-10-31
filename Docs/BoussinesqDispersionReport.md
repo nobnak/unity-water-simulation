@@ -1,6 +1,6 @@
 ﻿# Boussinesq Dispersion Solving Precision & Cost Benchmark Report
 
-- **Timestamp**: `2026-10-31 17:58:55`
+- **Timestamp**: `2026-10-31 19:41:21`
 - **Unity Version**: `6000.3.27f1`
 - **GPU**: `Intel(R) Arc(TM) 140V GPU (16GB)`
 

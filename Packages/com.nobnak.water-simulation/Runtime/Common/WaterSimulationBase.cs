@@ -52,6 +52,7 @@ namespace Nobnak.WaterSimulation {
         public Vector2 AppliedAreaSize => appliedAreaSize;
         public Vector2Int AppliedResolution => appliedResolution;
         public bool IsConfigurationPending => resolution != appliedResolution || areaSize != appliedAreaSize || !AreTexturesValidAndMatchingResolution();
+        public bool IsApplyPending => isApplyPending;
         public float SimulationTime => simulationTime;
         public float ReferenceWaterLevel => transform.position.y;
         public RenderTexture WaterDataTexture => waterDataTex;
@@ -86,10 +87,12 @@ namespace Nobnak.WaterSimulation {
         }
 
         protected virtual void OnDisable() {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.delayCall -= ProcessPendingConfigurationChange;
+#endif
             ReleaseTextures();
             appliedResolution = Vector2Int.zero;
             appliedAreaSize = Vector2.zero;
-            isApplyPending = false;
         }
 
         protected virtual void OnValidate() {
@@ -100,7 +103,7 @@ namespace Nobnak.WaterSimulation {
             if (IsConfigurationPending) {
                 isApplyPending = true;
 #if UNITY_EDITOR
-                if (!Application.isPlaying) {
+                if (!Application.isPlaying && isActiveAndEnabled) {
                     UnityEditor.EditorApplication.delayCall -= ProcessPendingConfigurationChange;
                     UnityEditor.EditorApplication.delayCall += ProcessPendingConfigurationChange;
                 }
@@ -109,7 +112,7 @@ namespace Nobnak.WaterSimulation {
         }
 
         private void ProcessPendingConfigurationChange() {
-            if (this == null) return;
+            if (this == null || !isActiveAndEnabled) return;
             if (isApplyPending || IsConfigurationPending) {
                 ApplyConfiguration();
             }
@@ -162,6 +165,10 @@ namespace Nobnak.WaterSimulation {
         public virtual bool ApplyConfiguration() {
             if (!ValidateConfiguration(out string err)) {
                 Debug.LogError($"[{GetType().Name}] Cannot apply invalid configuration: {err}", this);
+                return false;
+            }
+            if (!isActiveAndEnabled) {
+                isApplyPending = true;
                 return false;
             }
 
@@ -253,6 +260,10 @@ namespace Nobnak.WaterSimulation {
                 areaSize = prev;
                 return false;
             }
+            if (!isActiveAndEnabled) {
+                isApplyPending = true;
+                return true;
+            }
             return ApplyConfiguration();
         }
 
@@ -264,6 +275,10 @@ namespace Nobnak.WaterSimulation {
                 Debug.LogError($"[{GetType().Name}] Invalid resolution ({res.x}, {res.y}): {err}", this);
                 resolution = prev;
                 return false;
+            }
+            if (!isActiveAndEnabled) {
+                isApplyPending = true;
+                return true;
             }
             return ApplyConfiguration();
         }
@@ -282,6 +297,10 @@ namespace Nobnak.WaterSimulation {
         public void SimulateInspectorAreaSizeChangeOnly(Vector2 newArea) {
             areaSize = newArea;
             OnValidate();
+        }
+
+        public void TriggerPendingDelayCallForTest() {
+            ProcessPendingConfigurationChange();
         }
 
         public void ReleaseTexturesForTest() {

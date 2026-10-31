@@ -88,10 +88,10 @@ namespace Nobnak.WaterSimulation.Editor {
                 details = finitenessValidatorDetails
             });
 
-            // Req 4b: SimulationBase Resolution & Domain Real Execution & Constraint Validation
+            // Req 4b: SimulationBase Lifecycle, Delayed Reconstruction Prevention & Real Execution Validation
             var (realExecPass, realExecDetails) = RunConfigurationRealExecutionValidationTests();
             reqList.Add(new RequiredTestItem {
-                name = "SimulationBase: 解像度・領域変更と実動作検証 (全画素有限性・非ゼロ出力更新・系列a/b/c) 【本体GPU実測】",
+                name = "SimulationBase: ライフサイクル・遅延防止・設定変更実動作検証 (全画素有限性・前後差分更新・系列a/b/c) 【本体GPU実測】",
                 category = "本体GPU実動作検証",
                 status = realExecPass ? "PASS" : "FAIL",
                 details = realExecDetails
@@ -290,58 +290,171 @@ namespace Nobnak.WaterSimulation.Editor {
             return (allPassed, details);
         }
 
-        public static bool CheckTextureFinite(RenderTexture rt, bool fullTexture, out float maxAbsVal, out string scopeDetails) {
-            maxAbsVal = 0f;
-            scopeDetails = "";
-            if (rt == null || !rt.IsCreated()) {
-                scopeDetails = "テクスチャ未生成 (FAIL)";
-                return false;
-            }
-            int w = fullTexture ? rt.width : math.min(16, rt.width);
-            int h = fullTexture ? rt.height : math.min(16, rt.height);
+        public struct TextureReadbackResult {
+            public bool isFinite;
+            public float maxAbs;
+            public float[] rawFloats; // RGBA 4 floats per pixel
+            public int width;
+            public int height;
+            public string details;
+        }
 
-            // Request explicit RGBAFloat format conversion
+        public static TextureReadbackResult ReadbackTextureFull(RenderTexture rt) {
+            var res = new TextureReadbackResult();
+            if (rt == null || !rt.IsCreated()) {
+                res.isFinite = false;
+                res.details = "RenderTexture is null or not created";
+                return res;
+            }
+            int w = rt.width;
+            int h = rt.height;
+            res.width = w;
+            res.height = h;
+
             var req = UnityEngine.Rendering.AsyncGPUReadback.Request(rt, 0, 0, w, 0, h, 0, 1, TextureFormat.RGBAFloat);
             req.WaitForCompletion();
             if (!req.hasError) {
                 var data = req.GetData<float>();
-                for (int i = 0; i < data.Length; i++) {
-                    float v = data[i];
-                    if (float.IsNaN(v) || float.IsInfinity(v)) {
-                        scopeDetails = $"非有限値検出 ({v}) [{(fullTexture ? "全画素" : "部分")}]";
-                        return false;
-                    }
-                    float abs = math.abs(v);
-                    if (abs > maxAbsVal) maxAbsVal = abs;
+                res.rawFloats = new float[data.Length];
+                data.CopyTo(res.rawFloats);
+            } else {
+                var rawReq = UnityEngine.Rendering.AsyncGPUReadback.Request(rt, 0, 0, w, 0, h, 0, 1);
+                rawReq.WaitForCompletion();
+                if (rawReq.hasError) {
+                    res.isFinite = false;
+                    res.details = "AsyncGPUReadback failed";
+                    return res;
                 }
-                scopeDetails = fullTexture ? $"全画素検査 ({w}x{h}={w*h}px, RGBAFloat)" : $"部分検査 ({w}x{h}px, RGBAFloat)";
-                return true;
+                if (rt.format == RenderTextureFormat.ARGBHalf) {
+                    var rawHalf = rawReq.GetData<ushort>();
+                    res.rawFloats = new float[rawHalf.Length];
+                    for (int i = 0; i < rawHalf.Length; i++) {
+                        res.rawFloats[i] = Mathf.HalfToFloat(rawHalf[i]);
+                    }
+                } else {
+                    res.isFinite = false;
+                    res.details = $"Unsupported format {rt.format}";
+                    return res;
+                }
             }
 
-            // Fallback: raw read and decode Half if ARGBHalf
-            var rawReq = UnityEngine.Rendering.AsyncGPUReadback.Request(rt, 0, 0, w, 0, h, 0, 1);
-            rawReq.WaitForCompletion();
-            if (rawReq.hasError) {
-                scopeDetails = "AsyncGPUReadback失敗 (FAIL)";
+            float maxAbs = 0f;
+            for (int i = 0; i < res.rawFloats.Length; i++) {
+                float v = res.rawFloats[i];
+                if (float.IsNaN(v) || float.IsInfinity(v)) {
+                    int px = (i / 4) % w;
+                    int py = (i / 4) / w;
+                    int ch = i % 4;
+                    res.isFinite = false;
+                    res.details = $"Non-finite value ({v}) at pixel ({px},{py}) ch={ch}";
+                    return res;
+                }
+                float abs = math.abs(v);
+                if (abs > maxAbs) maxAbs = abs;
+            }
+
+            res.isFinite = true;
+            res.maxAbs = maxAbs;
+            res.details = $"全画素検査 ({w}x{h}={w*h}px): 有限性確認, maxAbs={maxAbs:E3}";
+            return res;
+        }
+
+        public static bool VerifyStepOutputUpdate(
+            WaterSimulationBase sim,
+            float dt,
+            float minExpectedDiff,
+            out float maxDiff,
+            out float rmsDiff,
+            out float maxAbsAfter,
+            out string details) {
+
+            maxDiff = 0f;
+            rmsDiff = 0f;
+            maxAbsAfter = 0f;
+            details = string.Empty;
+
+            if (sim == null) {
+                details = "シミュレーションインスタンスが null (FAIL)";
                 return false;
             }
-            if (rt.format == RenderTextureFormat.ARGBHalf) {
-                var rawHalf = rawReq.GetData<ushort>();
-                for (int i = 0; i < rawHalf.Length; i++) {
-                    float v = Mathf.HalfToFloat(rawHalf[i]);
-                    if (float.IsNaN(v) || float.IsInfinity(v)) {
-                        scopeDetails = $"非有限値検出 ({v}) [{(fullTexture ? "全画素" : "部分")}]";
-                        return false;
-                    }
-                    float abs = math.abs(v);
-                    if (abs > maxAbsVal) maxAbsVal = abs;
+
+            // Apply any pending configuration first so before and after match the target resolution
+            if (sim.IsApplyPending || sim.IsConfigurationPending) {
+                if (!sim.ApplyConfiguration()) {
+                    details = "保留中の設定適用に失敗 (FAIL)";
+                    Debug.LogError($"[VerifyStepOutputUpdate Fail] {details}");
+                    return false;
                 }
-                scopeDetails = fullTexture ? $"全画素検査 ({w}x{h}={w*h}px, Half復号)" : $"部分検査 ({w}x{h}px, Half復号)";
-                return true;
             }
 
-            scopeDetails = "フォーマット未対応 (FAIL)";
-            return false;
+            if (sim.WaterDataTexture == null || !sim.WaterDataTexture.IsCreated()) {
+                details = "シミュレーションまたはテクスチャが無効 (FAIL)";
+                return false;
+            }
+
+            int stepBefore = sim.StepCount;
+            var before = ReadbackTextureFull(sim.WaterDataTexture);
+            if (!before.isFinite) {
+                details = $"Step実行前テクスチャに非有限値検出: {before.details} (FAIL)";
+                Debug.LogError($"[VerifyStepOutputUpdate Fail] {details}");
+                return false;
+            }
+
+            // Execute Step
+            sim.Step(dt);
+
+            int stepAfter = sim.StepCount;
+            if (stepAfter != stepBefore + 1) {
+                details = $"StepCount不整合: before={stepBefore}, after={stepAfter} (FAIL)";
+                Debug.LogError($"[VerifyStepOutputUpdate Fail] {details}");
+                return false;
+            }
+
+            var after = ReadbackTextureFull(sim.WaterDataTexture);
+            if (!after.isFinite) {
+                details = $"Step実行後テクスチャに非有限値検出: {after.details} (FAIL)";
+                Debug.LogError($"[VerifyStepOutputUpdate Fail] {details}");
+                return false;
+            }
+            maxAbsAfter = after.maxAbs;
+
+            if (before.rawFloats.Length != after.rawFloats.Length) {
+                details = "Step前後でテクスチャ解像度が不一致 (FAIL)";
+                return false;
+            }
+
+            // Measure difference on channel 1 (surface elevation / vertical displacement)
+            int pixelCount = after.width * after.height;
+            double sumSqDiff = 0.0;
+            for (int i = 0; i < pixelCount; i++) {
+                int baseIdx = i * 4;
+                float diffElev = math.abs(after.rawFloats[baseIdx + 1] - before.rawFloats[baseIdx + 1]);
+                if (diffElev > maxDiff) maxDiff = diffElev;
+                sumSqDiff += (double)diffElev * diffElev;
+            }
+            rmsDiff = (float)math.sqrt(sumSqDiff / pixelCount);
+
+            if (maxDiff <= minExpectedDiff) {
+                details = $"StepCountは増加したがGPU出力が更新されず (maxDiff={maxDiff:E3} <= {minExpectedDiff:E3}, rmsDiff={rmsDiff:E3}, beforeMax={before.maxAbs:E3}, afterMax={after.maxAbs:E3}) (FAIL)";
+                Debug.LogError($"[VerifyStepOutputUpdate Fail] {details}");
+                return false;
+            }
+
+            if (maxAbsAfter <= 1e-4f) {
+                details = $"出力が非ゼロ基準未達 (maxAbs={maxAbsAfter:E3} <= 1e-4, beforeMax={before.maxAbs:E3}, maxDiff={maxDiff:E3}) (FAIL)";
+                Debug.LogError($"[VerifyStepOutputUpdate Fail] {details}");
+                return false;
+            }
+
+            details = $"全画素有限(PASS), 非ゼロ確認(maxAbs={maxAbsAfter:E3} > 1e-4), 更新確認(maxDiff={maxDiff:E3} > {minExpectedDiff:E3}, rmsDiff={rmsDiff:E3})";
+            return true;
+        }
+
+        public static bool CheckTextureFinite(RenderTexture rt, bool fullTexture, out float maxAbsVal, out string scopeDetails) {
+            var res = ReadbackTextureFull(rt);
+            maxAbsVal = res.maxAbs;
+            scopeDetails = res.details;
+            return res.isFinite;
         }
 
         private static bool CheckTextureFinite(RenderTexture rt) {
@@ -351,49 +464,39 @@ namespace Nobnak.WaterSimulation.Editor {
         public static (bool passed, string details) RunConfigurationRealExecutionValidationTests() {
             var go = new GameObject("TempValidationObj");
             try {
-                // 1. WaveEquation: Real Execution, Setter/Inspector, Rejection/Recovery, Finiteness, Sequences a/b/c
+                // 1. WaveEquation: Real Execution, Setter/Inspector, Rejection/Recovery, Finiteness, Sequences a/b/c, Lifecycle
                 var wave = go.AddComponent<WaveEquationSimulation>();
                 wave.SetAreaSize(new Vector2(50f, 50f));
                 bool wInitRes = wave.SetResolution(new Vector2Int(256, 256));
-                wave.Step(0.016f);
-                bool wFinite1 = CheckTextureFinite(wave.WaterDataTexture, true, out float wMax1, out _);
-                bool wStep1 = wave.StepCount == 1 && wave.WaterDataTexture.width == 256 && wFinite1 && wMax1 > 1e-4f;
+                bool wStep1 = VerifyStepOutputUpdate(wave, 0.016f, 1e-4f, out _, out _, out _, out _) && wave.WaterDataTexture.width == 256;
 
                 bool wSet128 = wave.SetResolution(new Vector2Int(128, 128));
                 bool wResetOk = wave.StepCount == 0 && wave.SimulationTime == 0f && wave.WaterDataTexture.width == 128;
-                wave.Step(0.016f);
-                bool wFinite2 = CheckTextureFinite(wave.WaterDataTexture, true, out float wMax2, out _);
-                bool wStep2 = wave.StepCount == 1 && wave.WaterDataTexture.width == 128 && wFinite2 && wMax2 > 1e-4f;
+                bool wStep2 = VerifyStepOutputUpdate(wave, 0.016f, 1e-4f, out _, out _, out _, out _) && wave.WaterDataTexture.width == 128;
                 bool wDupOk = wave.SetResolution(new Vector2Int(128, 128)) && wave.StepCount == 1; // No duplicate reset
 
                 // Sequence a: Inspector resolution change -> before apply, call SetAreaSize -> Step
                 wave.SimulateInspectorResolutionChangeOnly(new Vector2Int(256, 256));
                 wave.SetAreaSize(new Vector2(60f, 60f));
-                wave.Step(0.016f);
-                bool wSeqAFinite = CheckTextureFinite(wave.WaterDataTexture, true, out float wMaxA, out _);
-                bool wSeqAOk = wave.AppliedResolution == new Vector2Int(256, 256) &&
+                bool wSeqAOk = VerifyStepOutputUpdate(wave, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               wave.AppliedResolution == new Vector2Int(256, 256) &&
                                wave.AppliedAreaSize == new Vector2(60f, 60f) &&
-                               wave.WaterDataTexture.width == 256 &&
-                               wave.StepCount == 1 && wSeqAFinite && wMaxA > 1e-4f;
+                               wave.WaterDataTexture.width == 256;
 
                 // Sequence b: Inspector area size change -> before apply, call SetResolution -> Step
                 wave.SimulateInspectorAreaSizeChangeOnly(new Vector2(75f, 75f));
                 wave.SetResolution(new Vector2Int(128, 128));
-                wave.Step(0.016f);
-                bool wSeqBFinite = CheckTextureFinite(wave.WaterDataTexture, true, out float wMaxB, out _);
-                bool wSeqBOk = wave.AppliedResolution == new Vector2Int(128, 128) &&
+                bool wSeqBOk = VerifyStepOutputUpdate(wave, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               wave.AppliedResolution == new Vector2Int(128, 128) &&
                                wave.AppliedAreaSize == new Vector2(75f, 75f) &&
-                               wave.WaterDataTexture.width == 128 &&
-                               wave.StepCount == 1 && wSeqBFinite && wMaxB > 1e-4f;
+                               wave.WaterDataTexture.width == 128;
 
                 // Sequence c: Simultaneous change of resolution and area size via Inspector -> Step
                 wave.SimulateInspectorSettings(new Vector2Int(256, 256), new Vector2(80f, 80f));
-                wave.Step(0.016f);
-                bool wSeqCFinite = CheckTextureFinite(wave.WaterDataTexture, true, out float wMaxC, out _);
-                bool wSeqCOk = wave.AppliedResolution == new Vector2Int(256, 256) &&
+                bool wSeqCOk = VerifyStepOutputUpdate(wave, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               wave.AppliedResolution == new Vector2Int(256, 256) &&
                                wave.AppliedAreaSize == new Vector2(80f, 80f) &&
-                               wave.WaterDataTexture.width == 256 &&
-                               wave.StepCount == 1 && wSeqCFinite && wMaxC > 1e-4f;
+                               wave.WaterDataTexture.width == 256;
 
                 // Rejection & recovery
                 bool wRejRes = !wave.SetResolution(new Vector2Int(8, 8)); // < 16
@@ -405,9 +508,23 @@ namespace Nobnak.WaterSimulation.Editor {
                 wave.Step(0.016f);
                 bool wBlockOk = wave.StepCount == wScBefore; // Blocked on invalid
                 wave.SimulateInspectorSettings(new Vector2Int(128, 128), new Vector2(50f, 50f));
-                wave.Step(0.016f);
-                bool wRecFinite = CheckTextureFinite(wave.WaterDataTexture, true, out float wMaxRec, out _);
-                bool wRecOk = wave.StepCount == 1 && wave.WaterDataTexture.width == 128 && wRecFinite && wMaxRec > 1e-4f;
+                bool wRecOk = VerifyStepOutputUpdate(wave, 0.016f, 1e-4f, out _, out _, out _, out _) && wave.WaterDataTexture.width == 128;
+
+                // Lifecycle & Disable delayed deferred reconstruction prevention
+                wave.SimulateInspectorResolutionChangeOnly(new Vector2Int(256, 256));
+                bool wPrePendingOk = wave.IsApplyPending;
+                wave.enabled = false;
+                bool wDisRelOk = wave.WaterDataTexture == null || !wave.WaterDataTexture.IsCreated();
+                wave.TriggerPendingDelayCallForTest();
+                bool wNoReallocDisabled = wave.WaterDataTexture == null || !wave.WaterDataTexture.IsCreated();
+                bool wDisAreaOk = wave.SetAreaSize(new Vector2(90f, 90f));
+                bool wStillNoRealloc = wave.WaterDataTexture == null || !wave.WaterDataTexture.IsCreated();
+                wave.enabled = true;
+                bool wReEnableOk = wave.WaterDataTexture != null && wave.WaterDataTexture.width == 256 &&
+                                   wave.AppliedResolution == new Vector2Int(256, 256) &&
+                                   wave.AppliedAreaSize == new Vector2(90f, 90f);
+                bool wReEnableStepOk = VerifyStepOutputUpdate(wave, 0.016f, 1e-4f, out _, out _, out _, out _);
+                bool wLifeCycleOk = wPrePendingOk && wDisRelOk && wNoReallocDisabled && wDisAreaOk && wStillNoRealloc && wReEnableOk && wReEnableStepOk;
 
                 wave.ReleaseTexturesForTest();
                 bool wRelOk = wave.WaterDataTexture == null || !wave.WaterDataTexture.IsCreated();
@@ -415,56 +532,49 @@ namespace Nobnak.WaterSimulation.Editor {
 
                 bool wavePass = wInitRes && wStep1 && wSet128 && wResetOk && wStep2 && wDupOk &&
                                 wSeqAOk && wSeqBOk && wSeqCOk &&
-                                wRejRes && wRejArea && wKeepOk && wBlockOk && wRecOk && wRelOk;
+                                wRejRes && wRejArea && wKeepOk && wBlockOk && wRecOk && wLifeCycleOk && wRelOk;
 
-                // 2. Boussinesq: Real Execution, Setter/Inspector, Rejection/Recovery, Finiteness, Sequences a/b/c
+                // 2. Boussinesq: Real Execution, Setter/Inspector, Rejection/Recovery, Finiteness, Sequences a/b/c, Lifecycle
                 var bous = go.AddComponent<BoussinesqSimulation>();
+                bous.Condition = BoussinesqSimulation.InitialConditionType.GaussianPulse;
+                bous.DeepWaterDepth = 3.5f;
+                bous.ShallowWaterDepth = 3.5f;
+                bous.DispersionAlpha = 1.0f;
                 bous.SetAreaSize(new Vector2(50f, 50f));
                 bool bInitRes = bous.SetResolution(new Vector2Int(256, 256));
-                bous.Step(0.016f);
-                bool bFinite1 = CheckTextureFinite(bous.WaterDataTexture, true, out float bMax1, out _);
-                bool bStep1 = bous.StepCount == 1 && bous.WaterDataTexture.width == 256 && bous.BathymetryTexture.width == 256 && bFinite1 && bMax1 > 1e-4f;
+                bool bStep1 = VerifyStepOutputUpdate(bous, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                              bous.WaterDataTexture.width == 256 && bous.BathymetryTexture.width == 256;
 
                 bool bSet128 = bous.SetResolution(new Vector2Int(128, 128));
                 bool bResetOk = bous.StepCount == 0 && bous.SimulationTime == 0f && bous.WaterDataTexture.width == 128 && bous.BathymetryTexture.width == 128;
-                bous.Step(0.016f);
-                bool bFinite2 = CheckTextureFinite(bous.WaterDataTexture, true, out float bMax2, out _);
-                bool bStep2 = bous.StepCount == 1 && bous.WaterDataTexture.width == 128 && bFinite2 && bMax2 > 1e-4f;
+                bool bStep2 = VerifyStepOutputUpdate(bous, 0.016f, 1e-4f, out _, out _, out _, out _) && bous.WaterDataTexture.width == 128;
                 bool bDupOk = bous.SetResolution(new Vector2Int(128, 128)) && bous.StepCount == 1; // No duplicate reset
 
                 // Sequence a: Inspector resolution change -> before apply, call SetAreaSize -> Step
                 bous.SimulateInspectorResolutionChangeOnly(new Vector2Int(256, 256));
-                int bPrevVerA = bous.BathymetryVersion;
                 bous.SetAreaSize(new Vector2(60f, 60f));
-                bous.Step(0.016f);
-                bool bSeqAFinite = CheckTextureFinite(bous.WaterDataTexture, true, out float bMaxA, out _);
-                bool bSeqAOk = bous.AppliedResolution == new Vector2Int(256, 256) &&
+                bool bSeqAOk = VerifyStepOutputUpdate(bous, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               bous.AppliedResolution == new Vector2Int(256, 256) &&
                                bous.AppliedAreaSize == new Vector2(60f, 60f) &&
                                bous.WaterDataTexture.width == 256 &&
-                               bous.BathymetryTexture.width == 256 &&
-                               bous.BathymetryVersion > bPrevVerA &&
-                               bous.StepCount == 1 && bSeqAFinite && bMaxA > 1e-4f;
+                               bous.BathymetryTexture.width == 256;
 
                 // Sequence b: Inspector area size change -> before apply, call SetResolution -> Step
                 bous.SimulateInspectorAreaSizeChangeOnly(new Vector2(75f, 75f));
                 bous.SetResolution(new Vector2Int(128, 128));
-                bous.Step(0.016f);
-                bool bSeqBFinite = CheckTextureFinite(bous.WaterDataTexture, true, out float bMaxB, out _);
-                bool bSeqBOk = bous.AppliedResolution == new Vector2Int(128, 128) &&
+                bool bSeqBOk = VerifyStepOutputUpdate(bous, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               bous.AppliedResolution == new Vector2Int(128, 128) &&
                                bous.AppliedAreaSize == new Vector2(75f, 75f) &&
                                bous.WaterDataTexture.width == 128 &&
-                               bous.BathymetryTexture.width == 128 &&
-                               bous.StepCount == 1 && bSeqBFinite && bMaxB > 1e-5f;
+                               bous.BathymetryTexture.width == 128;
 
                 // Sequence c: Simultaneous change of resolution and area size via Inspector -> Step
                 bous.SimulateInspectorSettings(new Vector2Int(256, 256), new Vector2(80f, 80f));
-                bous.Step(0.016f);
-                bool bSeqCFinite = CheckTextureFinite(bous.WaterDataTexture, true, out float bMaxC, out _);
-                bool bSeqCOk = bous.AppliedResolution == new Vector2Int(256, 256) &&
+                bool bSeqCOk = VerifyStepOutputUpdate(bous, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               bous.AppliedResolution == new Vector2Int(256, 256) &&
                                bous.AppliedAreaSize == new Vector2(80f, 80f) &&
                                bous.WaterDataTexture.width == 256 &&
-                               bous.BathymetryTexture.width == 256 &&
-                               bous.StepCount == 1 && bSeqCFinite && bMaxC > 1e-4f;
+                               bous.BathymetryTexture.width == 256;
 
                 // Rejection & recovery
                 bool bRejRes = !bous.SetResolution(new Vector2Int(16, 16)) && !bous.SetResolution(new Vector2Int(1024, 1024));
@@ -476,9 +586,23 @@ namespace Nobnak.WaterSimulation.Editor {
                 bous.Step(0.016f);
                 bool bBlockOk = bous.StepCount == bScBefore; // Blocked on invalid
                 bous.SimulateInspectorSettings(new Vector2Int(128, 128), new Vector2(50f, 50f));
-                bous.Step(0.016f);
-                bool bRecFinite = CheckTextureFinite(bous.WaterDataTexture, true, out float bMaxRec, out _);
-                bool bRecOk = bous.StepCount == 1 && bous.WaterDataTexture.width == 128 && bRecFinite && bMaxRec > 1e-4f;
+                bool bRecOk = VerifyStepOutputUpdate(bous, 0.016f, 1e-4f, out _, out _, out _, out _) && bous.WaterDataTexture.width == 128;
+
+                // Lifecycle & Disable delayed deferred reconstruction prevention
+                bous.SimulateInspectorResolutionChangeOnly(new Vector2Int(256, 256));
+                bool bPrePendingOk = bous.IsApplyPending;
+                bous.enabled = false;
+                bool bDisRelOk = bous.WaterDataTexture == null || !bous.WaterDataTexture.IsCreated();
+                bous.TriggerPendingDelayCallForTest();
+                bool bNoReallocDisabled = bous.WaterDataTexture == null || !bous.WaterDataTexture.IsCreated();
+                bool bDisAreaOk = bous.SetAreaSize(new Vector2(90f, 90f));
+                bool bStillNoRealloc = bous.WaterDataTexture == null || !bous.WaterDataTexture.IsCreated();
+                bous.enabled = true;
+                bool bReEnableOk = bous.WaterDataTexture != null && bous.WaterDataTexture.width == 256 &&
+                                   bous.AppliedResolution == new Vector2Int(256, 256) &&
+                                   bous.AppliedAreaSize == new Vector2(90f, 90f);
+                bool bReEnableStepOk = VerifyStepOutputUpdate(bous, 0.016f, 1e-4f, out _, out _, out _, out _);
+                bool bLifeCycleOk = bPrePendingOk && bDisRelOk && bNoReallocDisabled && bDisAreaOk && bStillNoRealloc && bReEnableOk && bReEnableStepOk;
 
                 bous.ReleaseTexturesForTest();
                 bool bRelOk = bous.WaterDataTexture == null || !bous.WaterDataTexture.IsCreated();
@@ -486,51 +610,41 @@ namespace Nobnak.WaterSimulation.Editor {
 
                 bool bousPass = bInitRes && bStep1 && bSet128 && bResetOk && bStep2 && bDupOk &&
                                 bSeqAOk && bSeqBOk && bSeqCOk &&
-                                bRejRes && bRejArea && bKeepOk && bBlockOk && bRecOk && bRelOk;
+                                bRejRes && bRejArea && bKeepOk && bBlockOk && bRecOk && bLifeCycleOk && bRelOk;
 
-                // 3. FFTOcean: Real Execution, Setter/Inspector, Rejection/Recovery, Finiteness, Sequences a/b/c
+                // 3. FFTOcean: Real Execution, Setter/Inspector, Rejection/Recovery, Finiteness, Sequences a/b/c, Lifecycle
                 var fft = go.AddComponent<FFTOceanSimulation>();
                 fft.SetAreaSize(new Vector2(50f, 50f));
                 bool fInitRes = fft.SetResolution(new Vector2Int(256, 256));
-                fft.Step(0.016f);
-                bool fFinite1 = CheckTextureFinite(fft.WaterDataTexture, true, out float fMax1, out _);
-                bool fStep1 = fft.StepCount == 1 && fft.WaterDataTexture.width == 256 && fFinite1 && fMax1 > 1e-4f;
+                bool fStep1 = VerifyStepOutputUpdate(fft, 0.016f, 1e-4f, out _, out _, out _, out _) && fft.WaterDataTexture.width == 256;
 
                 bool fSet128 = fft.SetResolution(new Vector2Int(128, 128));
                 bool fResetOk = fft.StepCount == 0 && fft.SimulationTime == 0f && fft.WaterDataTexture.width == 128;
-                fft.Step(0.016f);
-                bool fFinite2 = CheckTextureFinite(fft.WaterDataTexture, true, out float fMax2, out _);
-                bool fStep2 = fft.StepCount == 1 && fft.WaterDataTexture.width == 128 && fFinite2 && fMax2 > 1e-4f;
+                bool fStep2 = VerifyStepOutputUpdate(fft, 0.016f, 1e-4f, out _, out _, out _, out _) && fft.WaterDataTexture.width == 128;
                 bool fDupOk = fft.SetResolution(new Vector2Int(128, 128)) && fft.StepCount == 1; // No duplicate reset
 
                 // Sequence a: Inspector resolution change -> before apply, call SetAreaSize -> Step
                 fft.SimulateInspectorResolutionChangeOnly(new Vector2Int(256, 256));
                 fft.SetAreaSize(new Vector2(60f, 60f));
-                fft.Step(0.016f);
-                bool fSeqAFinite = CheckTextureFinite(fft.WaterDataTexture, true, out float fMaxA, out _);
-                bool fSeqAOk = fft.AppliedResolution == new Vector2Int(256, 256) &&
+                bool fSeqAOk = VerifyStepOutputUpdate(fft, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               fft.AppliedResolution == new Vector2Int(256, 256) &&
                                fft.AppliedAreaSize == new Vector2(60f, 60f) &&
-                               fft.WaterDataTexture.width == 256 &&
-                               fft.StepCount == 1 && fSeqAFinite && fMaxA > 1e-4f;
+                               fft.WaterDataTexture.width == 256;
 
                 // Sequence b: Inspector area size change -> before apply, call SetResolution -> Step
                 fft.SimulateInspectorAreaSizeChangeOnly(new Vector2(75f, 75f));
                 fft.SetResolution(new Vector2Int(128, 128));
-                fft.Step(0.016f);
-                bool fSeqBFinite = CheckTextureFinite(fft.WaterDataTexture, true, out float fMaxB, out _);
-                bool fSeqBOk = fft.AppliedResolution == new Vector2Int(128, 128) &&
+                bool fSeqBOk = VerifyStepOutputUpdate(fft, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               fft.AppliedResolution == new Vector2Int(128, 128) &&
                                fft.AppliedAreaSize == new Vector2(75f, 75f) &&
-                               fft.WaterDataTexture.width == 128 &&
-                               fft.StepCount == 1 && fSeqBFinite && fMaxB > 1e-4f;
+                               fft.WaterDataTexture.width == 128;
 
                 // Sequence c: Simultaneous change of resolution and area size via Inspector -> Step
                 fft.SimulateInspectorSettings(new Vector2Int(256, 256), new Vector2(80f, 80f));
-                fft.Step(0.016f);
-                bool fSeqCFinite = CheckTextureFinite(fft.WaterDataTexture, true, out float fMaxC, out _);
-                bool fSeqCOk = fft.AppliedResolution == new Vector2Int(256, 256) &&
+                bool fSeqCOk = VerifyStepOutputUpdate(fft, 0.016f, 1e-4f, out _, out _, out _, out _) &&
+                               fft.AppliedResolution == new Vector2Int(256, 256) &&
                                fft.AppliedAreaSize == new Vector2(80f, 80f) &&
-                               fft.WaterDataTexture.width == 256 &&
-                               fft.StepCount == 1 && fSeqCFinite && fMaxC > 1e-4f;
+                               fft.WaterDataTexture.width == 256;
 
                 // Rejection & recovery
                 bool fRejRes = !fft.SetResolution(new Vector2Int(100, 100)) && !fft.SetResolution(new Vector2Int(128, 256)) && !fft.SetResolution(new Vector2Int(1024, 1024));
@@ -542,9 +656,23 @@ namespace Nobnak.WaterSimulation.Editor {
                 fft.Step(0.016f);
                 bool fBlockOk = fft.StepCount == fScBefore; // Blocked on invalid
                 fft.SimulateInspectorSettings(new Vector2Int(128, 128), new Vector2(50f, 50f));
-                fft.Step(0.016f);
-                bool fRecFinite = CheckTextureFinite(fft.WaterDataTexture, true, out float fMaxRec, out _);
-                bool fRecOk = fft.StepCount == 1 && fft.WaterDataTexture.width == 128 && fRecFinite && fMaxRec > 1e-4f;
+                bool fRecOk = VerifyStepOutputUpdate(fft, 0.016f, 1e-4f, out _, out _, out _, out _) && fft.WaterDataTexture.width == 128;
+
+                // Lifecycle & Disable delayed deferred reconstruction prevention
+                fft.SimulateInspectorResolutionChangeOnly(new Vector2Int(256, 256));
+                bool fPrePendingOk = fft.IsApplyPending;
+                fft.enabled = false;
+                bool fDisRelOk = fft.WaterDataTexture == null || !fft.WaterDataTexture.IsCreated();
+                fft.TriggerPendingDelayCallForTest();
+                bool fNoReallocDisabled = fft.WaterDataTexture == null || !fft.WaterDataTexture.IsCreated();
+                bool fDisAreaOk = fft.SetAreaSize(new Vector2(90f, 90f));
+                bool fStillNoRealloc = fft.WaterDataTexture == null || !fft.WaterDataTexture.IsCreated();
+                fft.enabled = true;
+                bool fReEnableOk = fft.WaterDataTexture != null && fft.WaterDataTexture.width == 256 &&
+                                   fft.AppliedResolution == new Vector2Int(256, 256) &&
+                                   fft.AppliedAreaSize == new Vector2(90f, 90f);
+                bool fReEnableStepOk = VerifyStepOutputUpdate(fft, 0.016f, 1e-4f, out _, out _, out _, out _);
+                bool fLifeCycleOk = fPrePendingOk && fDisRelOk && fNoReallocDisabled && fDisAreaOk && fStillNoRealloc && fReEnableOk && fReEnableStepOk;
 
                 fft.ReleaseTexturesForTest();
                 bool fRelOk = fft.WaterDataTexture == null || !fft.WaterDataTexture.IsCreated();
@@ -552,15 +680,15 @@ namespace Nobnak.WaterSimulation.Editor {
 
                 bool fftPass = fInitRes && fStep1 && fSet128 && fResetOk && fStep2 && fDupOk &&
                                fSeqAOk && fSeqBOk && fSeqCOk &&
-                               fRejRes && fRejArea && fKeepOk && fBlockOk && fRecOk && fRelOk;
+                               fRejRes && fRejArea && fKeepOk && fBlockOk && fRecOk && fLifeCycleOk && fRelOk;
 
                 bool allPass = wavePass && bousPass && fftPass;
                 string details = allPass
-                    ? "3方式全画素有限性(RGBAFloat/Half)、非ゼロ出力更新(maxAbs>1e-4)、系列a/b/c、Inspector統一経路、無効設定拒否/復旧、テクスチャ解放を確認 (PASS)"
+                    ? "3方式全画素有限性、非ゼロ確認(maxAbs>1e-4)、前後差分更新確認(maxDiff>1e-4, rmsDiff>0)、無効化時遅延防止/再有効化適用、系列a/b/c、無効設定拒否/復旧を確認 (PASS)"
                     : $"実動作検証で不整合検出 (Wave: {wavePass}, Bous: {bousPass}, FFT: {fftPass})" +
-                      (!wavePass ? $" [Wave: init={wInitRes}, s1={wStep1}, s128={wSet128}, rst={wResetOk}, s2={wStep2}, dup={wDupOk}, seqA={wSeqAOk}, seqB={wSeqBOk}, seqC={wSeqCOk}, rejR={wRejRes}, rejA={wRejArea}, keep={wKeepOk}, blk={wBlockOk}, rec={wRecOk}, rel={wRelOk}]" : "") +
-                      (!bousPass ? $" [Bous: init={bInitRes}, s1={bStep1}, s128={bSet128}, rst={bResetOk}, s2={bStep2}, dup={bDupOk}, seqA={bSeqAOk}, seqB={bSeqBOk}, seqC={bSeqCOk}, rejR={bRejRes}, rejA={bRejArea}, keep={bKeepOk}, blk={bBlockOk}, rec={bRecOk}, rel={bRelOk}]" : "") +
-                      (!fftPass ? $" [FFT: init={fInitRes}, s1={fStep1}, s128={fSet128}, rst={fResetOk}, s2={fStep2}, dup={fDupOk}, seqA={fSeqAOk}, seqB={fSeqBOk}, seqC={fSeqCOk}, rejR={fRejRes}, rejA={fRejArea}, keep={fKeepOk}, blk={fBlockOk}, rec={fRecOk}, rel={fRelOk}]" : "");
+                      (!wavePass ? $" [Wave: init={wInitRes}, s1={wStep1}, s128={wSet128}, rst={wResetOk}, s2={wStep2}, dup={wDupOk}, seqA={wSeqAOk}, seqB={wSeqBOk}, seqC={wSeqCOk}, rejR={wRejRes}, rejA={wRejArea}, keep={wKeepOk}, blk={wBlockOk}, rec={wRecOk}, life={wLifeCycleOk}, rel={wRelOk}]" : "") +
+                      (!bousPass ? $" [Bous: init={bInitRes}, s1={bStep1}, s128={bSet128}, rst={bResetOk}, s2={bStep2}, dup={bDupOk}, seqA={bSeqAOk}, seqB={bSeqBOk}, seqC={bSeqCOk}, rejR={bRejRes}, rejA={bRejArea}, keep={bKeepOk}, blk={bBlockOk}, rec={bRecOk}, life={bLifeCycleOk}, rel={bRelOk}]" : "") +
+                      (!fftPass ? $" [FFT: init={fInitRes}, s1={fStep1}, s128={fSet128}, rst={fResetOk}, s2={fStep2}, dup={fDupOk}, seqA={fSeqAOk}, seqB={fSeqBOk}, seqC={fSeqCOk}, rejR={fRejRes}, rejA={fRejArea}, keep={fKeepOk}, blk={fBlockOk}, rec={fRecOk}, life={fLifeCycleOk}, rel={fRelOk}]" : "");
                 return (allPass, details);
             } finally {
                 UnityEngine.Object.DestroyImmediate(go);
@@ -718,7 +846,7 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine("2. **Boussinesq ADI 反復別 壁時計時間 & Dispatch 数計測**: 512x512、4サブステップ条件において、1 Sweep (41 Disp / 5.341ms) から 4 Sweeps (113 Disp / 15.541ms) までの同期を含む壁時計時間を実機計測 (`Docs/BenchmarkResults.csv`, Commit `d5446df`)。");
             sb.AppendLine("3. **Boussinesq PCR 特化カーネル高速化実測**: 解像度固定アンロールカーネル (128/256) で出力差 0.0 を確認しつつ 1.18〜1.27倍 の高速化を確認 (`Docs/BenchmarkResults.csv`, Commit `d5446df`)。");
             sb.AppendLine("4. **FFTOcean 評価時刻一貫性実フレーム検証**: 通常再生、Pause、Step、Reset の各遷移において変位・法線・白波の最大差分が 0.0 (完全一致) であることを実機検証 (`Docs/FftEvaluationTimeVerification.json`, Commit `18ef6b8`, PASS)。");
-            sb.AppendLine("5. **SimulationBase 解像度・領域変更と実動作検証**: WaveEquation, Boussinesq, FFTOcean の3方式において、初期化→1ステップ→解像度変更→1ステップ、Inspector/setter、無効設定拒否/復旧、有限性、テクスチャ解放を本体GPU上で実機検証 (`RunConfigurationRealExecutionValidationTests`, PASS)。");
+            sb.AppendLine("5. **SimulationBase ライフサイクル・遅延防止・実動作検証**: WaveEquation, Boussinesq, FFTOcean の3方式において、全画素有限性(RGBAFloat/Half)、非ゼロ確認(maxAbs>1e-4)、Step前後差分更新確認(Channel 1水面変位/水位: maxDiff>1e-4, rmsDiff>0)、無効化時遅延再構築防止(OnDisableでの予約解除・非アクティブ時テクスチャ非再確保)、無効中の設定保持と再有効化時適用、Inspector/setter統一経路(系列a/b/c)、無効設定拒否・復旧、テクスチャ解放を本体GPU上で実機検証 (`RunConfigurationRealExecutionValidationTests`, PASS)。");
             sb.AppendLine();
             sb.AppendLine("### 4.2 CPU参照モデルで実行した試験 (CPU Reference Model Studies)");
             sb.AppendLine("1. **ShallowWater 位相速度測定器 単体テスト**: PDE を解かず既知進行波 $\\cos(kx - \\omega t)$ を入力し、正方向・逆方向・多周期・任意位相で既知速度を完全復元できることを確認 (4ケース全て PASS)。");

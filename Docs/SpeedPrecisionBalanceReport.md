@@ -1,6 +1,6 @@
 ﻿# Water Simulation Speed vs Precision Balance Master Report
 
-- **Timestamp**: `2026-10-31 17:58:57`
+- **Timestamp**: `2026-10-31 19:41:23`
 - **Unity Version**: `6000.3.27f1`
 - **GPU**: `Intel(R) Arc(TM) 140V GPU (16GB)`
 - **CPU**: `Intel(R) Core(TM) Ultra 7 258V`
@@ -14,7 +14,7 @@
 | WaveEquation: GPU ComputeShader (CSStep) vs CPU 解析数値等価性 | 本体GPU実測 | **PASS** | 最大絶対差 = 2.98E-007 (< 1e-4, PASS) |
 | WaveEquation: CFL安定性限界 (理論限界 dt <= 0.04782s) | 時間安定性 | **PASS** | 1.00x限界比で安定、1.02xで発散を正確に検出 (PASS) |
 | GPU有限性判定器 単体テスト (既知有限値, NaN, Infinity, Float/Half) 【単体テスト】 | 判定器単体テスト | **PASS** | Float/Half両形式で有限値・NaN・+Inf・-Infの検出および最大値取得が完全一致 (PASS) |
-| SimulationBase: 解像度・領域変更と実動作検証 (全画素有限性・非ゼロ出力更新・系列a/b/c) 【本体GPU実測】 | 本体GPU実動作検証 | **PASS** | 3方式全画素有限性(RGBAFloat/Half)、非ゼロ出力更新(maxAbs>1e-4)、系列a/b/c、Inspector統一経路、無効設定拒否/復旧、テクスチャ解放を確認 (PASS) |
+| SimulationBase: ライフサイクル・遅延防止・設定変更実動作検証 (全画素有限性・前後差分更新・系列a/b/c) 【本体GPU実測】 | 本体GPU実動作検証 | **PASS** | 3方式全画素有限性、非ゼロ確認(maxAbs>1e-4)、前後差分更新確認(maxDiff>1e-4, rmsDiff>0)、無効化時遅延防止/再有効化適用、系列a/b/c、無効設定拒否/復旧を確認 (PASS) |
 | Boussinesq: 波長・解像度診断 (alpha反映, 遮断判定, パルス未評価, 512上限超過) 【解析・単体】 | 診断ロジック単体テスト | **PASS** | alpha・水深の遮断周波数整合性(fc式照合, 浅水増大, クランプ, 深水誤対処排除)、パルス未評価、512上限超過検出を確認 (PASS) |
 | ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力) 【CPU参照】 | 測定器単体テスト | **PASS** | 正方向/逆方向/多周期/任意初期位相の4ケース全てで絶対誤差 < 8e-6 (PASS) |
 | ShallowWater: 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法) 【CPU参照】 | 境界条件・線形ソルバー | **PASS** | 定数解誤差 = 2.86E-006, 離散固有値誤差 = 5.50E-007 (PASS) |
@@ -78,7 +78,7 @@
 2. **Boussinesq ADI 反復別 壁時計時間 & Dispatch 数計測**: 512x512、4サブステップ条件において、1 Sweep (41 Disp / 5.341ms) から 4 Sweeps (113 Disp / 15.541ms) までの同期を含む壁時計時間を実機計測 (`Docs/BenchmarkResults.csv`, Commit `d5446df`)。
 3. **Boussinesq PCR 特化カーネル高速化実測**: 解像度固定アンロールカーネル (128/256) で出力差 0.0 を確認しつつ 1.18〜1.27倍 の高速化を確認 (`Docs/BenchmarkResults.csv`, Commit `d5446df`)。
 4. **FFTOcean 評価時刻一貫性実フレーム検証**: 通常再生、Pause、Step、Reset の各遷移において変位・法線・白波の最大差分が 0.0 (完全一致) であることを実機検証 (`Docs/FftEvaluationTimeVerification.json`, Commit `18ef6b8`, PASS)。
-5. **SimulationBase 解像度・領域変更と実動作検証**: WaveEquation, Boussinesq, FFTOcean の3方式において、初期化→1ステップ→解像度変更→1ステップ、Inspector/setter、無効設定拒否/復旧、有限性、テクスチャ解放を本体GPU上で実機検証 (`RunConfigurationRealExecutionValidationTests`, PASS)。
+5. **SimulationBase ライフサイクル・遅延防止・実動作検証**: WaveEquation, Boussinesq, FFTOcean の3方式において、全画素有限性(RGBAFloat/Half)、非ゼロ確認(maxAbs>1e-4)、Step前後差分更新確認(Channel 1水面変位/水位: maxDiff>1e-4, rmsDiff>0)、無効化時遅延再構築防止(OnDisableでの予約解除・非アクティブ時テクスチャ非再確保)、無効中の設定保持と再有効化時適用、Inspector/setter統一経路(系列a/b/c)、無効設定拒否・復旧、テクスチャ解放を本体GPU上で実機検証 (`RunConfigurationRealExecutionValidationTests`, PASS)。
 
 ### 4.2 CPU参照モデルで実行した試験 (CPU Reference Model Studies)
 1. **ShallowWater 位相速度測定器 単体テスト**: PDE を解かず既知進行波 $\cos(kx - \omega t)$ を入力し、正方向・逆方向・多周期・任意位相で既知速度を完全復元できることを確認 (4ケース全て PASS)。
