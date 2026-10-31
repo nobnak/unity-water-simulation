@@ -1,5 +1,5 @@
 ﻿{
-    "timestamp": "2026-10-31 16:39:13",
+    "timestamp": "2026-10-31 17:58:32",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -386,7 +386,7 @@
                     {
                         "dt": 0.019999999552965165,
                         "total_steps": 62,
-                        "cpu_time_ms": 0.009,
+                        "cpu_time_ms": 0.008,
                         "eta_error": 0.159472,
                         "vel_error": 1.389544,
                         "normalized_state_error": 0.182364,
@@ -399,7 +399,7 @@
                     {
                         "dt": 0.009999999776482582,
                         "total_steps": 125,
-                        "cpu_time_ms": 0.002,
+                        "cpu_time_ms": 0.001,
                         "eta_error": 0.062002,
                         "vel_error": 0.652758,
                         "normalized_state_error": 0.07464,
@@ -482,7 +482,7 @@
                     {
                         "dt": 0.0024999999441206457,
                         "total_steps": 500,
-                        "cpu_time_ms": 0.012,
+                        "cpu_time_ms": 0.011,
                         "eta_error": 0.001358,
                         "vel_error": 0.001528,
                         "normalized_state_error": 0.001361,

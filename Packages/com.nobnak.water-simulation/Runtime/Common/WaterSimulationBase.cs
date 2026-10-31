@@ -41,14 +41,17 @@ namespace Nobnak.WaterSimulation {
         protected double lastStepCpuTimeMs;
         protected float accumulator;
 
-        protected Vector2 lastAppliedAreaSize;
-        protected Vector2Int lastAppliedResolution;
-        protected bool isConfigurationDirty;
+        protected Vector2 appliedAreaSize;
+        protected Vector2Int appliedResolution;
+        protected bool isApplyPending;
         #endregion
 
         #region properties
         public Vector2 AreaSize => areaSize;
         public Vector2Int Resolution => resolution;
+        public Vector2 AppliedAreaSize => appliedAreaSize;
+        public Vector2Int AppliedResolution => appliedResolution;
+        public bool IsConfigurationPending => resolution != appliedResolution || areaSize != appliedAreaSize || !AreTexturesValidAndMatchingResolution();
         public float SimulationTime => simulationTime;
         public float ReferenceWaterLevel => transform.position.y;
         public RenderTexture WaterDataTexture => waterDataTex;
@@ -76,17 +79,17 @@ namespace Nobnak.WaterSimulation {
             }
             InitializeTextures();
             ResetSimulation();
-            lastAppliedResolution = resolution;
-            lastAppliedAreaSize = areaSize;
-            isConfigurationDirty = false;
+            appliedResolution = resolution;
+            appliedAreaSize = areaSize;
+            isApplyPending = false;
             isRunning = autoPlay;
         }
 
         protected virtual void OnDisable() {
             ReleaseTextures();
-            lastAppliedResolution = Vector2Int.zero;
-            lastAppliedAreaSize = Vector2.zero;
-            isConfigurationDirty = false;
+            appliedResolution = Vector2Int.zero;
+            appliedAreaSize = Vector2.zero;
+            isApplyPending = false;
         }
 
         protected virtual void OnValidate() {
@@ -94,8 +97,8 @@ namespace Nobnak.WaterSimulation {
                 // Keep existing applied configuration; do not schedule dirty reconstruction with invalid values
                 return;
             }
-            if (resolution != lastAppliedResolution || areaSize != lastAppliedAreaSize || !AreTexturesValidAndMatchingResolution()) {
-                isConfigurationDirty = true;
+            if (IsConfigurationPending) {
+                isApplyPending = true;
 #if UNITY_EDITOR
                 if (!Application.isPlaying) {
                     UnityEditor.EditorApplication.delayCall -= ProcessPendingConfigurationChange;
@@ -107,13 +110,13 @@ namespace Nobnak.WaterSimulation {
 
         private void ProcessPendingConfigurationChange() {
             if (this == null) return;
-            if (isConfigurationDirty) {
-                ApplyPendingConfiguration();
+            if (isApplyPending || IsConfigurationPending) {
+                ApplyConfiguration();
             }
         }
 
         protected virtual void Update() {
-            if (isConfigurationDirty) ApplyPendingConfiguration();
+            if (isApplyPending || IsConfigurationPending) ApplyConfiguration();
             if (!isRunning || timeScale <= 0f) return;
 
             float dt = Time.deltaTime * timeScale;
@@ -151,31 +154,48 @@ namespace Nobnak.WaterSimulation {
             return waterDataTex.width == resolution.x && waterDataTex.height == resolution.y;
         }
 
-        public virtual bool ApplyPendingConfiguration() {
-            if (!ValidateConfiguration(out string err)) return false;
-            if (resolution != lastAppliedResolution || !AreTexturesValidAndMatchingResolution()) {
+        /// <summary>
+        /// Unified configuration application pipeline.
+        /// Applies requested resolution and areaSize to allocated textures and simulation state.
+        /// Applied values (appliedResolution, appliedAreaSize) are only updated after successful reconstruction.
+        /// </summary>
+        public virtual bool ApplyConfiguration() {
+            if (!ValidateConfiguration(out string err)) {
+                Debug.LogError($"[{GetType().Name}] Cannot apply invalid configuration: {err}", this);
+                return false;
+            }
+
+            bool resChanged = resolution != appliedResolution || !AreTexturesValidAndMatchingResolution();
+            bool areaChanged = areaSize != appliedAreaSize;
+
+            if (!resChanged && !areaChanged) {
+                isApplyPending = false;
+                return true;
+            }
+
+            Vector2 prevArea = appliedAreaSize;
+            Vector2Int prevRes = appliedResolution;
+
+            if (resChanged) {
                 InitializeTextures();
                 ResetSimulation();
-                lastAppliedResolution = resolution;
-                lastAppliedAreaSize = areaSize;
-                isConfigurationDirty = false;
-                return true;
+                appliedResolution = resolution;
+                appliedAreaSize = areaSize;
+                isApplyPending = false;
+                OnAreaSizeChanged(prevArea, areaSize);
+            } else if (areaChanged) {
+                appliedAreaSize = areaSize;
+                isApplyPending = false;
+                OnAreaSizeChanged(prevArea, areaSize);
             }
-            if (areaSize != lastAppliedAreaSize) {
-                Vector2 prev = lastAppliedAreaSize;
-                lastAppliedAreaSize = areaSize;
-                isConfigurationDirty = false;
-                OnAreaSizeChanged(prev, areaSize);
-                return true;
-            }
-            isConfigurationDirty = false;
+
             return true;
         }
 
         public void Step(float dt) {
             if (dt <= 0f) return;
-            if (isConfigurationDirty) {
-                if (!ApplyPendingConfiguration()) {
+            if (isApplyPending || IsConfigurationPending) {
+                if (!ApplyConfiguration()) {
                     Debug.LogError($"[{GetType().Name}] Simulation Step blocked: Pending configuration is invalid.", this);
                     return;
                 }
@@ -225,7 +245,7 @@ namespace Nobnak.WaterSimulation {
         }
 
         public virtual bool SetAreaSize(Vector2 size) {
-            if (areaSize == size && !isConfigurationDirty) return true;
+            if (areaSize == size && appliedAreaSize == size && !IsConfigurationPending) return true;
             Vector2 prev = areaSize;
             areaSize = size;
             if (!ValidateConfiguration(out string err)) {
@@ -233,14 +253,11 @@ namespace Nobnak.WaterSimulation {
                 areaSize = prev;
                 return false;
             }
-            lastAppliedAreaSize = areaSize;
-            isConfigurationDirty = false;
-            OnAreaSizeChanged(prev, size);
-            return true;
+            return ApplyConfiguration();
         }
 
         public virtual bool SetResolution(Vector2Int res) {
-            if (resolution == res && AreTexturesValidAndMatchingResolution() && !isConfigurationDirty) return true;
+            if (resolution == res && appliedResolution == res && AreTexturesValidAndMatchingResolution() && !isApplyPending) return true;
             Vector2Int prev = resolution;
             resolution = res;
             if (!ValidateConfiguration(out string err)) {
@@ -248,11 +265,7 @@ namespace Nobnak.WaterSimulation {
                 resolution = prev;
                 return false;
             }
-            InitializeTextures();
-            ResetSimulation();
-            lastAppliedResolution = resolution;
-            isConfigurationDirty = false;
-            return true;
+            return ApplyConfiguration();
         }
 
         public void SimulateInspectorSettings(Vector2Int newRes, Vector2 newArea) {
@@ -261,10 +274,21 @@ namespace Nobnak.WaterSimulation {
             OnValidate();
         }
 
+        public void SimulateInspectorResolutionChangeOnly(Vector2Int newRes) {
+            resolution = newRes;
+            OnValidate();
+        }
+
+        public void SimulateInspectorAreaSizeChangeOnly(Vector2 newArea) {
+            areaSize = newArea;
+            OnValidate();
+        }
+
         public void ReleaseTexturesForTest() {
             ReleaseTextures();
-            lastAppliedResolution = Vector2Int.zero;
-            lastAppliedAreaSize = Vector2.zero;
+            appliedResolution = Vector2Int.zero;
+            appliedAreaSize = Vector2.zero;
+            isApplyPending = false;
         }
 
         protected virtual void OnAreaSizeChanged(Vector2 oldSize, Vector2 newSize) {

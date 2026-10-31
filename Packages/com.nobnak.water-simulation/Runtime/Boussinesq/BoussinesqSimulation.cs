@@ -207,7 +207,9 @@ namespace Nobnak.WaterSimulation {
             }
         }
 
-        public float CutoffFrequency => (1.0f / (2.0f * math.PI)) * math.sqrt(3.0f * Gravity / math.max(0.1f, deepWaterDepth));
+        public float CutoffFrequency => (dispersionAlpha > 1e-4f)
+            ? (1.0f / (2.0f * math.PI)) * math.sqrt(3.0f * Gravity / (dispersionAlpha * math.max(0.1f, deepWaterDepth)))
+            : float.PositiveInfinity;
 
         /// <summary>
         /// Dominant physical wavelength [m] estimated from active source parameters.
@@ -241,11 +243,11 @@ namespace Nobnak.WaterSimulation {
 
         public bool IsIntermediateToDeepWater => EstimatedKh > 1.0f;
         public bool IsNearCutoff => (initialCondition == InitialConditionType.ContinuousWavemaker)
-            ? (wavemakerFrequency >= 0.85f * CutoffFrequency || EstimatedKh > 1.5f)
+            ? (dispersionAlpha > 1e-4f && (wavemakerFrequency >= 0.85f * CutoffFrequency || EstimatedKh > 1.5f))
             : (EstimatedKh > 1.5f);
 
         public bool IsDepthTooDeepForShallowWater => IsIntermediateToDeepWater;
-        public bool IsFrequencyAboveCutoff => wavemakerFrequency >= CutoffFrequency * 0.85f;
+        public bool IsFrequencyAboveCutoff => dispersionAlpha > 1e-4f && wavemakerFrequency >= CutoffFrequency * 0.85f;
         #endregion
 
         #region Unity lifecycle
@@ -296,7 +298,9 @@ namespace Nobnak.WaterSimulation {
         public void ClampDepthToSafeLimit() => AdjustParametersForBoussinesqRegime();
 
         public void ClampFrequencyToSafeLimit() {
-            WavemakerFrequency = CutoffFrequency * 0.6f;
+            if (dispersionAlpha > 1e-4f && !float.IsInfinity(CutoffFrequency)) {
+                WavemakerFrequency = CutoffFrequency * 0.6f;
+            }
         }
 
         public void SetBathymetryType(BathymetryType type) {
@@ -486,7 +490,7 @@ namespace Nobnak.WaterSimulation {
                 diag.message = $"[モデル条件外: 遮断周波数超過]\n" +
                     $"波源周波数 {f:F2}Hz がPeregrine遮断周波数 (深水側 fc = {fcDeep:F2}Hz, alpha = {alpha:F2}) 以上です。\n" +
                     $"伝播波長を算出できません（モデル条件外）。長波近似での正常値代用は行いません。\n" +
-                    $"対策: 周波数を下げるか水深を深くしてください。";
+                    $"対策: 波源周波数を下げるか、モデル適用範囲内（浅水〜中間水深 kh <= 0.8〜1.0）で水深を浅く（fcを高く）してください。";
                 return diag;
             }
 
@@ -523,7 +527,7 @@ namespace Nobnak.WaterSimulation {
                         $"対策候補:\n" +
                         $"1. 領域寸法の縮小 (AreaSize を小さくして格子間隔を縮小)\n" +
                         $"2. 波源周波数の引き下げ (波長を伸ばす)\n" +
-                        $"3. 水深の再設定";
+                        $"3. 水深の再設定 (適用条件の確認)";
                 } else {
                     diag.status = DispersionStatus.InsufficientResolution;
                     diag.message = $"[解像度不足: 最短波長側 {minCells:F1} cells/wl < 32 cells/wl]\n" +

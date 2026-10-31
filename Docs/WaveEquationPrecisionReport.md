@@ -1,6 +1,6 @@
 ﻿# Wave Equation Precision & Performance Investigation Report
 
-- **Timestamp**: `2026-10-31 16:39:13`
+- **Timestamp**: `2026-10-31 17:58:32`
 - **Unity Version**: `6000.3.27f1`
 - **GPU**: `Intel(R) Arc(TM) 140V GPU (16GB)`
 - **CPU**: `Intel(R) Core(TM) Ultra 7 258V`

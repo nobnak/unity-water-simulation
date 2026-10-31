@@ -1,6 +1,6 @@
 ﻿# Water Simulation Speed vs Precision Balance Master Report
 
-- **Timestamp**: `2026-10-31 16:39:38`
+- **Timestamp**: `2026-10-31 17:58:57`
 - **Unity Version**: `6000.3.27f1`
 - **GPU**: `Intel(R) Arc(TM) 140V GPU (16GB)`
 - **CPU**: `Intel(R) Core(TM) Ultra 7 258V`
@@ -13,8 +13,9 @@
 | WaveEquation: 空間ラプラシアン多項式厳密解一致 & 格子アスペクト比不連続解消 | 空間精度・不連続解消 | **PASS** | 多項式最大誤差 < 3e-5 (PASS), dz=1.0001周波数跳躍 = 0.00499% (< 0.005%) |
 | WaveEquation: GPU ComputeShader (CSStep) vs CPU 解析数値等価性 | 本体GPU実測 | **PASS** | 最大絶対差 = 2.98E-007 (< 1e-4, PASS) |
 | WaveEquation: CFL安定性限界 (理論限界 dt <= 0.04782s) | 時間安定性 | **PASS** | 1.00x限界比で安定、1.02xで発散を正確に検出 (PASS) |
-| SimulationBase: 解像度・領域変更と実動作検証 (WaveEq, Boussinesq, FFTOcean) 【本体GPU実測】 | 本体GPU実動作検証 | **PASS** | 3方式で初期化→1ステップ→解像度変更→1ステップ、Inspector/setter、無効設定拒否/復旧、有限性、テクスチャ解放を確認 (PASS) |
-| Boussinesq: 波長・解像度診断 (alpha反映, 遮断判定, パルス未評価, 512上限超過) 【解析・単体】 | 診断ロジック単体テスト | **PASS** | alpha分散反映、遮断判定(長波代用なし)、パルス未評価、512上限超過検出を全て確認 (PASS) |
+| GPU有限性判定器 単体テスト (既知有限値, NaN, Infinity, Float/Half) 【単体テスト】 | 判定器単体テスト | **PASS** | Float/Half両形式で有限値・NaN・+Inf・-Infの検出および最大値取得が完全一致 (PASS) |
+| SimulationBase: 解像度・領域変更と実動作検証 (全画素有限性・非ゼロ出力更新・系列a/b/c) 【本体GPU実測】 | 本体GPU実動作検証 | **PASS** | 3方式全画素有限性(RGBAFloat/Half)、非ゼロ出力更新(maxAbs>1e-4)、系列a/b/c、Inspector統一経路、無効設定拒否/復旧、テクスチャ解放を確認 (PASS) |
+| Boussinesq: 波長・解像度診断 (alpha反映, 遮断判定, パルス未評価, 512上限超過) 【解析・単体】 | 診断ロジック単体テスト | **PASS** | alpha・水深の遮断周波数整合性(fc式照合, 浅水増大, クランプ, 深水誤対処排除)、パルス未評価、512上限超過検出を確認 (PASS) |
 | ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力) 【CPU参照】 | 測定器単体テスト | **PASS** | 正方向/逆方向/多周期/任意初期位相の4ケース全てで絶対誤差 < 8e-6 (PASS) |
 | ShallowWater: 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法) 【CPU参照】 | 境界条件・線形ソルバー | **PASS** | 定数解誤差 = 2.86E-006, 離散固有値誤差 = 5.50E-007 (PASS) |
 | ShallowWater: 半離散群速度 導関数照合 (dDenom = (2h^2/3Δx)sin(kΔx) vs 数値微分) 【解析・単体】 | 数理解析単体テスト | **PASS** | 全波数条件で解析導関数と数値微分の相対誤差 < 1e-4 (PASS) |

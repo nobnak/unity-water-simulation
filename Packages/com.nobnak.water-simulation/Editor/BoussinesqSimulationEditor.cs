@@ -31,8 +31,9 @@ namespace Nobnak.WaterSimulation.Editor {
                 EditorGUILayout.HelpBox(
                     $"[Peregrine Cutoff Frequency Warning]\n" +
                     $"Wavemaker frequency ({sim.WavemakerFrequency:F2} Hz) is near or exceeds Peregrine cutoff frequency " +
-                    $"({sim.CutoffFrequency:F2} Hz for depth {sim.DeepWaterDepth:F1} m).\n" +
-                    "Frequencies above cutoff become evanescent (k^2 < 0) and cannot propagate into the pool, causing local oscillations.",
+                    $"({sim.CutoffFrequency:F2} Hz for depth {sim.DeepWaterDepth:F1} m, alpha = {sim.DispersionAlpha:F2}).\n" +
+                    "Frequencies above cutoff become evanescent (k^2 < 0) and cannot propagate into the pool, causing local oscillations.\n" +
+                    "Remedy: Lower wave frequency, or verify model applicability and shallow the water depth (fc increases in shallower water).",
                     MessageType.Warning);
 
                 if (GUILayout.Button("Auto-Clamp Frequency to Safe Limit (周波数を安全域に自動調整)")) {
