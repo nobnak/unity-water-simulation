@@ -15,8 +15,9 @@ namespace Nobnak.WaterSimulation.Editor {
     /// Comprehensive precision and performance benchmark for the Wave Equation simulation.
     /// Addresses:
     /// 1. Laplacian continuity and accuracy (analytic fields, aspect ratio, angle dependence, boundaries, CPU vs GPU)
-    /// 2. Time integration schemes (Kick-Drift vs Leapfrog vs Velocity Verlet vs 3-Level Störmer-Verlet)
-    /// 3. CFL stability bounds (theoretical derivation vs empirical limits)
+    /// 2. Spatial convergence order on fixed physical domain (2nd-order general accuracy & 4th-order conditions)
+    /// 3. Time integration schemes (Kick-Drift 1st-order simultaneous state vs Leapfrog/Verlet 2nd-order)
+    /// 4. CFL stability bounds (theoretical derivation vs empirical limits)
     /// </summary>
     public static class WaveEquationPrecisionBenchmark {
         public const string OutputJsonPath = "Docs/WaveEquationPrecisionReport.json";
@@ -64,10 +65,10 @@ namespace Nobnak.WaterSimulation.Editor {
             // 5. GPU vs CPU compute shader equivalence
             report.gpu_cpu_equivalence = RunGpuCpuEquivalence();
 
-            // 6. Spatial Laplacian convergence order tests
+            // 6. Spatial Laplacian convergence order tests (fixed domain)
             report.spatial_convergence_test = RunSpatialLaplacianConvergence();
 
-            // 7. Time integration scheme comparison
+            // 7. Time integration scheme comparison (simultaneous state error at general times)
             report.time_integration_comparison = RunTimeIntegrationComparison();
 
             // 8. CFL stability limit verification
@@ -89,13 +90,9 @@ namespace Nobnak.WaterSimulation.Editor {
             res.linear_field_max_error = TestField(dx, dz, (x, z) => 3.0f * x - 2.0f * z + 1.0f, (x, z) => 0.0f);
 
             // (C) Quadratic fields:
-            // u = x^2 -> Lap = 2
             res.quadratic_x2_max_error = TestField(dx, dz, (x, z) => x * x, (x, z) => 2.0f);
-            // u = z^2 -> Lap = 2
             res.quadratic_z2_max_error = TestField(dx, dz, (x, z) => z * z, (x, z) => 2.0f);
-            // u = x*z -> Lap = 0
             res.quadratic_xz_max_error = TestField(dx, dz, (x, z) => x * z, (x, z) => 0.0f);
-            // u = x^2 + z^2 -> Lap = 4
             res.quadratic_x2_z2_max_error = TestField(dx, dz, (x, z) => x * x + z * z, (x, z) => 4.0f);
 
             // (D) Harmonic field u = x^3 - 3*x*z^2 -> Lap = 0
@@ -107,7 +104,6 @@ namespace Nobnak.WaterSimulation.Editor {
             float k2 = kx * kx + kz * kz;
             res.sinusoidal_wave_max_error = TestField(dx, dz, (x, z) => math.sin(kx * x + kz * z), (x, z) => -k2 * math.sin(kx * x + kz * z));
 
-            // Check second-order truncation error order on sinusoidal:
             float errH1 = TestField(0.5f, 0.4f, (x, z) => math.sin(x + z), (x, z) => -2.0f * math.sin(x + z));
             float errH2 = TestField(0.25f, 0.2f, (x, z) => math.sin(x + z), (x, z) => -2.0f * math.sin(x + z));
             res.sinusoidal_convergence_order = math.log2(errH1 / errH2);
@@ -149,11 +145,8 @@ namespace Nobnak.WaterSimulation.Editor {
         public static ContinuityTestResult RunContinuityTest() {
             var res = new ContinuityTestResult();
             float dx = 1.0f;
-            // Test 8-cell periodic diagonal wave: lambda = 8 cells
             float kx = 2.0f * math.PI / 8.0f;
-            float kz = 2.0f * math.PI / 8.0f;
 
-            // Probe across threshold dz = 1.0
             float[] dzValues = { 0.999f, 0.9995f, 0.9999f, 1.0f, 1.0001f, 1.0005f, 1.001f };
             res.probes = new List<ContinuityProbePoint>();
 
@@ -161,7 +154,6 @@ namespace Nobnak.WaterSimulation.Editor {
                 float dz = dzValues[i];
                 float kxDz = 2.0f * math.PI / (8.0f * dz);
 
-                // Compute numerical response for plane wave u = e^(i(kx*x + kz*z)) at x=0, z=0
                 float c = 1.0f;
                 float l = math.cos(-kx * dx);
                 float r = math.cos(kx * dx);
@@ -189,7 +181,6 @@ namespace Nobnak.WaterSimulation.Editor {
                 });
             }
 
-            // Calculate jump across threshold between dz = 1.0 and dz = 1.0001
             var p1 = res.probes.Find(p => math.abs(p.dz - 1.0f) < 1e-5f);
             var p2 = res.probes.Find(p => math.abs(p.dz - 1.0001f) < 1e-5f);
             if (p1 != null && p2 != null) {
@@ -205,25 +196,22 @@ namespace Nobnak.WaterSimulation.Editor {
         #region 3. Aspect Ratio and Angle Dispersion Tests
         public static List<AspectAngleTestResult> RunAspectRatioAndAngleTests() {
             var list = new List<AspectAngleTestResult>();
+            float[] aspectRatios = { 1.0f, 1.25f, 1.5f, 2.0f };
+            float[] anglesDeg = { 0.0f, 15.0f, 30.0f, 45.0f, 60.0f, 75.0f, 90.0f };
             float dx = 0.5f;
-            float[] ratios = { 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f };
-            float[] anglesDeg = { 0f, 15f, 30f, 45f, 60f, 75f, 90f };
-            float wavelengthCells = 16.0f; // 16-cell resolution wavelength
+            float lambda = 8.0f * dx; // 8-cell wavelength
+            float k = 2.0f * math.PI / lambda;
 
-            foreach (float r in ratios) {
-                float dz = dx * r;
-                float dx2 = dx * dx;
-                float dz2 = dz * dz;
-
-                foreach (float thetaDeg in anglesDeg) {
-                    float theta = thetaDeg * math.PI / 180.0f;
-                    float k = 2.0f * math.PI / (wavelengthCells * math.sqrt(dx * dz));
-                    float kx = k * math.cos(theta);
-                    float kz = k * math.sin(theta);
+            foreach (var ar in aspectRatios) {
+                float dz = dx * ar;
+                foreach (var deg in anglesDeg) {
+                    float rad = deg * math.PI / 180.0f;
+                    float kx = k * math.cos(rad);
+                    float kz = k * math.sin(rad);
 
                     float c = 1.0f;
                     float l = math.cos(-kx * dx);
-                    float rVal = math.cos(kx * dx);
+                    float r = math.cos(kx * dx);
                     float d = math.cos(-kz * dz);
                     float u = math.cos(kz * dz);
                     float ld = math.cos(-kx * dx - kz * dz);
@@ -231,28 +219,27 @@ namespace Nobnak.WaterSimulation.Editor {
                     float lu = math.cos(-kx * dx + kz * dz);
                     float ru = math.cos(kx * dx + kz * dz);
 
-                    float numLap = CpuComputeLaplacian(l, rVal, d, u, ld, rd, lu, ru, c, dx2, dz2);
-                    float analyticLap = -(kx * kx + kz * kz);
-
-                    float numK = math.sqrt(math.max(0f, -numLap));
-                    float analyticK = math.sqrt(kx * kx + kz * kz);
-                    float phaseVelocityRatio = numK / analyticK;
+                    float lap = CpuComputeLaplacian(l, r, d, u, ld, rd, lu, ru, c, dx * dx, dz * dz);
+                    float numK = math.sqrt(math.max(0f, -lap));
+                    float phaseRatio = numK / k;
+                    float phaseErrPct = math.abs(phaseRatio - 1.0f) * 100.0f;
 
                     list.Add(new AspectAngleTestResult {
-                        aspect_ratio = r,
-                        angle_deg = thetaDeg,
-                        exact_k = analyticK,
+                        aspect_ratio = ar,
+                        angle_deg = deg,
+                        exact_k = k,
                         numerical_effective_k = numK,
-                        phase_velocity_ratio = phaseVelocityRatio,
-                        relative_phase_error_percent = math.abs(phaseVelocityRatio - 1.0f) * 100.0f
+                        phase_velocity_ratio = phaseRatio,
+                        relative_phase_error_percent = phaseErrPct
                     });
                 }
             }
+
             return list;
         }
         #endregion
 
-        #region 4. Boundary and Obstacle Tests
+        #region 4. Boundary Tests
         public static BoundaryTestResult RunBoundaryTests() {
             var res = new BoundaryTestResult();
             float dx = 0.5f;
@@ -272,7 +259,6 @@ namespace Nobnak.WaterSimulation.Editor {
             float ruDirichlet = 1.0f;
             float lapDirichlet = CpuComputeLaplacian(lDirichlet, rDirichlet, dDirichlet, uDirichlet, ldDirichlet, rdDirichlet, luDirichlet, ruDirichlet, c, dx2, dz2);
             res.dirichlet_laplacian = lapDirichlet;
-            // Physical expectation: negative curvature (restoring downward force toward 0)
             res.dirichlet_valid = lapDirichlet < 0.0f;
 
             // (B) Neumann (free end, du/dn = 0 -> mirror boundary u_wall = center u)
@@ -286,7 +272,6 @@ namespace Nobnak.WaterSimulation.Editor {
             float ruNeumann = 1.2f;
             float lapNeumann = CpuComputeLaplacian(lNeumann, rNeumann, dNeumann, uNeumann, ldNeumann, rdNeumann, luNeumann, ruNeumann, c, dx2, dz2);
             res.neumann_laplacian = lapNeumann;
-            // Physical expectation: zero gradient across boundary produces no artificial wall drag
             res.neumann_valid = math.abs(lapNeumann - (rNeumann - c) / dx2) < 0.2f * ((rNeumann - c) / dx2);
 
             return res;
@@ -320,9 +305,7 @@ namespace Nobnak.WaterSimulation.Editor {
             outTex.Create();
             obsTex.Create();
 
-            // Fill input CPU array with smooth wave
             var cpuIn = new float[w * h * 2];
-            var cpuExpectedLap = new float[w * h];
             float kx = 2.0f * math.PI / (w * dx * 0.25f);
             float kz = 2.0f * math.PI / (h * dz * 0.25f);
 
@@ -343,7 +326,6 @@ namespace Nobnak.WaterSimulation.Editor {
             Graphics.Blit(inTex2D, inTex);
             Object.DestroyImmediate(inTex2D);
 
-            // Run GPU CSStep kernel
             int kStep = shader.FindKernel("CSStep");
             shader.SetInt("_Width", w);
             shader.SetInt("_Height", h);
@@ -363,12 +345,10 @@ namespace Nobnak.WaterSimulation.Editor {
 
             shader.Dispatch(kStep, w / 8, h / 8, 1);
 
-            // Readback GPU result
             var req = AsyncGPUReadback.Request(outTex);
             req.WaitForCompletion();
             var gpuData = req.GetData<float2>();
 
-            // Compare against CPU Laplacian step
             float maxDiff = 0f;
             float dt = 0.005f;
             float c2 = 100.0f;
@@ -417,44 +397,53 @@ namespace Nobnak.WaterSimulation.Editor {
         }
         #endregion
 
-        #region 6. Spatial Laplacian Convergence Tests
+        #region 6. Spatial Laplacian Convergence Tests (Fixed Domain)
         public static SpatialLaplacianConvergenceResult RunSpatialLaplacianConvergence() {
             var res = new SpatialLaplacianConvergenceResult {
                 isotropic_cases = new List<SpatialRefinementCase>(),
-                anisotropic_cases = new List<SpatialRefinementCase>()
+                anisotropic_cases = new List<SpatialRefinementCase>(),
+                general_order_description = "2次精度 O(h^2)（一般的な滑らかな関数に対する空間収束次数）",
+                fourth_order_conditions = "4次精度 O(h^4) が成立する条件: (1) 調和関数 (∇^2 u = 0 ⇒ ∇^4 u = 0)、または (2) 正方格子 (dx = dz = h) で右辺ソース項に Mehrstellen 補正 (I + (h^2/12)∇^2) f を適用して O(h^2) 主誤差項を相殺する場合に限られる。水面波動方程式の一般的な空間離散化としては2次精度演算子となる。"
             };
 
-            float[] hList = { 0.8f, 0.4f, 0.2f, 0.1f };
-            float k = math.PI / 4.0f; // Wave number
+            // Fixed physical domain: [0, L] x [0, L] with fixed wavelength
+            float L = 6.4f;
+            float kx = 2.0f * math.PI / L;
+            float kz = 2.0f * math.PI / L;
 
-            // 1. Isotropic Square Grid (dx = dz = h): compact stencil achieves 4th-order accuracy
+            int[] gridResolutions = { 16, 32, 64, 128 };
+
+            // 1. Isotropic Square Grid (dx = dz = h) on fixed physical domain
             float prevIsoErr = 0f;
-            foreach (float h in hList) {
+            foreach (int N in gridResolutions) {
+                float h = L / N;
                 float dx = h;
                 float dz = h;
                 float maxErr = 0f;
-                for (int ix = -5; ix <= 5; ix++) {
-                    for (int iz = -5; iz <= 5; iz++) {
+
+                // Evaluate over all interior points of the fixed domain
+                for (int ix = 1; ix < N; ix++) {
+                    for (int iz = 1; iz < N; iz++) {
                         float x = ix * dx;
                         float z = iz * dz;
-                        float analyticLap = -2.0f * k * k * math.sin(k * x) * math.cos(k * z);
-                        float c = math.sin(k * x) * math.cos(k * z);
-                        float l = math.sin(k * (x - dx)) * math.cos(k * z);
-                        float r = math.sin(k * (x + dx)) * math.cos(k * z);
-                        float d = math.sin(k * x) * math.cos(k * (z - dz));
-                        float u = math.sin(k * x) * math.cos(k * (z + dz));
-                        float ld = math.sin(k * (x - dx)) * math.cos(k * (z - dz));
-                        float rd = math.sin(k * (x + dx)) * math.cos(k * (z - dz));
-                        float lu = math.sin(k * (x - dx)) * math.cos(k * (z + dz));
-                        float ru = math.sin(k * (x + dx)) * math.cos(k * (z + dz));
 
-                        float d2x = (10.0f * (l + r - 2.0f * c) + (ld + rd - 2.0f * d) + (lu + ru - 2.0f * u)) / (12.0f * dx * dx);
-                        float d2z = (10.0f * (d + u - 2.0f * c) + (ld + lu - 2.0f * l) + (rd + ru - 2.0f * r)) / (12.0f * dz * dz);
-                        float numLap = d2x + d2z;
+                        float analyticLap = -(kx * kx + kz * kz) * math.sin(kx * x) * math.cos(kz * z);
+                        float c = math.sin(kx * x) * math.cos(kz * z);
+                        float l = math.sin(kx * (x - dx)) * math.cos(kz * z);
+                        float r = math.sin(kx * (x + dx)) * math.cos(kz * z);
+                        float d = math.sin(kx * x) * math.cos(kz * (z - dz));
+                        float u = math.sin(kx * x) * math.cos(kz * (z + dz));
+                        float ld = math.sin(kx * (x - dx)) * math.cos(kz * (z - dz));
+                        float rd = math.sin(kx * (x + dx)) * math.cos(kz * (z - dz));
+                        float lu = math.sin(kx * (x - dx)) * math.cos(kz * (z + dz));
+                        float ru = math.sin(kx * (x + dx)) * math.cos(kz * (z + dz));
+
+                        float numLap = CpuComputeLaplacian(l, r, d, u, ld, rd, lu, ru, c, dx * dx, dz * dz);
                         float err = math.abs(numLap - analyticLap);
                         if (err > maxErr) maxErr = err;
                     }
                 }
+
                 float order = prevIsoErr > 0f ? math.log2(prevIsoErr / maxErr) : 0f;
                 prevIsoErr = maxErr;
                 res.isotropic_cases.Add(new SpatialRefinementCase {
@@ -465,34 +454,36 @@ namespace Nobnak.WaterSimulation.Editor {
                 });
             }
 
-            // 2. Anisotropic Rectangular Grid (dx = h, dz = 1.25 * h): achieves 2nd-order accuracy with smooth continuity
+            // 2. Anisotropic Rectangular Grid (dx = h, dz = 1.25 * h) on fixed physical domain
             float prevAnisoErr = 0f;
-            foreach (float h in hList) {
+            foreach (int N in gridResolutions) {
+                float h = L / N;
                 float dx = h;
                 float dz = 1.25f * h;
                 float maxErr = 0f;
-                for (int ix = -5; ix <= 5; ix++) {
-                    for (int iz = -5; iz <= 5; iz++) {
+
+                for (int ix = 1; ix < N; ix++) {
+                    for (int iz = 1; iz < (int)(N / 1.25f); iz++) {
                         float x = ix * dx;
                         float z = iz * dz;
-                        float analyticLap = -2.0f * k * k * math.sin(k * x) * math.cos(k * z);
-                        float c = math.sin(k * x) * math.cos(k * z);
-                        float l = math.sin(k * (x - dx)) * math.cos(k * z);
-                        float r = math.sin(k * (x + dx)) * math.cos(k * z);
-                        float d = math.sin(k * x) * math.cos(k * (z - dz));
-                        float u = math.sin(k * x) * math.cos(k * (z + dz));
-                        float ld = math.sin(k * (x - dx)) * math.cos(k * (z - dz));
-                        float rd = math.sin(k * (x + dx)) * math.cos(k * (z - dz));
-                        float lu = math.sin(k * (x - dx)) * math.cos(k * (z + dz));
-                        float ru = math.sin(k * (x + dx)) * math.cos(k * (z + dz));
 
-                        float d2x = (10.0f * (l + r - 2.0f * c) + (ld + rd - 2.0f * d) + (lu + ru - 2.0f * u)) / (12.0f * dx * dx);
-                        float d2z = (10.0f * (d + u - 2.0f * c) + (ld + lu - 2.0f * l) + (rd + ru - 2.0f * r)) / (12.0f * dz * dz);
-                        float numLap = d2x + d2z;
+                        float analyticLap = -(kx * kx + kz * kz) * math.sin(kx * x) * math.cos(kz * z);
+                        float c = math.sin(kx * x) * math.cos(kz * z);
+                        float l = math.sin(kx * (x - dx)) * math.cos(kz * z);
+                        float r = math.sin(kx * (x + dx)) * math.cos(kz * z);
+                        float d = math.sin(kx * x) * math.cos(kz * (z - dz));
+                        float u = math.sin(kx * x) * math.cos(kz * (z + dz));
+                        float ld = math.sin(kx * (x - dx)) * math.cos(kz * (z - dz));
+                        float rd = math.sin(kx * (x + dx)) * math.cos(kz * (z - dz));
+                        float lu = math.sin(kx * (x - dx)) * math.cos(kz * (z + dz));
+                        float ru = math.sin(kx * (x + dx)) * math.cos(kz * (z + dz));
+
+                        float numLap = CpuComputeLaplacian(l, r, d, u, ld, rd, lu, ru, c, dx * dx, dz * dz);
                         float err = math.abs(numLap - analyticLap);
                         if (err > maxErr) maxErr = err;
                     }
                 }
+
                 float order = prevAnisoErr > 0f ? math.log2(prevAnisoErr / maxErr) : 0f;
                 prevAnisoErr = maxErr;
                 res.anisotropic_cases.Add(new SpatialRefinementCase {
@@ -507,17 +498,23 @@ namespace Nobnak.WaterSimulation.Editor {
         }
         #endregion
 
-        #region 7. Time Integration Scheme Comparison
+        #region 7. Time Integration Scheme Comparison (Simultaneous State Error)
         public static TimeIntegrationComparisonResult RunTimeIntegrationComparison() {
             var res = new TimeIntegrationComparisonResult();
             float c = 8.0f;
             float dx = 0.2f;
-            float gamma = 0.02f; // Slight physical damping
-            float simTime = 4.0f; // 4 seconds of physical wave oscillation
-            float waveK = 2.0f * math.PI / (16.0f * dx); // 16-cell wavelength
+            float lambda = 16.0f * dx;
+            float waveK = 2.0f * math.PI / lambda;
             float omega0 = c * waveK;
 
-            // dt choices that divide simTime = 4.0s exactly:
+            // General non-turnaround evaluation time: T = 1.25s
+            float simTime = 1.25f;
+
+            // General non-zero initial phase: phi0 = pi/4 (both eta and vel are non-zero at t=0)
+            float phi0 = math.PI * 0.25f;
+            float eta0 = math.cos(phi0);
+            float vel0 = -omega0 * math.sin(phi0);
+
             float[] dtList = { 0.02f, 0.01f, 0.005f, 0.0025f };
             res.schemes = new List<SchemeEvaluation>();
 
@@ -528,29 +525,40 @@ namespace Nobnak.WaterSimulation.Editor {
                 "3-Level Störmer-Verlet (2次)"
             };
 
+            double kickDriftOrder = 0.0;
+            double velocityVerletOrder = 0.0;
+            double kickDriftAmpRatio = 1.0;
+
             foreach (var name in schemeNames) {
                 var eval = new SchemeEvaluation { scheme_name = name, dt_cases = new List<DtCaseResult>() };
-                double prevEtaErr = 0.0;
-                double prevVelErr = 0.0;
+                double prevStateErr = 0.0;
 
                 foreach (float dt in dtList) {
                     int steps = (int)math.round(simTime / dt);
-                    float evalTime = steps * dt; // Exact comparison timestamp (4.000s)
-                    float exactDampingFactor = math.exp(-gamma * evalTime * 0.5f);
-                    float omegaD = math.sqrt(math.max(0f, omega0 * omega0 - gamma * gamma * 0.25f));
-                    float expectedEta = math.cos(omegaD * evalTime) * exactDampingFactor;
-                    float expectedVel = (-omegaD * math.sin(omegaD * evalTime) - 0.5f * gamma * math.cos(omegaD * evalTime)) * exactDampingFactor;
+                    float evalTime = steps * dt;
 
-                    var (finalEta, finalVel, cpuElapsedMs) = SimulateWaveOscillator(name, dt, steps, c, waveK, gamma);
+                    float expectedEta = math.cos(omega0 * evalTime + phi0);
+                    float expectedVel = -omega0 * math.sin(omega0 * evalTime + phi0);
+
+                    var (finalEta, finalVel, cpuElapsedMs) = SimulateWaveOscillator(name, dt, steps, c, waveK, eta0, vel0);
 
                     double etaErr = math.abs(finalEta - expectedEta);
                     double velErr = math.abs(finalVel - expectedVel);
-                    double phaseErrRad = math.atan2(finalVel, finalEta * omega0) - math.atan2(expectedVel, expectedEta * omega0);
-                    double ampRatio = math.sqrt(finalEta * finalEta + (finalVel / omega0) * (finalVel / omega0)) / exactDampingFactor;
+                    double stateErr = math.sqrt(etaErr * etaErr + math.pow(velErr / omega0, 2.0));
 
-                    double order = (prevEtaErr > 0.0 && etaErr > 0.0) ? math.log2((float)(prevEtaErr / etaErr)) : 0.0;
-                    prevEtaErr = etaErr;
-                    prevVelErr = velErr;
+                    double order = (prevStateErr > 0.0 && stateErr > 0.0) ? math.log2((float)(prevStateErr / stateErr)) : 0.0;
+                    prevStateErr = stateErr;
+
+                    double phaseErrRad = math.atan2(-finalVel / omega0, finalEta) - math.atan2(-expectedVel / omega0, expectedEta);
+                    double ampRatio = math.sqrt(finalEta * finalEta + (finalVel / omega0) * (finalVel / omega0));
+
+                    if (name.Contains("Kick-Drift") && dt == 0.0025f) {
+                        kickDriftOrder = order;
+                        kickDriftAmpRatio = ampRatio;
+                    }
+                    if (name.Contains("Velocity Verlet") && dt == 0.0025f) {
+                        velocityVerletOrder = order;
+                    }
 
                     eval.dt_cases.Add(new DtCaseResult {
                         dt = dt,
@@ -558,6 +566,7 @@ namespace Nobnak.WaterSimulation.Editor {
                         cpu_time_ms = Math.Round(cpuElapsedMs, 3),
                         eta_error = Math.Round(etaErr, 6),
                         vel_error = Math.Round(velErr, 6),
+                        normalized_state_error = Math.Round(stateErr, 6),
                         observed_convergence_order = Math.Round(order, 2),
                         phase_error_rad = Math.Round(phaseErrRad, 6),
                         amplitude_ratio = Math.Round(ampRatio, 4),
@@ -568,56 +577,58 @@ namespace Nobnak.WaterSimulation.Editor {
                 res.schemes.Add(eval);
             }
 
-            res.classification = "基礎数理検証 (CPU単一振動子) / GPU実装は未実施";
-            res.conclusion = "【数理的知見】Kick-DriftおよびVelocity Verletはいずれも同一時刻状態誤差において約2次の収束性(order ~ 2.0)を示し、振幅比もシンプレクティック幾何構造により極めて高い保存性(1.000)を示す。" +
-                "【ディスパッチ・メモリ構造】Kick-Driftは1ステップあたり加速度評価が1回(1 Dispatch/step)・RGFloat(8B)1ペアで完結するのに対し、同期Velocity Verletは加速度評価が2回(2 Dispatch/step)必要となる。" +
-                "【GPU評価ステータス: 未実施】Velocity VerletのGPUコンピュートシェーダーは未実装であり、GPU実行時間は未実測(未実施)。現行Kick-Driftを維持するが、GPUでの性能差の断定は行わない。";
+            res.classification = "【CPU参照試験】(単一調和振動子による基礎数理検証) / GPU実装は【未実施】";
+            res.conclusion = $"【数理的知見（実測次数に基づく評価）】\n" +
+                $"- Kick-Drift (Symplectic Euler) の同一時刻状態誤差収束次数は実測で **{kickDriftOrder:F2}次 (1次)** です。シンプレクティック幾何構造により振幅比 ({kickDriftAmpRatio:F4}) は極めて高く保存されますが、同一時刻に評価された (η, v) の同時状態精度としては1次精度にとどまります。\n" +
+                $"- 一方、Velocity Verlet の状態収束次数は **{velocityVerletOrder:F2}次 (2次)** であり、同時刻評価において高い状態精度を示します。\n" +
+                $"- 【ディスパッチ・メモリ構造】Kick-Drift は1ステップあたり加速度評価が1回 (1 Dispatch/step)・RGFloat (8B) 1ペアで完結するのに対し、同期 Velocity Verlet は加速度評価が2回 (2 Dispatch/step) 必要となります。\n" +
+                $"- 【GPU評価ステータス: 未実施】Velocity Verlet の GPU コンピュートシェーダーは未実装であり、GPU 実行時間およびテクスチャ帯域の比較は未実測（未実施）です。現行 Kick-Drift を維持しますが、GPU 最適解とは断定せず判断保留とします。";
 
             return res;
         }
 
         private static (float finalEta, float finalVel, double elapsedMs) SimulateWaveOscillator(
-            string scheme, float dt, int steps, float c, float k, float gamma) {
+            string scheme, float dt, int steps, float c, float k, float eta0, float vel0) {
             float c2 = c * c;
-            float lapFactor = -(k * k); // Continuous spatial eigenvalue for comparison
+            float lapFactor = -(k * k);
+            float omega02 = c2 * k * k;
 
             var sw = Stopwatch.StartNew();
-            float eta = 1.0f;
-            float vel = 0.0f;
+            float eta = eta0;
+            float vel = vel0;
 
             if (scheme.Contains("Kick-Drift")) {
                 for (int s = 0; s < steps; s++) {
-                    float lap = lapFactor * eta;
-                    float gHalf = gamma * dt * 0.5f;
-                    vel = (vel * (1.0f - gHalf) + dt * c2 * lap) / (1.0f + gHalf);
+                    vel -= dt * omega02 * eta;
                     eta += dt * vel;
                 }
             } else if (scheme.Contains("Staggered Leapfrog")) {
-                // Initialize staggered velocity at t = -dt/2
-                float gHalf = gamma * dt * 0.5f;
-                float vHalf = vel - 0.5f * dt * (c2 * lapFactor * eta - gamma * vel);
+                // Initialize staggered velocity at t = dt/2: v_{1/2} = v_0 + (dt/2) * a_0
+                float a = -omega02 * eta;
+                float vHalf = vel + 0.5f * dt * a;
                 for (int s = 0; s < steps; s++) {
-                    float lap = lapFactor * eta;
-                    vHalf = (vHalf * (1.0f - gHalf) + dt * c2 * lap) / (1.0f + gHalf);
                     eta += dt * vHalf;
+                    a = -omega02 * eta;
+                    if (s < steps - 1) {
+                        vHalf += dt * a;
+                    }
                 }
-                // Synchronize v to t = steps * dt
-                float lapEnd = lapFactor * eta;
-                vel = (vHalf + 0.5f * dt * c2 * lapEnd) / (1.0f + 0.5f * dt * gamma);
+                // Synchronize velocity to integer step: v_N = v_{N-1/2} + (dt/2) * a_N
+                vel = vHalf + 0.5f * dt * a;
             } else if (scheme.Contains("Velocity Verlet")) {
                 for (int s = 0; s < steps; s++) {
-                    float a0 = c2 * lapFactor * eta - gamma * vel;
-                    float vHalf = vel + 0.5f * dt * a0;
+                    float a = -omega02 * eta;
+                    float vHalf = vel + 0.5f * dt * a;
                     eta += dt * vHalf;
-                    float lap1 = lapFactor * eta;
-                    vel = (vHalf + 0.5f * dt * c2 * lap1) / (1.0f + 0.5f * dt * gamma);
+                    float aNext = -omega02 * eta;
+                    vel = vHalf + 0.5f * dt * aNext;
                 }
             } else if (scheme.Contains("3-Level")) {
-                float gHalf = gamma * dt * 0.5f;
-                float etaPrev = eta - dt * vel + 0.5f * dt * dt * (c2 * lapFactor * eta - gamma * vel);
+                float a0 = -omega02 * eta;
+                float etaPrev = eta - dt * vel + 0.5f * dt * dt * a0;
                 for (int s = 0; s < steps; s++) {
-                    float lap = lapFactor * eta;
-                    float etaNext = (2.0f * eta - (1.0f - gHalf) * etaPrev + dt * dt * c2 * lap) / (1.0f + gHalf);
+                    float a = -omega02 * eta;
+                    float etaNext = 2.0f * eta - etaPrev + dt * dt * a;
                     vel = (etaNext - etaPrev) / (2.0f * dt);
                     etaPrev = eta;
                     eta = etaNext;
@@ -628,18 +639,13 @@ namespace Nobnak.WaterSimulation.Editor {
         }
         #endregion
 
-        #region 7. CFL Stability Limit Verification
+        #region 8. CFL Stability Limit Verification
         public static CflDerivationResult RunCflVerification() {
             var res = new CflDerivationResult();
             float c = 8.0f;
             float dx = 0.5f;
             float dz = 0.4f;
 
-            // Theoretical derivation:
-            // Maximum spatial eigenvalue of corrected 9-point compact Laplacian:
-            // |lambda|_max = (8/3) * (1/dx^2 + 1/dz^2)
-            // For stability of Kick-Drift / Leapfrog: c^2 * dt^2 * |lambda|_max <= 4
-            // dt_max = sqrt( 3 / (2 * (dx^-2 + dz^-2)) ) / c
             float invDx2 = 1.0f / (dx * dx);
             float invDz2 = 1.0f / (dz * dz);
             float lambdaMax = (8.0f / 3.0f) * (invDx2 + invDz2);
@@ -651,7 +657,6 @@ namespace Nobnak.WaterSimulation.Editor {
             res.max_spatial_eigenvalue = Math.Round(lambdaMax, 4);
             res.theoretical_max_dt = Math.Round(theoreticalMaxDt, 5);
 
-            // Empirical check around theoretical dt:
             float[] testDts = {
                 theoreticalMaxDt * 0.90f,
                 theoreticalMaxDt * 0.98f,
@@ -670,8 +675,6 @@ namespace Nobnak.WaterSimulation.Editor {
                 });
             }
 
-            // Current implementation safety factor in WaveEquationSimulation:
-            // maxDt = (minGrid / (sqrt(2) * waveSpeed)) * 0.85f
             float minGrid = math.min(dx, dz);
             float currentCodeMaxDt = (minGrid / (math.SQRT2 * c)) * 0.85f;
             res.current_code_max_dt = Math.Round(currentCodeMaxDt, 5);
@@ -685,7 +688,6 @@ namespace Nobnak.WaterSimulation.Editor {
             float dz2 = dz * dz;
             float c2 = c * c;
 
-            // Perturb with Nyquist alternating checkerboard noise
             int n = 16;
             var eta = new float[n, n];
             var vel = new float[n, n];
@@ -714,7 +716,7 @@ namespace Nobnak.WaterSimulation.Editor {
                         float eNext = center + dt * vNext;
 
                         if (float.IsNaN(eNext) || float.IsInfinity(eNext) || math.abs(eNext) > 10.0f) {
-                            return false; // Blown up!
+                            return false;
                         }
                         vel[x, y] = vNext;
                         nextEta[x, y] = eNext;
@@ -801,9 +803,12 @@ namespace Nobnak.WaterSimulation.Editor {
 
             sb.AppendLine("### 1.4 空間ラプラシアンの格子細分化収束次数 (Spatial Convergence Order)");
             sb.AppendLine();
-            sb.AppendLine("解析関数 $u = \\sin(kx)\\cos(kz)$ に対する空間細分化収束テスト：");
+            sb.AppendLine($"- **一般的な空間精度**: **{r.spatial_convergence_test.general_order_description}**");
+            sb.AppendLine($"- **高次(4次)成立条件**: {r.spatial_convergence_test.fourth_order_conditions}");
             sb.AppendLine();
-            sb.AppendLine("**正方等方格子 ($dx = dz = h$): 4次精度**");
+            sb.AppendLine("固定物理領域 ($L = 6.4\\mathrm{m}$) 上で解析関数 $u = \\sin(k_x x)\\cos(k_z z)$ ($k_x = k_z = 2\\pi/L$) に対する空間格子細分化収束テスト：");
+            sb.AppendLine();
+            sb.AppendLine("**正方等方格子 ($dx = dz = h$):**");
             sb.AppendLine("| 格子間隔 $h$ | アスペクト比 | 最大絶対誤差 | 観測収束次数 |");
             sb.AppendLine("| :---: | :---: | :---: | :---: |");
             if (r.spatial_convergence_test != null && r.spatial_convergence_test.isotropic_cases != null) {
@@ -812,7 +817,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 }
             }
             sb.AppendLine();
-            sb.AppendLine("**非正方異方格子 ($dx = h, dz = 1.25h$): 2次精度 (滑らかな連続性を保持)**");
+            sb.AppendLine("**非正方異方格子 ($dx = h, dz = 1.25h$):**");
             sb.AppendLine("| 格子間隔 $h$ | アスペクト比 | 最大絶対誤差 | 観測収束次数 |");
             sb.AppendLine("| :---: | :---: | :---: | :---: |");
             if (r.spatial_convergence_test != null && r.spatial_convergence_test.anisotropic_cases != null) {
@@ -828,16 +833,17 @@ namespace Nobnak.WaterSimulation.Editor {
 
             sb.AppendLine("## 2. 時間積分方式とCFL条件の比較");
             sb.AppendLine();
-            sb.AppendLine("### 2.1 時間積分スキームの基礎数理比較（CPU単一振動子・同時刻厳密比較）");
+            sb.AppendLine("### 2.1 時間積分スキームの基礎数理比較（CPU単一振動子・一般時刻・非零初期位相）");
             sb.AppendLine();
             sb.AppendLine("> [!IMPORTANT]");
-            sb.AppendLine("> 【測定・比較区分】本テストは **基礎数理検証 (CPU)** であり、Velocity Verlet 等の GPU コンピュートシェーダーは未実装（**GPU比較は未実施**）です。比較時刻は丸めステップではなく実際の `steps * dt` (厳密に $T=4.000\\mathrm{s}$) に合わせて解析解と照合しています。");
+            sb.AppendLine("> 【測定・比較区分】本テストは **基礎数理検証 (CPU参照試験)** です。Velocity Verlet 等の GPU コンピュートシェーダーは未実装（**GPU比較は未実施**）です。");
+            sb.AppendLine("> 振動折り返し点でのみ評価する偏りを排除するため、一般時刻 $T=1.25\\mathrm{s}$ および非零初期位相 $\\phi_0 = \\pi/4$ で水位誤差、流速誤差、および周波数規格化状態誤差 $E_{\\mathrm{state}} = \\sqrt{\\Delta \\eta^2 + (\\Delta v / \\omega_0)^2}$ を評価しています。");
             sb.AppendLine();
-            sb.AppendLine("| スキーム名 | $dt$ | ステップ数 | 同時刻 水位誤差 | 同時刻 流速誤差 | 観測収束次数 | 位相誤差 (rad) | 振幅比 | Dispatch/step (理論) | 状態テクスチャ |");
-            sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
+            sb.AppendLine("| スキーム名 | $dt$ | ステップ数 | 水位誤差 | 流速誤差 | 規格化状態誤差 | 観測収束次数 | 位相誤差 (rad) | 振幅比 | Dispatch/step (理論) | 状態テクスチャ |");
+            sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
             foreach (var s in r.time_integration_comparison.schemes) {
                 foreach (var c in s.dt_cases) {
-                    sb.AppendLine($"| {s.scheme_name} | {c.dt:F4}s | {c.total_steps} | {c.eta_error:E3} | {c.vel_error:E3} | {c.observed_convergence_order:F2}次 | {c.phase_error_rad:E3} | {c.amplitude_ratio:F4} | {c.dispatches_per_step} | {c.state_textures_required}面 |");
+                    sb.AppendLine($"| {s.scheme_name} | {c.dt:F4}s | {c.total_steps} | {c.eta_error:E3} | {c.vel_error:E3} | **{c.normalized_state_error:E3}** | **{c.observed_convergence_order:F2}次** | {c.phase_error_rad:E3} | {c.amplitude_ratio:F4} | {c.dispatches_per_step} | {c.state_textures_required}面 |");
                 }
             }
             sb.AppendLine();
@@ -942,6 +948,7 @@ namespace Nobnak.WaterSimulation.Editor {
             public double cpu_time_ms;
             public double eta_error;
             public double vel_error;
+            public double normalized_state_error;
             public double observed_convergence_order;
             public double phase_error_rad;
             public double amplitude_ratio;
@@ -972,6 +979,8 @@ namespace Nobnak.WaterSimulation.Editor {
 
         [Serializable]
         public class SpatialLaplacianConvergenceResult {
+            public string general_order_description;
+            public string fourth_order_conditions;
             public List<SpatialRefinementCase> isotropic_cases;
             public List<SpatialRefinementCase> anisotropic_cases;
         }

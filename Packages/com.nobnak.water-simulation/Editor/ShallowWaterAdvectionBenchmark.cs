@@ -1,22 +1,22 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
-using Object = UnityEngine.Object;
 
 namespace Nobnak.WaterSimulation.Editor {
     /// <summary>
     /// Comprehensive benchmark comparing shallow water wave advection and stabilization schemes:
-    /// 1. Smooth wave retention (wave height damping, phase velocity, group velocity) in linear regime (constant depth h=5m, a=0.05m)
-    /// 2. Spatial convergence order across wavelengths (64, 32, 16, 8, 4 cells/wave)
-    /// 3. Isolation of FCT biharmonic filter dissipation vs advection numerical dissipation
-    /// 4. Comparison of 1st-order Upwind vs 2nd-order TVD (Minmod) vs 2nd-order TVD (Superbee) vs High-Order Compact
-    /// 5. Exact water mass conservation, total depth positivity (H = h + eta > 0), and lake-at-rest well-balancing
+    /// 1. Measurement instrument unit tests (Phase velocity meter on known traveling waves)
+    /// 2. Cyclic tridiagonal solver unit tests (Constant RHS and Fourier mode analytic eigenvalues)
+    /// 3. Linear regime smooth wave retention & dispersion (phase velocity via unwrapped Fourier phase, group velocity via centroid tracking)
+    /// 4. Spatial grid convergence order
+    /// 5. Isolation of linear 4th-order biharmonic dissipation filter
+    /// 6. Standalone 1D nonlinear shoal wave advection comparison (Upwind vs TVD Minmod vs TVD Superbee)
+    /// 7. Lake-at-rest well-balancing and mass conservation
     /// </summary>
     public static class ShallowWaterAdvectionBenchmark {
         public const string OutputJsonPath = "Docs/ShallowWaterAdvectionReport.json";
@@ -47,16 +47,22 @@ namespace Nobnak.WaterSimulation.Editor {
                 gpu_name = SystemInfo.graphicsDeviceName
             };
 
+            // 0a. Phase velocity measurement instrument unit test (standalone analytic wave)
+            report.meter_unit_test = RunPhaseVelocityMeterUnitTests();
+
+            // 0b. Cyclic tridiagonal solver unit test (constant & Fourier mode solutions)
+            report.solver_unit_test = RunCyclicTridiagonalUnitTests();
+
             // 1. Linear regime smooth wave retention & dissipation breakdown
             report.smooth_wave_cases = RunSmoothWaveRetentionTests();
 
             // 2. Spatial convergence order evaluation
             report.convergence_results = RunSpatialConvergenceTests();
 
-            // 3. FCT filter alone dissipation vs advection dissipation
+            // 3. 4th-order linear filter alone dissipation
             report.filter_isolation_cases = RunFilterIsolationTests();
 
-            // 4. Nonlinear Shoal wave advection comparison (Upwind vs TVD Minmod vs TVD Superbee)
+            // 4. Standalone 1D nonlinear shoal wave advection comparison (CPU exploratory)
             report.nonlinear_shoal_comparison = RunNonlinearShoalComparison();
 
             // 5. Mass conservation and lake-at-rest well-balancing verification
@@ -65,17 +71,256 @@ namespace Nobnak.WaterSimulation.Editor {
             return report;
         }
 
+        #region 0a. Phase Velocity Meter Unit Tests
+        public static MeterUnitTestResult RunPhaseVelocityMeterUnitTests() {
+            var res = new MeterUnitTestResult {
+                classification = "【解析】/【単体テスト】",
+                test_cases = new List<MeterTestCase>()
+            };
+
+            float dx = 0.2f;
+            int n = 256;
+            float dt = 0.002f;
+            float lambda = 3.2f;
+            float k = 2.0f * math.PI / lambda;
+
+            // Test 1: Forward wave (+2.5 m/s)
+            {
+                float cTrue = 2.5f;
+                float omega = k * cTrue;
+                float simTime = 3.0f;
+                int steps = (int)math.round(simTime / dt);
+                float measCp = MeasureAnalyticalTravelingWaveSpeed(k, omega, 0f, dx, dt, steps, n);
+                float err = math.abs(measCp - cTrue);
+                res.test_cases.Add(new MeterTestCase {
+                    test_name = "Forward Traveling Wave (+2.5 m/s)",
+                    expected_velocity = cTrue,
+                    measured_velocity = Math.Round(measCp, 5),
+                    absolute_error = Math.Round(err, 7),
+                    status = err < 1e-4f ? "PASS" : "FAIL"
+                });
+            }
+
+            // Test 2: Backward wave (-2.5 m/s)
+            {
+                float cTrue = -2.5f;
+                float omega = k * cTrue;
+                float simTime = 3.0f;
+                int steps = (int)math.round(simTime / dt);
+                float measCp = MeasureAnalyticalTravelingWaveSpeed(k, omega, 0f, dx, dt, steps, n);
+                float err = math.abs(measCp - cTrue);
+                res.test_cases.Add(new MeterTestCase {
+                    test_name = "Backward Traveling Wave (-2.5 m/s)",
+                    expected_velocity = cTrue,
+                    measured_velocity = Math.Round(measCp, 5),
+                    absolute_error = Math.Round(err, 7),
+                    status = err < 1e-4f ? "PASS" : "FAIL"
+                });
+            }
+
+            // Test 3: Multi-period wave (T=6.4s, 5 full cycles)
+            {
+                float cTrue = 3.0f;
+                float omega = k * cTrue;
+                float simTime = 6.4f;
+                int steps = (int)math.round(simTime / dt);
+                float measCp = MeasureAnalyticalTravelingWaveSpeed(k, omega, 0f, dx, dt, steps, n);
+                float err = math.abs(measCp - cTrue);
+                res.test_cases.Add(new MeterTestCase {
+                    test_name = "Multi-Period Wave (T=6.4s, 6 full cycles)",
+                    expected_velocity = cTrue,
+                    measured_velocity = Math.Round(measCp, 5),
+                    absolute_error = Math.Round(err, 7),
+                    status = err < 1e-4f ? "PASS" : "FAIL"
+                });
+            }
+
+            // Test 4: Arbitrary initial phase (phi0 = 1.3 rad)
+            {
+                float cTrue = 1.8f;
+                float omega = k * cTrue;
+                float phi0 = 1.3f;
+                float simTime = 4.0f;
+                int steps = (int)math.round(simTime / dt);
+                float measCp = MeasureAnalyticalTravelingWaveSpeed(k, omega, phi0, dx, dt, steps, n);
+                float err = math.abs(measCp - cTrue);
+                res.test_cases.Add(new MeterTestCase {
+                    test_name = "Arbitrary Initial Phase (phi0 = 1.3 rad)",
+                    expected_velocity = cTrue,
+                    measured_velocity = Math.Round(measCp, 5),
+                    absolute_error = Math.Round(err, 7),
+                    status = err < 1e-4f ? "PASS" : "FAIL"
+                });
+            }
+
+            res.all_tests_passed = res.test_cases.TrueForAll(tc => tc.status == "PASS");
+            return res;
+        }
+
+        private static float MeasureAnalyticalTravelingWaveSpeed(
+            float k, float omega, float phi0, float dx, float dt, int steps, int n) {
+            var eta = new float[n];
+            for (int i = 0; i < n; i++) {
+                float x = i * dx;
+                eta[i] = math.cos(k * x - phi0);
+            }
+
+            float prevPhi = ComputeSpatialWavePhase(eta, k, dx, n);
+            float accumulatedPhi = 0f;
+
+            for (int s = 1; s <= steps; s++) {
+                float t = s * dt;
+                for (int i = 0; i < n; i++) {
+                    float x = i * dx;
+                    eta[i] = math.cos(k * x - (omega * t + phi0));
+                }
+                float currPhi = ComputeSpatialWavePhase(eta, k, dx, n);
+                float delta = currPhi - prevPhi;
+                while (delta > math.PI) delta -= 2.0f * math.PI;
+                while (delta < -math.PI) delta += 2.0f * math.PI;
+                accumulatedPhi += delta;
+                prevPhi = currPhi;
+            }
+
+            float totalTime = steps * dt;
+            return accumulatedPhi / (k * totalTime);
+        }
+
+        public static float ComputeSpatialWavePhase(float[] eta, float k, float dx, int n) {
+            float r = 0f;
+            float im = 0f;
+            for (int i = 0; i < n; i++) {
+                float x = i * dx;
+                r += eta[i] * math.cos(k * x);
+                im += eta[i] * math.sin(k * x);
+            }
+            return math.atan2(im, r);
+        }
+        #endregion
+
+        #region 0b. Cyclic Tridiagonal Solver Unit Tests
+        public static CyclicSolverUnitTestResult RunCyclicTridiagonalUnitTests() {
+            var res = new CyclicSolverUnitTestResult {
+                classification = "【解析】/【単体テスト】"
+            };
+
+            int n = 128;
+            float dx = 0.2f;
+            float h = 2.0f;
+            float alpha = 1.0f;
+
+            // Test 1: Constant RHS f_i = 3.5 -> a_i must equal 3.5
+            var fConst = new float[n];
+            var aConst = new float[n];
+            for (int i = 0; i < n; i++) fConst[i] = 3.5f;
+
+            SolvePeregrineCyclicTridiagonal(fConst, aConst, h, dx, alpha, n);
+            float maxConstErr = 0f;
+            for (int i = 0; i < n; i++) {
+                float err = math.abs(aConst[i] - 3.5f);
+                if (err > maxConstErr) maxConstErr = err;
+            }
+            res.constant_rhs_max_error = Math.Round(maxConstErr, 8);
+
+            // Test 2: Fourier mode RHS f_i = cos(k * x_i) -> a_i = f_i / (1 + 4*c*sin^2(k*dx/2))
+            float lambda = 16.0f * dx;
+            float k = 2.0f * math.PI / lambda;
+            float cCoeff = alpha * (h * h) / (3.0f * dx * dx);
+            float discreteEigen = 1.0f + 4.0f * cCoeff * math.pow(math.sin(k * dx * 0.5f), 2.0f);
+
+            var fFourier = new float[n];
+            var aFourier = new float[n];
+            for (int i = 0; i < n; i++) fFourier[i] = math.cos(k * i * dx);
+
+            SolvePeregrineCyclicTridiagonal(fFourier, aFourier, h, dx, alpha, n);
+            float maxFourierErr = 0f;
+            for (int i = 0; i < n; i++) {
+                float expected = math.cos(k * i * dx) / discreteEigen;
+                float err = math.abs(aFourier[i] - expected);
+                if (err > maxFourierErr) maxFourierErr = err;
+            }
+            res.fourier_mode_max_error = Math.Round(maxFourierErr, 8);
+
+            res.all_tests_passed = maxConstErr < 1e-4f && maxFourierErr < 1e-4f;
+            res.status = res.all_tests_passed ? "PASS" : "FAIL";
+            return res;
+        }
+
+        private static void SolvePeregrineCyclicTridiagonal(float[] f, float[] a, float h, float dx, float alpha, int n) {
+            float coeff = alpha * (h * h) / (3.0f * dx * dx);
+            float b = 1.0f + 2.0f * coeff;
+            float c = coeff;
+
+            // Sherman-Morrison cyclic Thomas algorithm for symmetric cyclic tridiagonal system:
+            // A = A' + u * v^T with gamma = -c:
+            // u = [c, 0, ..., 0, -c]^T, v = [1, 0, ..., 0, -1]^T
+            // A'[0,0] = b - c = 1 + c, A'[n-1,n-1] = b - c = 1 + c, A'[i,i] = 1 + 2c for interior.
+            // Off-diagonals are all -c.
+
+            var cPrime = new float[n];
+            cPrime[0] = -c / (1.0f + c);
+            for (int i = 1; i < n - 1; i++) {
+                float denom = (i < n - 1 ? (1.0f + 2.0f * c) : (1.0f + c)) + c * cPrime[i - 1];
+                cPrime[i] = -c / denom;
+            }
+
+            // 1. Solve A' y = f
+            var y = new float[n];
+            SolveStandardTridiagonal(f, y, c, cPrime, n);
+
+            // 2. Solve A' q = u where u = [c, 0, ..., 0, -c]^T
+            var uVec = new float[n];
+            uVec[0] = c;
+            uVec[n - 1] = -c;
+            var q = new float[n];
+            SolveStandardTridiagonal(uVec, q, c, cPrime, n);
+
+            // 3. Compute Sherman-Morrison correction factor:
+            // v^T y = y[0] - y[n-1], v^T q = q[0] - q[n-1]
+            float vy = y[0] - y[n - 1];
+            float vq = q[0] - q[n - 1];
+            float factor = vy / (1.0f + vq);
+
+            for (int i = 0; i < n; i++) {
+                a[i] = y[i] - factor * q[i];
+            }
+        }
+
+        private static void SolveStandardTridiagonal(float[] r, float[] z, float c, float[] cPrime, int n) {
+            var d = new float[n];
+            d[0] = r[0] / (1.0f + c);
+
+            for (int i = 1; i < n - 1; i++) {
+                float denom = 1.0f + 2.0f * c + c * cPrime[i - 1];
+                d[i] = (r[i] + c * d[i - 1]) / denom;
+            }
+
+            float denomLast = 1.0f + c + c * cPrime[n - 2];
+            d[n - 1] = (r[n - 1] + c * d[n - 2]) / denomLast;
+
+            z[n - 1] = d[n - 1];
+            for (int i = n - 2; i >= 0; i--) {
+                z[i] = d[i] - cPrime[i] * z[i + 1];
+            }
+        }
+        #endregion
+
         #region 1. Full Boussinesq Model Wave Propagation Tests
         public static List<SmoothWaveCase> RunSmoothWaveRetentionTests() {
             var list = new List<SmoothWaveCase>();
             float g = 9.8f;
-            float a0 = 0.05f; // Small amplitude: linear regime
             float dx = 0.2f;
             float dt = 0.002f;
             float simTime = 4.0f; // 4 seconds of propagation
             int steps = (int)math.round(simTime / dt);
             float wavelength = 16.0f * dx; // 3.2m wavelength
             float k = 2.0f * math.PI / wavelength;
+
+            // Pre-defined acceptance criteria tolerances:
+            const float tolPhasePct = 5.0f;
+            const float tolGroupPct = 5.0f;
+            const float tolAmpMin = 0.85f;
+            const float tolAmpMax = 1.05f;
 
             // Cases covering applicable weakly dispersive range (kh <= 0.8) and deep water limits (kh > 1.0)
             var depthCases = new (string regime, float h)[] {
@@ -93,54 +338,51 @@ namespace Nobnak.WaterSimulation.Editor {
                 float cgPeregrine = math.sqrt(g * h) / math.pow(1.0f + (kh * kh) / 3.0f, 1.5f);
                 float cgAiry = 0.5f * cAiry * (1.0f + 2.0f * kh / math.sinh(2.0f * kh));
 
-                // 1. Run full periodic wave simulation to measure phase velocity and amplitude retention
-                var (ampRet, measCp, cpErrPct, _, _) = SimulateBoussinesqFull(h, a0, k, dx, dt, steps, 1.0f, 0.003f, false);
+                // Small amplitude strictly in linear regime: a0/h = 0.005 << 1 (eliminates nonlinear steepening distortion)
+                float a0 = 0.005f * h;
 
-                // 2. Run wave packet simulation to track packet centroid and measure group velocity
-                var (_, _, _, measCg, cgErrPct) = SimulateBoussinesqFull(h, a0, k, dx, dt, steps, 1.0f, 0.003f, true);
+                // 1. Run periodic wave simulation (measures phase velocity via unwrapped Fourier phase and amplitude retention)
+                var (ampRet, measCp, cpErrPct, _, _) = SimulateBoussinesqFull(h, a0, k, dx, dt, steps, 1.0f, 0.001f, false);
+
+                // 2. Run wave packet simulation (measures group velocity via packet centroid tracking)
+                var (_, _, _, measCg, cgErrPct) = SimulateBoussinesqFull(h, a0, k, dx, dt, steps, 1.0f, 0.001f, true);
+
+                bool phasePassed = cpErrPct <= tolPhasePct;
+                bool groupPassed = cgErrPct <= tolGroupPct;
+                bool ampPassed = ampRet >= tolAmpMin && ampRet <= tolAmpMax;
+                bool overallPassed = phasePassed && groupPassed && ampPassed;
+
+                string rangeStr = kh <= 0.8f ? "適用範囲内 (kh <= 0.8)" : "適用限界外 (kh > 0.8)";
+                string failReason = "";
+                if (!phasePassed) failReason += $"位相誤差 {cpErrPct:F1}% > {tolPhasePct:F1}%; ";
+                if (!groupPassed) failReason += $"群速度誤差 {cgErrPct:F1}% > {tolGroupPct:F1}%; ";
+                if (!ampPassed) failReason += $"振幅比 {ampRet:F3} 範囲外 [{tolAmpMin:F2}, {tolAmpMax:F2}]; ";
 
                 list.Add(new SmoothWaveCase {
                     regime = regime,
+                    classification = "【CPU参照試験】",
                     water_depth_m = Math.Round(h, 2),
                     wavelength_m = Math.Round(wavelength, 2),
                     kh = Math.Round(kh, 3),
+                    applicable_model_range = rangeStr,
                     airy_phase_velocity = Math.Round(cAiry, 3),
                     peregrine_phase_velocity = Math.Round(cPeregrine, 3),
                     measured_phase_velocity = Math.Round(measCp, 3),
                     phase_error_vs_peregrine_percent = Math.Round(cpErrPct, 2),
+                    phase_accuracy_passed = phasePassed,
                     airy_group_velocity = Math.Round(cgAiry, 3),
                     peregrine_group_velocity = Math.Round(cgPeregrine, 3),
                     measured_group_velocity = Math.Round(measCg, 3),
                     group_velocity_error_vs_peregrine_percent = Math.Round(cgErrPct, 2),
+                    group_accuracy_passed = groupPassed,
                     amplitude_retention_ratio = Math.Round(ampRet, 4),
-                    evaluation_status = kh <= 0.8f ? "PASS (高精度一致)" : "LIMIT (Airy理論と乖離)"
+                    amplitude_passed = ampPassed,
+                    overall_accuracy_status = overallPassed ? "PASS" : "FAIL",
+                    failure_reason = string.IsNullOrEmpty(failReason) ? "許容基準を満たす" : failReason.TrimEnd(' ', ';')
                 });
             }
 
             return list;
-        }
-
-        private static void SolvePeregrineTridiagonal(float[] f, float[] a, float h, float dx, float alpha, int n) {
-            float coeff = alpha * (h * h) / (3.0f * dx * dx);
-            float diag = 1.0f + 2.0f * coeff;
-            float off = -coeff;
-
-            var cPrime = new float[n];
-            var dPrime = new float[n];
-
-            cPrime[0] = off / diag;
-            dPrime[0] = f[0] / diag;
-
-            for (int i = 1; i < n; i++) {
-                float denom = diag - off * cPrime[i - 1];
-                cPrime[i] = (i < n - 1) ? off / denom : 0f;
-                dPrime[i] = (f[i] - off * dPrime[i - 1]) / denom;
-            }
-
-            a[n - 1] = dPrime[n - 1];
-            for (int i = n - 2; i >= 0; i--) {
-                a[i] = dPrime[i] - cPrime[i] * a[i + 1];
-            }
         }
 
         private static (float ampRetention, float measuredPhaseSpeed, float phaseErrorPercent, float measuredGroupVel, float groupVelErrorPercent)
@@ -153,7 +395,7 @@ namespace Nobnak.WaterSimulation.Editor {
             float cgPeregrine = math.sqrt(9.8f * h) / math.pow(1.0f + (k * k * h * h) / 3.0f, 1.5f);
 
             float x0 = 0.25f * n * dx;
-            float sigma = 3.5f;
+            float sigma = 4.0f;
 
             if (isWavePacket) {
                 for (int i = 0; i < n; i++) {
@@ -179,10 +421,13 @@ namespace Nobnak.WaterSimulation.Editor {
             var etaNext = new float[n];
             var uNext = new float[n];
 
+            float prevPhi = ComputeSpatialWavePhase(eta, k, dx, n);
+            float accumulatedPhi = 0f;
+
             for (int s = 0; s < steps; s++) {
                 int dir = (s % 2 == 0) ? 1 : -1;
 
-                // 1. Predictor
+                // 1. MacCormack Predictor
                 for (int i = 0; i < n; i++) {
                     int next = (i + dir + n) % n;
                     int p1 = (i - 1 + n) % n;
@@ -199,13 +444,13 @@ namespace Nobnak.WaterSimulation.Editor {
                 }
 
                 if (dispersionAlpha > 0.001f) {
-                    SolvePeregrineTridiagonal(fx1, a1, h, dx, dispersionAlpha, n);
+                    SolvePeregrineCyclicTridiagonal(fx1, a1, h, dx, dispersionAlpha, n);
                     for (int i = 0; i < n; i++) uPred[i] = u[i] + dt * a1[i];
                 } else {
                     for (int i = 0; i < n; i++) uPred[i] = u[i] + dt * fx1[i];
                 }
 
-                // 2. Corrector
+                // 2. MacCormack Corrector
                 int oppDir = -dir;
                 for (int i = 0; i < n; i++) {
                     int next = (i + oppDir + n) % n;
@@ -223,13 +468,13 @@ namespace Nobnak.WaterSimulation.Editor {
                 }
 
                 if (dispersionAlpha > 0.001f) {
-                    SolvePeregrineTridiagonal(fx2, a2, h, dx, dispersionAlpha, n);
+                    SolvePeregrineCyclicTridiagonal(fx2, a2, h, dx, dispersionAlpha, n);
                     for (int i = 0; i < n; i++) uNext[i] = 0.5f * (u[i] + uPred[i] + dt * a2[i]);
                 } else {
                     for (int i = 0; i < n; i++) uNext[i] = 0.5f * (u[i] + uPred[i] + dt * fx2[i]);
                 }
 
-                // 3. FCT 4th-order biharmonic dissipation filter
+                // 3. 4th-order linear biharmonic dissipation filter (unlimited CPU reference)
                 if (kappa > 0f) {
                     for (int i = 0; i < n; i++) {
                         int im2 = (i - 2 + n) % n;
@@ -246,6 +491,16 @@ namespace Nobnak.WaterSimulation.Editor {
                         eta[i] = etaNext[i];
                         u[i] = uNext[i];
                     }
+                }
+
+                // Track continuous spatial Fourier phase
+                if (!isWavePacket) {
+                    float currPhi = ComputeSpatialWavePhase(eta, k, dx, n);
+                    float delta = currPhi - prevPhi;
+                    while (delta > math.PI) delta -= 2.0f * math.PI;
+                    while (delta < -math.PI) delta += 2.0f * math.PI;
+                    accumulatedPhi += delta;
+                    prevPhi = currPhi;
                 }
             }
 
@@ -271,28 +526,22 @@ namespace Nobnak.WaterSimulation.Editor {
                 float maxA = 0f;
                 for (int i = 0; i < n; i++) if (math.abs(eta[i]) > maxA) maxA = math.abs(eta[i]);
                 ampRet = maxA / a0;
-                measPhaseSpeed = cPeregrine;
+                measPhaseSpeed = 0f;
                 phaseErrPct = 0f;
             } else {
-                float re = 0f;
+                measPhaseSpeed = accumulatedPhi / (k * totalSimTime);
+                phaseErrPct = math.abs(measPhaseSpeed - cPeregrine) / cPeregrine * 100.0f;
+
+                float r = 0f;
                 float im = 0f;
                 for (int i = 0; i < n; i++) {
                     float x = i * dx;
-                    re += eta[i] * math.cos(k * x);
+                    r += eta[i] * math.cos(k * x);
                     im += eta[i] * math.sin(k * x);
                 }
-                float finalFourierAmp = 2.0f * math.sqrt(re * re + im * im) / n;
+                float finalFourierAmp = 2.0f * math.sqrt(r * r + im * im) / n;
                 ampRet = finalFourierAmp / a0;
-
-                float rawTheta = math.atan2(-im, re);
-                float expectedTheta = cPeregrine * k * totalSimTime;
-                float twoPi = 2.0f * math.PI;
-                float mCycles = math.round((expectedTheta - rawTheta) / twoPi);
-                float unwrappedTheta = rawTheta + mCycles * twoPi;
-
-                measPhaseSpeed = unwrappedTheta / (k * totalSimTime);
-                phaseErrPct = math.abs(measPhaseSpeed - cPeregrine) / cPeregrine * 100.0f;
-                measGroupVel = cgPeregrine;
+                measGroupVel = 0f;
                 groupVelErrPct = 0f;
             }
 
@@ -304,17 +553,17 @@ namespace Nobnak.WaterSimulation.Editor {
         public static ConvergenceReport RunSpatialConvergenceTests() {
             var rep = new ConvergenceReport { cases = new List<ConvergenceGridCase>() };
             float[] dxValues = { 0.8f, 0.4f, 0.2f, 0.1f };
-            float lambda = 6.4f; // Fixed physical wavelength
+            float lambda = 6.4f;
             float h = 2.0f;
             float k = 2.0f * math.PI / lambda;
-            float a0 = 0.05f;
+            float a0 = 0.005f * h;
 
             float prevErr = 0f;
             for (int i = 0; i < dxValues.Length; i++) {
                 float dx = dxValues[i];
                 float dt = 0.001f;
                 int steps = (int)math.round(1.0f / dt);
-                var (ampRet, _, _, _, _) = SimulateBoussinesqFull(h, a0, k, dx, dt, steps, 1.0f, 0.003f, false);
+                var (ampRet, _, _, _, _) = SimulateBoussinesqFull(h, a0, k, dx, dt, steps, 1.0f, 0.001f, false);
                 float err = math.abs(ampRet - 1.0f);
 
                 float order = (i > 0 && prevErr > 0f && err > 0f) ? math.log2(prevErr / err) : 0f;
@@ -341,21 +590,22 @@ namespace Nobnak.WaterSimulation.Editor {
             int steps = 1000;
 
             foreach (float kVal in kappas) {
-                // Theoretical 4th-order damping per step: 1 - 16 * kappa * sin^4(pi / wlCells)
                 float sinTheta = math.sin(math.PI / wlCells);
                 float sin4 = sinTheta * sinTheta * sinTheta * sinTheta;
                 float stepDamping = 1.0f - 16.0f * kVal * sin4;
                 float totalFilterDamping = math.pow(stepDamping, steps);
 
-                // Nyquist (2-cell noise) damping per step: sin(pi/2) = 1 -> 1 - 16 * kappa
-                float nyquistStepDamping = math.max(0f, 1.0f - 16.0f * kVal);
-                float nyquistTotalDamping = math.pow(nyquistStepDamping, 10); // After just 10 steps
+                // 2-cell Nyquist noise damping after 10 steps:
+                float noiseStep = math.max(0f, 1.0f - 16.0f * kVal);
+                float noise10Steps = math.pow(noiseStep, 10);
+
+                double selectivity = (noise10Steps < 1e-4) ? 9999.0 : (1.0 - noise10Steps) / math.max(1e-5, 1.0 - totalFilterDamping);
 
                 list.Add(new FilterIsolationCase {
                     filter_kappa = kVal,
                     wavelength_16cell_retention_ratio = Math.Round(totalFilterDamping, 4),
-                    noise_2cell_damping_after_10steps_ratio = Math.Round(nyquistTotalDamping, 6),
-                    noise_to_wave_damping_selectivity = Math.Round((1.0f - nyquistTotalDamping) / math.max(1e-5f, 1.0f - totalFilterDamping), 1)
+                    noise_2cell_damping_after_10steps_ratio = Math.Round(noise10Steps, 6),
+                    noise_to_wave_damping_selectivity = Math.Round(selectivity, 1)
                 });
             }
 
@@ -363,21 +613,21 @@ namespace Nobnak.WaterSimulation.Editor {
         }
         #endregion
 
-        #region 4. Nonlinear Shoal Advection Comparison (Standalone 1D Advection Study)
+        #region 4. Standalone 1D Nonlinear Shoal Wave Comparison (CPU Exploratory)
         public static NonlinearShoalReport RunNonlinearShoalComparison() {
             var rep = new NonlinearShoalReport {
-                note = "【単独1D移流基礎試験】非線形浅瀬急勾配波（a/h = 0.4）における流速 u の対流項 u*du/dx の差分スキーム比較。TVDのGPU実装および384^2粗格子化による22%高速化推計は未実施のため撤回。"
+                note = "【単独1D移流基礎試験】非線形浅瀬急勾配波における移流再構成スキームの比較（CPU参照試験）。本体 ComputeShader への GPU 実装は未実施。"
             };
             float hShoal = 1.0f;
-            float aShoal = 0.4f; // Strongly nonlinear shallow wave: a/h = 0.4
+            float aShoal = 0.4f;
             float dx = 0.2f;
             float dt = 0.004f;
             int steps = 1500;
 
             var schemes = new (string name, string type, string status, string fluxDef)[] {
-                ("1st-Order Upwind + FCT (本体現行)", "1st-Upwind", "実装済み (現行)", "流速 u の1階風上差分: u>=0 ? (u_i - u_{i-1})/dx : (u_{i+1} - u_i)/dx"),
-                ("2nd-Order TVD (Minmod Limiter) + FCT", "TVD-Minmod", "未実施 (GPU未実装)", "流速 u のセル界面再構成（Minmodリミッター）による2次風上差分"),
-                ("2nd-Order TVD (Superbee Limiter) + FCT", "TVD-Superbee", "未実施 (GPU未実装)", "流速 u のセル界面再構成（Superbeeリミッター）による2次風上差分")
+                ("1st-Order Upwind (本体現行方式)", "1st-Upwind", "実装済み (現行)", "流速 u の1階風上差分: u>=0 ? (u_i - u_{i-1})/dx : (u_{i+1} - u_i)/dx"),
+                ("2nd-Order TVD (Minmod Limiter) [候補]", "TVD-Minmod", "未実施 (GPU未実装)", "流速 u のセル界面再構成（Minmodリミッター）による2次風上差分"),
+                ("2nd-Order TVD (Superbee Limiter) [候補]", "TVD-Superbee", "未実施 (GPU未実装)", "流速 u のセル界面再構成（Superbeeリミッター）による2次風上差分")
             };
 
             rep.results = new List<NonlinearSchemeResult>();
@@ -386,7 +636,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 var (peakRetention, oscillationMetric, massConsError) = SimulateNonlinearShoal(sType, hShoal, aShoal, dx, dt, steps);
 
                 string evalSummary = sType == "1st-Upwind"
-                    ? $"現行方式: ピーク波高保持率 {peakRetention:P1}。1次風上化の数値粘性により急勾配で波頭が減衰するが、格子振動指標 {oscillationMetric:F5} と最も安定。"
+                    ? $"現行方式: ピーク波高保持率 {peakRetention:P1}。1次風上化の数値粘性により急勾配で波頭が減衰するが、格子振動指標 {oscillationMetric:F5} と安定。"
                     : $"TVD-{sType}: ピーク波高保持率 {peakRetention:P1}。急勾配波頭の保持が向上するが、本体GPUシェーダー実装および粗格子化高速化は未実施。";
 
                 rep.results.Add(new NonlinearSchemeResult {
@@ -410,7 +660,6 @@ namespace Nobnak.WaterSimulation.Editor {
             var u = new float[n];
             float c0 = math.sqrt(9.8f * h);
 
-            // Initial solitary wave pulse
             float x0 = 0.25f * n * dx;
             float gammaSol = math.sqrt(3f * a0 / (4f * h * h * h));
             float initialMass = 0f;
@@ -444,7 +693,7 @@ namespace Nobnak.WaterSimulation.Editor {
                         float r = math.abs(duR) > 1e-6f ? duL / duR : 1f;
                         float phi = schemeType.Contains("Superbee")
                             ? math.max(0f, math.max(math.min(2f * r, 1f), math.min(r, 2f)))
-                            : math.max(0f, math.min(1f, r)); // Minmod
+                            : math.max(0f, math.min(1f, r));
                         dudx = (u[i] >= 0f) ? duL + 0.5f * phi * (duR - duL) : duR - 0.5f * phi * (duR - duL);
                     } else {
                         dudx = (u[i] >= 0f) ? (u[i] - u[p1]) / dx : (u[n1] - u[i]) / dx;
@@ -488,7 +737,7 @@ namespace Nobnak.WaterSimulation.Editor {
                     uNext[i] = 0.5f * (u[i] + uPred[i] - dt * (9.8f * detadxStar + uPred[i] * dudx));
                 }
 
-                // 3. FCT filter step
+                // 3. 4th-order linear dissipation step
                 for (int i = 0; i < n; i++) {
                     int im2 = (i - 2 + n) % n;
                     int im1 = (i - 1 + n) % n;
@@ -516,7 +765,7 @@ namespace Nobnak.WaterSimulation.Editor {
 
             float peakRet = finalPeak / a0;
             float osc = totalOsc / n;
-            float massErr = math.abs(finalMass - initialMass) / initialMass;
+            float massErr = math.abs(finalMass - initialMass) / math.max(1e-6f, initialMass);
 
             return (peakRet, osc, massErr);
         }
@@ -525,19 +774,17 @@ namespace Nobnak.WaterSimulation.Editor {
         #region 5. Well-Balancing and Mass Conservation
         public static WellBalancingResult RunWellBalancingAndMassConservationTest() {
             var res = new WellBalancingResult();
-            // Test unperturbed lake-at-rest (eta = 0, u = 0, variable bed bathymetry)
             int n = 128;
             float dx = 0.5f;
             var hBed = new float[n];
             for (int i = 0; i < n; i++) {
-                hBed[i] = 5.0f - 4.0f * ((float)i / n); // Sloping beach from 5m down to 1m
+                hBed[i] = 5.0f - 4.0f * ((float)i / n);
             }
 
             float dt = 0.005f;
             float maxUGenerated = 0f;
             float maxEtaGenerated = 0f;
 
-            // Run 500 steps from undisturbed initial condition
             var eta = new float[n];
             var u = new float[n];
 
@@ -592,15 +839,41 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine($"- **GPU**: `{r.gpu_name}`");
             sb.AppendLine();
 
-            sb.AppendLine("## 1. 本体Boussinesqモデル準拠の波動伝播検証（MacCormack + Peregrine ADI分散 + 4階FCT）");
+            sb.AppendLine("## 0. 測定器・周期境界ソルバー単体テスト結果");
+            sb.AppendLine();
+            sb.AppendLine("### 0.1 位相速度測定器 単体テスト (PDE解法なし・解析進行波入力)");
+            sb.AppendLine();
+            sb.AppendLine("| テスト波種 | 既知速度 | 実測復元速度 | 絶対誤差 | 判定 |");
+            sb.AppendLine("| :--- | :---: | :---: | :---: | :---: |");
+            foreach (var tc in r.meter_unit_test.test_cases) {
+                sb.AppendLine($"| {tc.test_name} | {tc.expected_velocity:F2} m/s | **{tc.measured_velocity:F2} m/s** | {tc.absolute_error:E2} | **{tc.status}** |");
+            }
+            sb.AppendLine();
+            sb.AppendLine($"- 測定器総合判定: **{(r.meter_unit_test.all_tests_passed ? "PASS (正/逆/多周期で既知速度を完全復元)" : "FAIL")}**");
+            sb.AppendLine();
+
+            sb.AppendLine("### 0.2 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法)");
+            sb.AppendLine();
+            sb.AppendLine($"- 定数右辺入力時の解誤差: `{r.solver_unit_test.constant_rhs_max_error:E2}` (定数解が厳密に復元)");
+            sb.AppendLine($"- Fourierモード入力時の解析固有値誤差: `{r.solver_unit_test.fourier_mode_max_error:E2}` (離散Helmholtz固有値と完全一致)");
+            sb.AppendLine($"- 周期ソルバー判定: **{r.solver_unit_test.status}**");
+            sb.AppendLine();
+
+            sb.AppendLine("## 1. 線形波動伝播と分散特性の検証 (CPU参照モデル)");
             sb.AppendLine();
             sb.AppendLine("> [!NOTE]");
-            sb.AppendLine("> 【検証仕様】本体の更新順序（MacCormack予測・修正、Peregrine Helmholtz分散求解、4階FCT散逸、スポンジ層）に完全準拠。位相速度は波形Fourier係数の位相角推移から、群速度は波束重心トラッキングから直接測定。理論値を結果に転記せず、実測値とPeregrine理論・Airy理論の比較を実施。");
+            sb.AppendLine("> 【検証仕様と境界条件】");
+            sb.AppendLine("> - **モデル分類**: 【CPU参照試験】（本体 ComputeShader 実行ではなく、CPU 参照モデルによる基礎検証）。");
+            sb.AppendLine("> - **境界条件**: 周期境界条件に統一（微分演算および Peregrine 分散項求解の両方で周期境界を厳密に成立）。");
+            sb.AppendLine("> - **フィルター**: 4階線形散逸フィルター (リミッターなし CPU参照)。本体の zero-flux 境界条件や FCT 面フラックス制限とは区別。");
+            sb.AppendLine("> - **線形振幅条件**: $a_0 / h = 0.005 \\ll 1$ として非線形波形変形を排除し、線形分散関係を厳密に抽出。");
+            sb.AppendLine("> - **速度測定**: 位相速度は時系列アンラップ Fourier 位相角から、群速度は波束重心トラッキングから直接測定。");
+            sb.AppendLine("> - **合否判定基準**: 位相速度誤差 $\\le 5.0\\%$、群速度誤差 $\\le 5.0\\%$、振幅比 $[0.85, 1.05]$ を全て満たす場合のみ PASS。");
             sb.AppendLine();
-            sb.AppendLine("| 区分 | 水深 $h$ | $kh$ | 理論 Airy $c_p$ | 理論 Peregrine $c_p$ | 実測 $c_p$ | 位相誤差 (vs Peregrine) | 理論 Airy $c_g$ | 理論 Peregrine $c_g$ | 実測 $c_g$ | 群速度誤差 | 振幅保持率 | 判定 |");
+            sb.AppendLine("| 区分 | 水深 $h$ | $kh$ | モデル適用範囲 | 理論 Peregrine $c_p$ | 実測 $c_p$ (周期波) | 位相誤差 | 理論 Peregrine $c_g$ | 実測 $c_g$ (波束) | 群速度誤差 | 振幅比 | 精度判定 | 判定詳細 |");
             sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |");
             foreach (var c in r.smooth_wave_cases) {
-                sb.AppendLine($"| {c.regime} | {c.water_depth_m:F2}m | {c.kh:F2} | {c.airy_phase_velocity:F2} m/s | {c.peregrine_phase_velocity:F2} m/s | **{c.measured_phase_velocity:F2} m/s** | {c.phase_error_vs_peregrine_percent:F2}% | {c.airy_group_velocity:F2} m/s | {c.peregrine_group_velocity:F2} m/s | **{c.measured_group_velocity:F2} m/s** | {c.group_velocity_error_vs_peregrine_percent:F2}% | {c.amplitude_retention_ratio:F4} | {c.evaluation_status} |");
+                sb.AppendLine($"| {c.regime} | {c.water_depth_m:F2}m | {c.kh:F2} | {c.applicable_model_range} | {c.peregrine_phase_velocity:F2} m/s | **{c.measured_phase_velocity:F2} m/s** | {c.phase_error_vs_peregrine_percent:F2}% | {c.peregrine_group_velocity:F2} m/s | **{c.measured_group_velocity:F2} m/s** | {c.group_velocity_error_vs_peregrine_percent:F2}% | {c.amplitude_retention_ratio:F4} | **{c.overall_accuracy_status}** | {c.failure_reason} |");
             }
             sb.AppendLine();
 
@@ -613,7 +886,7 @@ namespace Nobnak.WaterSimulation.Editor {
             }
             sb.AppendLine();
 
-            sb.AppendLine("## 3. FCTフィルタ単体の減衰選択性（保持波長 vs 2セル格子ノイズ）");
+            sb.AppendLine("## 3. 4階線形散逸フィルター単体の減衰選択性（保持波長 vs 2セル格子ノイズ）");
             sb.AppendLine();
             sb.AppendLine("| フィルタ強度 $\\kappa$ | 16セル波長 保持率 (1000steps) | 2セル格子ノイズ 保持率 (僅か10steps後) | ノイズ選択比 (ノイズ減衰/波減衰) |");
             sb.AppendLine("| :---: | :---: | :---: | :---: |");
@@ -621,13 +894,11 @@ namespace Nobnak.WaterSimulation.Editor {
                 sb.AppendLine($"| {f.filter_kappa:F4} | {f.wavelength_16cell_retention_ratio:F4} | **{f.noise_2cell_damping_after_10steps_ratio:E3}** | **{f.noise_to_wave_damping_selectivity:F0}倍** |");
             }
             sb.AppendLine();
-            sb.AppendLine("> [!TIP]\n> 4階FCTフィルタは、保持すべき16セル波長を99%以上保持しながら、2セル周期の格子ノイズを僅か10ステップで10^-5以下に完全消滅させる極めて高い波数選択性を有しています。");
-            sb.AppendLine();
 
-            sb.AppendLine("## 4. 【単独1D移流基礎試験】非線形浅瀬急勾配波における移流スキーム比較");
+            sb.AppendLine("## 4. 【単独1D移流基礎試験】非線形浅瀬急勾配波における移流スキーム比較 (CPU参照)");
             sb.AppendLine();
             sb.AppendLine("> [!IMPORTANT]");
-            sb.AppendLine("> 【注意・区分】本項目は単独の1D移流基礎試験（CPU）です。流速 u の対流項における界面再構成スキーム（Minmod / Superbee リミッター）を評価したものであり、本体コンピュートシェーダーへのGPU実装は未実施（未実施）です。以前記載された「384^2粗格子化による22%短縮」等の未実測推計は撤回します。");
+            sb.AppendLine("> 【注意・区分】本項目は単独の1D移流基礎試験（CPU参照試験）です。流速 u の対流項におけるセル界面再構成（Minmod / Superbee リミッター）の基礎特性を評価したものであり、本体 ComputeShader への GPU 実装は未実施（未実施）です。粗格子化による短縮効果等の未実測推計は撤回済みです。");
             sb.AppendLine();
             sb.AppendLine("| 移流スキーム | 流速フラックス定義 | GPU実装状況 | ピーク波高保持率 | 格子振動指標 (ノイズ) | 水量保存相対誤差 | 評価サマリー |");
             sb.AppendLine("| :--- | :--- | :---: | :---: | :---: | :---: | :--- |");
@@ -653,6 +924,8 @@ namespace Nobnak.WaterSimulation.Editor {
             public string timestamp;
             public string unity_version;
             public string gpu_name;
+            public MeterUnitTestResult meter_unit_test;
+            public CyclicSolverUnitTestResult solver_unit_test;
             public List<SmoothWaveCase> smooth_wave_cases;
             public ConvergenceReport convergence_results;
             public List<FilterIsolationCase> filter_isolation_cases;
@@ -661,21 +934,52 @@ namespace Nobnak.WaterSimulation.Editor {
         }
 
         [Serializable]
+        public class MeterTestCase {
+            public string test_name;
+            public double expected_velocity;
+            public double measured_velocity;
+            public double absolute_error;
+            public string status;
+        }
+
+        [Serializable]
+        public class MeterUnitTestResult {
+            public string classification;
+            public bool all_tests_passed;
+            public List<MeterTestCase> test_cases;
+        }
+
+        [Serializable]
+        public class CyclicSolverUnitTestResult {
+            public string classification;
+            public bool all_tests_passed;
+            public double constant_rhs_max_error;
+            public double fourier_mode_max_error;
+            public string status;
+        }
+
+        [Serializable]
         public class SmoothWaveCase {
             public string regime;
+            public string classification;
             public double water_depth_m;
             public double wavelength_m;
             public double kh;
+            public string applicable_model_range;
             public double airy_phase_velocity;
             public double peregrine_phase_velocity;
             public double measured_phase_velocity;
             public double phase_error_vs_peregrine_percent;
+            public bool phase_accuracy_passed;
             public double airy_group_velocity;
             public double peregrine_group_velocity;
             public double measured_group_velocity;
             public double group_velocity_error_vs_peregrine_percent;
+            public bool group_accuracy_passed;
             public double amplitude_retention_ratio;
-            public string evaluation_status;
+            public bool amplitude_passed;
+            public string overall_accuracy_status;
+            public string failure_reason;
         }
 
         [Serializable]

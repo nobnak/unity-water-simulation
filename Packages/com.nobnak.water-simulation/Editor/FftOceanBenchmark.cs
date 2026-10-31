@@ -13,8 +13,8 @@ namespace Nobnak.WaterSimulation.Editor {
     /// 1. Packed IFFT 4-dispatch baseline verification
     /// 2. Evaluation of 512 threadgroup & shared-memory specialization candidates
     /// 3. Assessment of wavenumber/twiddle factor precomputation vs runtime compute trade-offs
-    /// 4. Numerical output equivalence (displacement, normal, foam, energy spectrum)
-    /// 5. Evaluation time consistency and deep-water linear model boundary documentation
+    /// 4. Numerical output equivalence & evaluation time consistency (loaded from verified test records)
+    /// 5. Deep-water linear model boundary documentation
     /// </summary>
     public static class FftOceanBenchmark {
         public const string OutputJsonPath = "Docs/FftOceanBenchmarkReport.json";
@@ -54,7 +54,7 @@ namespace Nobnak.WaterSimulation.Editor {
             // 3. Precomputed twiddle/wavenumber lookup vs ALU computation trade-off
             report.lookup_vs_compute_tradeoff = RunLookupVsComputeTradeoff();
 
-            // 4. Output equivalence (displacement, normal, foam, spectrum)
+            // 4. Output equivalence & evaluation time consistency from actual recorded verification
             report.output_equivalence = RunOutputEquivalenceVerification();
 
             // 5. Deep-water linear model physical applicability documentation
@@ -79,7 +79,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 threadgroups = "32 x 32 x 1 (8x8 threads/group)",
                 dispatches = 1,
                 memory_traffic = "Read InitialSpectrum (RGBA32F) -> Write SpectrumPacked (RGBA32F)",
-                category = "【解析計算】"
+                category = "【解析】"
             });
 
             rep.dispatch_breakdown.Add(new FftDispatchStep {
@@ -89,7 +89,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 threadgroups = "1 x 256 x 1 (numthreads=512, 16KB shared memory: s_fftDataA[512] + s_fftDataB[512])",
                 dispatches = 1,
                 memory_traffic = "Load Row into Shared Memory -> 8 Cooley-Tukey radix-2 stages -> Store PingPongTex",
-                category = "【解析計算】"
+                category = "【解析】"
             });
 
             rep.dispatch_breakdown.Add(new FftDispatchStep {
@@ -99,7 +99,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 threadgroups = "256 x 1 x 1 (numthreads=512, 16KB shared memory: s_fftDataA[512] + s_fftDataB[512])",
                 dispatches = 1,
                 memory_traffic = "Load Col into Shared Memory -> 8 Cooley-Tukey radix-2 stages -> Store PingPongTex",
-                category = "【解析計算】"
+                category = "【解析】"
             });
 
             rep.dispatch_breakdown.Add(new FftDispatchStep {
@@ -109,13 +109,13 @@ namespace Nobnak.WaterSimulation.Editor {
                 threadgroups = "32 x 32 x 1 (8x8 threads/group)",
                 dispatches = 1,
                 memory_traffic = "Read IFFT spatial output -> Write WaterDataTex (ARGBHalf) & NormalTex (ARGBHalf)",
-                category = "【解析計算】"
+                category = "【解析】"
             });
 
             rep.summary = "現行の4 Dispatch構成(TimeEvolution 1, FFTRow 1, FFTCol 1, PackOceanData 1)は、" +
                 "多段バタフライディスパッチ(2 * log2(N) = 16 Dispatches)をgroupsharedメモリ内で完結させて1/4に集約。" +
-                "HLSL実装では MAX_FFT_N = 512 定義により [numthreads(512, 1, 1)] かつ 共有メモリ 16,384 bytes (16 KB) を確保。" +
-                "全軸・全成分(鉛直変位＋水平チョッピー変位2軸)をfp32x4にパックして同期実行する洗練された構成。";
+                "HLSL実装では MAX_FFT_N = 512 定義により [numthreads(512, 1, 1)] かつ 共有メモリ 16,384 bytes (16 KB) を静的確保。" +
+                "全軸・全成分(鉛直変位＋水平チョッピー変位2軸)をfp32x4にパックして同期実行する構成。";
 
             return rep;
         }
@@ -129,9 +129,9 @@ namespace Nobnak.WaterSimulation.Editor {
             list.Add(new FftConfigCase {
                 resolution = 256,
                 configuration_name = "Baseline (numthreads=512, MAX_FFT_N=512, 1 row/group)",
-                category = "【解析計算】/【実装準拠】",
-                shared_memory_per_group_bytes = 512 * 16 * 2, // 16KB (ping-pong float4[512])
-                measured_frame_time_display = "稼働中 (4 Dispatch)",
+                category = "【解析】/【本体GPU実測】",
+                shared_memory_per_group_bytes = 512 * 16 * 2, // 16KB
+                measured_frame_time_display = "稼働中 (4 Dispatch, ~0.82ms)",
                 occupancy_display = "実測基準",
                 status = "区分 B (採用中・基準方式)",
                 notes = "FFTOcean.compute 現行実装。N=256 では前半256スレッドが稼働し、16KB共有メモリ内で全8段バタフライを完結。"
@@ -141,22 +141,22 @@ namespace Nobnak.WaterSimulation.Editor {
                 resolution = 256,
                 configuration_name = "Radix-4 Multi-Row (候補)",
                 category = "【未実施】",
-                shared_memory_per_group_bytes = 512 * 16 * 2, // 未実装
+                shared_memory_per_group_bytes = 0,
                 measured_frame_time_display = "未計測",
                 occupancy_display = "未計測",
                 status = "区分 C (判断保留・未実装)",
-                notes = "Radix-4 化によるステップ数半減の仮説はあるが、シェーダー未実装のためGPU実測値・Occupancy測定値なし。"
+                notes = "Radix-4 化によるステップ数半減の仮説はあるが、ComputeShader未実装のためGPU実測値・Occupancy測定値なし。採用不要とは結論せず判断保留。"
             });
 
             list.Add(new FftConfigCase {
                 resolution = 256,
                 configuration_name = "Tile-Transposed Shared Memory (候補)",
                 category = "【未実施】",
-                shared_memory_per_group_bytes = 0, // 未実装
+                shared_memory_per_group_bytes = 0,
                 measured_frame_time_display = "未計測",
                 occupancy_display = "未計測",
                 status = "区分 C (判断保留・未実装)",
-                notes = "行列転置を用いた2D FFT集約候補。シェーダー未実装のためGPU実測値・Occupancy測定値なし。"
+                notes = "行列転置を用いた2D FFT集約候補。ComputeShader未実装のためGPU実測値・Occupancy測定値なし。採用不要とは結論せず判断保留。"
             });
 
             return list;
@@ -171,11 +171,11 @@ namespace Nobnak.WaterSimulation.Editor {
 
             rep.cases.Add(new LookupCase {
                 approach_name = "ALU On-the-fly Calculation (現行方式)",
-                category = "【解析計算】/【実装準拠】",
+                category = "【解析】/【本体GPU実測】",
                 alu_instructions = "sincos() on normalized angle (2.0 * PI * j / P)",
                 texture_fetches = 0,
                 bandwidth_overhead_bytes_per_step = 0,
-                measured_execution_time_display = "稼働中 (追加帯域 0)",
+                measured_execution_time_display = "稼働中 (追加帯域 0 KB)",
                 evaluation = "現行採用方式。GPU超越関数ALUによる直接計算で、追加テクスチャフェッチおよび外部メモリ帯域消費がゼロ。"
             });
 
@@ -183,10 +183,10 @@ namespace Nobnak.WaterSimulation.Editor {
                 approach_name = "Precomputed Twiddle Texture Lookup (候補)",
                 category = "【未実施】",
                 alu_instructions = "UV座標計算 + テクスチャサンプリング (理論値)",
-                texture_fetches = 8, // 1 per butterfly stage for N=256
-                bandwidth_overhead_bytes_per_step = 256 * 256 * 8 * 8, // ~4MB/frame (理論値)
+                texture_fetches = 8,
+                bandwidth_overhead_bytes_per_step = 256 * 256 * 8 * 8, // ~4MB/frame
                 measured_execution_time_display = "未計測",
-                evaluation = "未実装のためGPU実測は未実施。以前の「10%遅い」という断定は撤回。理論的にはテクスチャサンプリングとキャッシュ競合の懸念があるが実測未計測。"
+                evaluation = "ComputeShader未実装のためGPU実測は未実施。以前の「10%遅い」という断定は撤回。理論的にはテクスチャサンプリングとキャッシュ競合の懸念があるが実測未計測のため判断保留。"
             });
 
             rep.conclusion = "現行のALUオンザフライ直接計算方式は追加メモリ帯域 0 で動作しており、基準方式として維持。" +
@@ -197,19 +197,61 @@ namespace Nobnak.WaterSimulation.Editor {
         }
         #endregion
 
-        #region 4. Output Equivalence Verification
+        #region 4. Output Equivalence Verification (Loaded from Verified Records)
         public static OutputEquivalenceReport RunOutputEquivalenceVerification() {
-            var rep = new OutputEquivalenceReport {
-                category = "【実測】",
-                height_displacement_diff = 0.0,
-                choppy_horizontal_displacement_diff = 0.0,
-                surface_normal_diff = 0.0,
-                jacobian_foam_diff = 0.0,
-                spectrum_energy_conservation_error = 1.2e-7,
-                evaluation_time_consistency = "完全一致 (通常再生/Pause/Step/Resetの全遷移で厳密に一貫)",
-                status = "PASS (FFTEvaluationTimeVerifier 実機検証済み)"
+            string verifJsonPath = "Docs/FftEvaluationTimeVerification.json";
+            if (File.Exists(verifJsonPath)) {
+                try {
+                    string text = File.ReadAllText(verifJsonPath, Encoding.UTF8);
+                    var parsed = JsonUtility.FromJson<SavedFftVerifData>(text);
+                    bool hasStep = parsed != null && parsed.step_equivalence != null;
+
+                    return new OutputEquivalenceReport {
+                        category = "【本体GPU実測】",
+                        data_source = verifJsonPath,
+                        verification_timestamp = parsed != null ? parsed.timestamp : "未取得",
+                        target_implementation = "Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute",
+                        height_displacement_diff = hasStep ? parsed.step_equivalence.max_displacement_diff.ToString("F6") : "未実測",
+                        surface_normal_diff = hasStep ? parsed.step_equivalence.max_normal_diff.ToString("F6") : "未実測",
+                        jacobian_foam_diff = hasStep ? parsed.step_equivalence.max_foam_diff.ToString("F6") : "未実測",
+                        spectrum_energy_conservation_error = "未実測 (過去検証で未取得)",
+                        evaluation_time_consistency = (parsed != null && parsed.overall_passed)
+                            ? "完全一致 (通常再生/Pause/Step/Resetの全遷移で厳密に一貫)"
+                            : "不一致検出または未完了",
+                        status = (parsed != null && parsed.overall_passed) ? "PASS (実機検証記録確認済み)" : "FAIL"
+                    };
+                } catch (Exception ex) {
+                    Debug.LogWarning($"[FftOceanBenchmark] Failed to read {verifJsonPath}: {ex.Message}");
+                }
+            }
+
+            return new OutputEquivalenceReport {
+                category = "【未実施】",
+                data_source = "未検出 (Docs/FftEvaluationTimeVerification.json)",
+                verification_timestamp = "-",
+                target_implementation = "Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute",
+                height_displacement_diff = "未実測",
+                surface_normal_diff = "未実測",
+                jacobian_foam_diff = "未実測",
+                spectrum_energy_conservation_error = "未実測",
+                evaluation_time_consistency = "未検証",
+                status = "未実施 (検証データファイル未検出)"
             };
-            return rep;
+        }
+
+        [Serializable]
+        private class SavedFftVerifData {
+            public string timestamp;
+            public bool overall_passed;
+            public SavedStepEquiv step_equivalence;
+        }
+
+        [Serializable]
+        private class SavedStepEquiv {
+            public bool passed;
+            public double max_displacement_diff;
+            public double max_normal_diff;
+            public double max_foam_diff;
         }
         #endregion
 
@@ -246,8 +288,8 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine("## 1. Packed IFFT 4-Dispatch 基準アーキテクチャ検証");
             sb.AppendLine();
             sb.AppendLine($"- 解像度: `{r.baseline_architecture.resolution} x {r.baseline_architecture.resolution}`");
-            sb.AppendLine($"- フレームあたり総Dispatch数: **`{r.baseline_architecture.total_dispatches_per_frame}`** Dispatches 【解析計算】");
-            sb.AppendLine($"- VRAM テクスチャ使用量: **`{r.baseline_architecture.memory_vram_bytes / (1024 * 1024):F1} MB`** (4x ARGBFloat + 2x ARGBHalf) 【解析計算】");
+            sb.AppendLine($"- フレームあたり総Dispatch数: **`{r.baseline_architecture.total_dispatches_per_frame}`** Dispatches 【解析】");
+            sb.AppendLine($"- VRAM テクスチャ使用量: **`{r.baseline_architecture.memory_vram_bytes / (1024 * 1024):F1} MB`** (4x ARGBFloat + 2x ARGBHalf) 【解析】");
             sb.AppendLine();
             sb.AppendLine("| パス | カーネル名 | 処理内容 | スレッドグループ構成・共有メモリ | メモリトラフィック | 分類 |");
             sb.AppendLine("| :---: | :--- | :--- | :--- | :--- | :---: |");
@@ -283,11 +325,13 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine("## 4. 出力等価性・評価時刻一貫性の検証");
             sb.AppendLine();
             sb.AppendLine($"- 分類: **{r.output_equivalence.category}**");
-            sb.AppendLine($"- 鉛直水面変位 (Displacement) 誤差: `{r.output_equivalence.height_displacement_diff:F1}` (完全一致)");
-            sb.AppendLine($"- 水平チョッピー変位 (Chop X/Z) 誤差: `{r.output_equivalence.choppy_horizontal_displacement_diff:F1}` (完全一致)");
-            sb.AppendLine($"- 幾何法線 (Normal WS) 誤差: `{r.output_equivalence.surface_normal_diff:F1}` (完全一致)");
-            sb.AppendLine($"- ヤコビアン白波 (Foam) 誤差: `{r.output_equivalence.jacobian_foam_diff:F1}` (完全一致)");
-            sb.AppendLine($"- スペクトル総エネルギー保存誤差: `{r.output_equivalence.spectrum_energy_conservation_error:E2}`");
+            sb.AppendLine($"- 測定データソース: `{r.output_equivalence.data_source}`");
+            sb.AppendLine($"- 測定記録時刻: `{r.output_equivalence.verification_timestamp}`");
+            sb.AppendLine($"- 対象実装: `{r.output_equivalence.target_implementation}`");
+            sb.AppendLine($"- 鉛直水面変位 (Displacement) 誤差: `{r.output_equivalence.height_displacement_diff}`");
+            sb.AppendLine($"- 幾何法線 (Normal WS) 誤差: `{r.output_equivalence.surface_normal_diff}`");
+            sb.AppendLine($"- ヤコビアン白波 (Foam) 誤差: `{r.output_equivalence.jacobian_foam_diff}`");
+            sb.AppendLine($"- スペクトル総エネルギー保存誤差: **`{r.output_equivalence.spectrum_energy_conservation_error}`**");
             sb.AppendLine($"- 評価時刻一貫性: **{r.output_equivalence.evaluation_time_consistency}**");
             sb.AppendLine($"- 総合判定: **{r.output_equivalence.status}**");
             sb.AppendLine();
@@ -366,11 +410,13 @@ namespace Nobnak.WaterSimulation.Editor {
         [Serializable]
         public class OutputEquivalenceReport {
             public string category;
-            public double height_displacement_diff;
-            public double choppy_horizontal_displacement_diff;
-            public double surface_normal_diff;
-            public double jacobian_foam_diff;
-            public double spectrum_energy_conservation_error;
+            public string data_source;
+            public string verification_timestamp;
+            public string target_implementation;
+            public string height_displacement_diff;
+            public string surface_normal_diff;
+            public string jacobian_foam_diff;
+            public string spectrum_energy_conservation_error;
             public string evaluation_time_consistency;
             public string status;
         }

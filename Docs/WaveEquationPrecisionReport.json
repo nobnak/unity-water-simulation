@@ -1,5 +1,5 @@
 ﻿{
-    "timestamp": "2026-10-31 13:17:37",
+    "timestamp": "2026-10-31 14:49:40",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -86,340 +86,228 @@
     },
     "aspect_ratio_angle_tests": [
         {
-            "aspect_ratio": 0.5,
-            "angle_deg": 0.0,
-            "exact_k": 1.1107207536697388,
-            "numerical_effective_k": 1.0965018272399903,
-            "phase_velocity_ratio": 0.9871984720230103,
-            "relative_phase_error_percent": 1.2801527976989747
-        },
-        {
-            "aspect_ratio": 0.5,
-            "angle_deg": 15.0,
-            "exact_k": 1.1107207536697388,
-            "numerical_effective_k": 1.097227692604065,
-            "phase_velocity_ratio": 0.9878519773483276,
-            "relative_phase_error_percent": 1.2148022651672364
-        },
-        {
-            "aspect_ratio": 0.5,
-            "angle_deg": 30.0,
-            "exact_k": 1.1107207536697388,
-            "numerical_effective_k": 1.0991944074630738,
-            "phase_velocity_ratio": 0.9896226525306702,
-            "relative_phase_error_percent": 1.0377347469329835
-        },
-        {
-            "aspect_ratio": 0.5,
-            "angle_deg": 45.0,
-            "exact_k": 1.1107207536697388,
-            "numerical_effective_k": 1.1018551588058472,
-            "phase_velocity_ratio": 0.9920181632041931,
-            "relative_phase_error_percent": 0.7981836795806885
-        },
-        {
-            "aspect_ratio": 0.5,
-            "angle_deg": 60.0,
-            "exact_k": 1.1107208728790284,
-            "numerical_effective_k": 1.1045024394989014,
-            "phase_velocity_ratio": 0.9944014549255371,
-            "relative_phase_error_percent": 0.5598545074462891
-        },
-        {
-            "aspect_ratio": 0.5,
-            "angle_deg": 75.0,
-            "exact_k": 1.1107207536697388,
-            "numerical_effective_k": 1.1064430475234986,
-            "phase_velocity_ratio": 0.9961487054824829,
-            "relative_phase_error_percent": 0.385129451751709
-        },
-        {
-            "aspect_ratio": 0.5,
-            "angle_deg": 90.0,
-            "exact_k": 1.1107207536697388,
-            "numerical_effective_k": 1.1071557998657227,
-            "phase_velocity_ratio": 0.9967904090881348,
-            "relative_phase_error_percent": 0.32095909118652346
-        },
-        {
-            "aspect_ratio": 0.75,
-            "angle_deg": 0.0,
-            "exact_k": 0.9068997502326965,
-            "numerical_effective_k": 0.899150013923645,
-            "phase_velocity_ratio": 0.9914547204971314,
-            "relative_phase_error_percent": 0.8545279502868652
-        },
-        {
-            "aspect_ratio": 0.75,
-            "angle_deg": 15.0,
-            "exact_k": 0.9068996906280518,
-            "numerical_effective_k": 0.8993822336196899,
-            "phase_velocity_ratio": 0.9917108416557312,
-            "relative_phase_error_percent": 0.8289158344268799
-        },
-        {
-            "aspect_ratio": 0.75,
-            "angle_deg": 30.0,
-            "exact_k": 0.9068996906280518,
-            "numerical_effective_k": 0.9000110626220703,
-            "phase_velocity_ratio": 0.9924042224884033,
-            "relative_phase_error_percent": 0.759577751159668
-        },
-        {
-            "aspect_ratio": 0.75,
-            "angle_deg": 45.0,
-            "exact_k": 0.9068996906280518,
-            "numerical_effective_k": 0.9008588194847107,
-            "phase_velocity_ratio": 0.9933390021324158,
-            "relative_phase_error_percent": 0.6660997867584229
-        },
-        {
-            "aspect_ratio": 0.75,
-            "angle_deg": 60.0,
-            "exact_k": 0.9068997502326965,
-            "numerical_effective_k": 0.9016984701156616,
-            "phase_velocity_ratio": 0.9942647814750671,
-            "relative_phase_error_percent": 0.5735218524932861
-        },
-        {
-            "aspect_ratio": 0.75,
-            "angle_deg": 75.0,
-            "exact_k": 0.9068996906280518,
-            "numerical_effective_k": 0.9023113250732422,
-            "phase_velocity_ratio": 0.9949405789375305,
-            "relative_phase_error_percent": 0.5059421062469482
-        },
-        {
-            "aspect_ratio": 0.75,
-            "angle_deg": 90.0,
-            "exact_k": 0.9068997502326965,
-            "numerical_effective_k": 0.9025353789329529,
-            "phase_velocity_ratio": 0.9951875805854797,
-            "relative_phase_error_percent": 0.48124194145202639
-        },
-        {
             "aspect_ratio": 1.0,
             "angle_deg": 0.0,
-            "exact_k": 0.7853981852531433,
-            "numerical_effective_k": 0.7803614139556885,
-            "phase_velocity_ratio": 0.9935869574546814,
-            "relative_phase_error_percent": 0.6413042545318604
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5307337045669556,
+            "phase_velocity_ratio": 0.9744952917098999,
+            "relative_phase_error_percent": 2.5504708290100099
         },
         {
             "aspect_ratio": 1.0,
             "angle_deg": 15.0,
-            "exact_k": 0.7853981256484985,
-            "numerical_effective_k": 0.7803643941879273,
-            "phase_velocity_ratio": 0.9935908317565918,
-            "relative_phase_error_percent": 0.6409168243408203
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5308369398117066,
+            "phase_velocity_ratio": 0.9745610356330872,
+            "relative_phase_error_percent": 2.543896436691284
         },
         {
             "aspect_ratio": 1.0,
             "angle_deg": 30.0,
-            "exact_k": 0.7853981852531433,
-            "numerical_effective_k": 0.7803710103034973,
-            "phase_velocity_ratio": 0.9935991764068604,
-            "relative_phase_error_percent": 0.6400823593139648
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5310417413711548,
+            "phase_velocity_ratio": 0.9746913909912109,
+            "relative_phase_error_percent": 2.5308609008789064
         },
         {
             "aspect_ratio": 1.0,
             "angle_deg": 45.0,
-            "exact_k": 0.7853981852531433,
-            "numerical_effective_k": 0.78037428855896,
-            "phase_velocity_ratio": 0.9936033487319946,
-            "relative_phase_error_percent": 0.6396651268005371
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5311435461044312,
+            "phase_velocity_ratio": 0.9747562408447266,
+            "relative_phase_error_percent": 2.5243759155273439
         },
         {
             "aspect_ratio": 1.0,
             "angle_deg": 60.0,
-            "exact_k": 0.7853982448577881,
-            "numerical_effective_k": 0.7803707718849182,
-            "phase_velocity_ratio": 0.9935988187789917,
-            "relative_phase_error_percent": 0.6401181221008301
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5310418605804444,
+            "phase_velocity_ratio": 0.9746915102005005,
+            "relative_phase_error_percent": 2.530848979949951
         },
         {
             "aspect_ratio": 1.0,
             "angle_deg": 75.0,
-            "exact_k": 0.7853981256484985,
-            "numerical_effective_k": 0.7803643941879273,
-            "phase_velocity_ratio": 0.9935908317565918,
-            "relative_phase_error_percent": 0.6409168243408203
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.530836820602417,
+            "phase_velocity_ratio": 0.9745609760284424,
+            "relative_phase_error_percent": 2.5439023971557619
         },
         {
             "aspect_ratio": 1.0,
             "angle_deg": 90.0,
-            "exact_k": 0.7853981852531433,
-            "numerical_effective_k": 0.7803613543510437,
-            "phase_velocity_ratio": 0.9935868978500366,
-            "relative_phase_error_percent": 0.6413102149963379
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5307337045669556,
+            "phase_velocity_ratio": 0.9744952917098999,
+            "relative_phase_error_percent": 2.5504708290100099
         },
         {
             "aspect_ratio": 1.25,
             "angle_deg": 0.0,
-            "exact_k": 0.7024815082550049,
-            "numerical_effective_k": 0.6988759636878967,
-            "phase_velocity_ratio": 0.9948674440383911,
-            "relative_phase_error_percent": 0.5132555961608887
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5307337045669556,
+            "phase_velocity_ratio": 0.9744952917098999,
+            "relative_phase_error_percent": 2.5504708290100099
         },
         {
             "aspect_ratio": 1.25,
             "angle_deg": 15.0,
-            "exact_k": 0.7024814486503601,
-            "numerical_effective_k": 0.6987425088882446,
-            "phase_velocity_ratio": 0.9946775436401367,
-            "relative_phase_error_percent": 0.5322456359863281
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5293611288070679,
+            "phase_velocity_ratio": 0.9736214876174927,
+            "relative_phase_error_percent": 2.6378512382507326
         },
         {
             "aspect_ratio": 1.25,
             "angle_deg": 30.0,
-            "exact_k": 0.7024814486503601,
-            "numerical_effective_k": 0.6983776688575745,
-            "phase_velocity_ratio": 0.994158148765564,
-            "relative_phase_error_percent": 0.5841851234436035
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5255824327468873,
+            "phase_velocity_ratio": 0.9712159037590027,
+            "relative_phase_error_percent": 2.8784096240997316
         },
         {
             "aspect_ratio": 1.25,
             "angle_deg": 45.0,
-            "exact_k": 0.7024814486503601,
-            "numerical_effective_k": 0.6978763937950134,
-            "phase_velocity_ratio": 0.993444561958313,
-            "relative_phase_error_percent": 0.6555438041687012
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5202643871307374,
+            "phase_velocity_ratio": 0.9678303599357605,
+            "relative_phase_error_percent": 3.21696400642395
         },
         {
             "aspect_ratio": 1.25,
             "angle_deg": 60.0,
-            "exact_k": 0.7024815082550049,
-            "numerical_effective_k": 0.6973690390586853,
-            "phase_velocity_ratio": 0.9927222728729248,
-            "relative_phase_error_percent": 0.7277727127075195
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.514617919921875,
+            "phase_velocity_ratio": 0.9642356634140015,
+            "relative_phase_error_percent": 3.5764336585998537
         },
         {
             "aspect_ratio": 1.25,
             "angle_deg": 75.0,
-            "exact_k": 0.7024815082550049,
-            "numerical_effective_k": 0.6969922780990601,
-            "phase_velocity_ratio": 0.9921859502792358,
-            "relative_phase_error_percent": 0.781404972076416
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.510176420211792,
+            "phase_velocity_ratio": 0.9614081382751465,
+            "relative_phase_error_percent": 3.8591861724853517
         },
         {
             "aspect_ratio": 1.25,
             "angle_deg": 90.0,
-            "exact_k": 0.7024815082550049,
-            "numerical_effective_k": 0.6968528628349304,
-            "phase_velocity_ratio": 0.9919874668121338,
-            "relative_phase_error_percent": 0.8012533187866211
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.508469581604004,
+            "phase_velocity_ratio": 0.9603215456008911,
+            "relative_phase_error_percent": 3.9678454399108888
         },
         {
             "aspect_ratio": 1.5,
             "angle_deg": 0.0,
-            "exact_k": 0.6412749290466309,
-            "numerical_effective_k": 0.638531506061554,
-            "phase_velocity_ratio": 0.9957219362258911,
-            "relative_phase_error_percent": 0.42780637741088869
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5307337045669556,
+            "phase_velocity_ratio": 0.9744952917098999,
+            "relative_phase_error_percent": 2.5504708290100099
         },
         {
             "aspect_ratio": 1.5,
             "angle_deg": 15.0,
-            "exact_k": 0.6412748694419861,
-            "numerical_effective_k": 0.6383038759231567,
-            "phase_velocity_ratio": 0.9953670501708984,
-            "relative_phase_error_percent": 0.46329498291015627
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5275628566741944,
+            "phase_velocity_ratio": 0.9724767208099365,
+            "relative_phase_error_percent": 2.7523279190063478
         },
         {
             "aspect_ratio": 1.5,
             "angle_deg": 30.0,
-            "exact_k": 0.6412749290466309,
-            "numerical_effective_k": 0.6376828551292419,
-            "phase_velocity_ratio": 0.9943985342979431,
-            "relative_phase_error_percent": 0.5601465702056885
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5189753770828248,
+            "phase_velocity_ratio": 0.9670097231864929,
+            "relative_phase_error_percent": 3.299027681350708
         },
         {
             "aspect_ratio": 1.5,
             "angle_deg": 45.0,
-            "exact_k": 0.6412748694419861,
-            "numerical_effective_k": 0.6368337273597717,
-            "phase_velocity_ratio": 0.9930745363235474,
-            "relative_phase_error_percent": 0.6925463676452637
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5071648359298707,
+            "phase_velocity_ratio": 0.9594908952713013,
+            "relative_phase_error_percent": 4.050910472869873
         },
         {
             "aspect_ratio": 1.5,
             "angle_deg": 60.0,
-            "exact_k": 0.6412749290466309,
-            "numerical_effective_k": 0.6359783411026001,
-            "phase_velocity_ratio": 0.9917405247688294,
-            "relative_phase_error_percent": 0.8259475231170654
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.4948406219482422,
+            "phase_velocity_ratio": 0.9516450762748718,
+            "relative_phase_error_percent": 4.835492134094238
         },
         {
             "aspect_ratio": 1.5,
             "angle_deg": 75.0,
-            "exact_k": 0.6412749290466309,
-            "numerical_effective_k": 0.6353455781936646,
-            "phase_velocity_ratio": 0.9907538294792175,
-            "relative_phase_error_percent": 0.9246170520782471
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.4852155447006226,
+            "phase_velocity_ratio": 0.9455175399780273,
+            "relative_phase_error_percent": 5.448246002197266
         },
         {
             "aspect_ratio": 1.5,
             "angle_deg": 90.0,
-            "exact_k": 0.6412749290466309,
-            "numerical_effective_k": 0.635111927986145,
-            "phase_velocity_ratio": 0.9903894662857056,
-            "relative_phase_error_percent": 0.9610533714294434
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.481520652770996,
+            "phase_velocity_ratio": 0.9431653022766113,
+            "relative_phase_error_percent": 5.683469772338867
         },
         {
             "aspect_ratio": 2.0,
             "angle_deg": 0.0,
-            "exact_k": 0.5553603768348694,
-            "numerical_effective_k": 0.5535778999328613,
-            "phase_velocity_ratio": 0.9967904090881348,
-            "relative_phase_error_percent": 0.32095909118652346
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5307337045669556,
+            "phase_velocity_ratio": 0.9744952917098999,
+            "relative_phase_error_percent": 2.5504708290100099
         },
         {
             "aspect_ratio": 2.0,
             "angle_deg": 15.0,
-            "exact_k": 0.5553603768348694,
-            "numerical_effective_k": 0.5532215237617493,
-            "phase_velocity_ratio": 0.9961487054824829,
-            "relative_phase_error_percent": 0.385129451751709
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5230129957199097,
+            "phase_velocity_ratio": 0.9695801734924316,
+            "relative_phase_error_percent": 3.041982650756836
         },
         {
             "aspect_ratio": 2.0,
             "angle_deg": 30.0,
-            "exact_k": 0.5553603768348694,
-            "numerical_effective_k": 0.5522512197494507,
-            "phase_velocity_ratio": 0.9944015741348267,
-            "relative_phase_error_percent": 0.559842586517334
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.5024815797805787,
+            "phase_velocity_ratio": 0.9565094709396362,
+            "relative_phase_error_percent": 4.349052906036377
         },
         {
             "aspect_ratio": 2.0,
             "angle_deg": 45.0,
-            "exact_k": 0.5553603768348694,
-            "numerical_effective_k": 0.5509275794029236,
-            "phase_velocity_ratio": 0.9920181632041931,
-            "relative_phase_error_percent": 0.7981836795806885
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.4747949838638306,
+            "phase_velocity_ratio": 0.9388836026191711,
+            "relative_phase_error_percent": 6.111639976501465
         },
         {
             "aspect_ratio": 2.0,
             "angle_deg": 60.0,
-            "exact_k": 0.5553604364395142,
-            "numerical_effective_k": 0.5495972037315369,
-            "phase_velocity_ratio": 0.9896225333213806,
-            "relative_phase_error_percent": 1.0377466678619385
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.445961594581604,
+            "phase_velocity_ratio": 0.9205276966094971,
+            "relative_phase_error_percent": 7.947230339050293
         },
         {
             "aspect_ratio": 2.0,
             "angle_deg": 75.0,
-            "exact_k": 0.5553603768348694,
-            "numerical_effective_k": 0.5486138463020325,
-            "phase_velocity_ratio": 0.9878519773483276,
-            "relative_phase_error_percent": 1.2148022651672364
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.4231092929840088,
+            "phase_velocity_ratio": 0.9059795141220093,
+            "relative_phase_error_percent": 9.402048110961914
         },
         {
             "aspect_ratio": 2.0,
             "angle_deg": 90.0,
-            "exact_k": 0.5553603768348694,
-            "numerical_effective_k": 0.5482509136199951,
-            "phase_velocity_ratio": 0.9871984720230103,
-            "relative_phase_error_percent": 1.2801527976989747
+            "exact_k": 1.5707963705062867,
+            "numerical_effective_k": 1.4142135381698609,
+            "phase_velocity_ratio": 0.9003162980079651,
+            "relative_phase_error_percent": 9.96837043762207
         }
     ],
     "boundary_tests": {
@@ -429,56 +317,58 @@
         "neumann_valid": true
     },
     "spatial_convergence_test": {
+        "general_order_description": "2次精度 O(h^2)（一般的な滑らかな関数に対する空間収束次数）",
+        "fourth_order_conditions": "4次精度 O(h^4) が成立する条件: (1) 調和関数 (∇^2 u = 0 ⇒ ∇^4 u = 0)、または (2) 正方格子 (dx = dz = h) で右辺ソース項に Mehrstellen 補正 (I + (h^2/12)∇^2) f を適用して O(h^2) 主誤差項を相殺する場合に限られる。水面波動方程式の一般的な空間離散化としては2次精度演算子となる。",
         "isotropic_cases": [
-            {
-                "grid_spacing": 0.800000011920929,
-                "aspect_ratio": 1.0,
-                "max_error": 0.074231,
-                "observed_order": 0.0
-            },
             {
                 "grid_spacing": 0.4000000059604645,
                 "aspect_ratio": 1.0,
-                "max_error": 0.020095,
-                "observed_order": 1.89
+                "max_error": 0.048789,
+                "observed_order": 0.0
             },
             {
                 "grid_spacing": 0.20000000298023225,
                 "aspect_ratio": 1.0,
-                "max_error": 0.003581,
-                "observed_order": 2.49
+                "max_error": 0.012339,
+                "observed_order": 1.98
             },
             {
                 "grid_spacing": 0.10000000149011612,
                 "aspect_ratio": 1.0,
-                "max_error": 0.000485,
-                "observed_order": 2.88
+                "max_error": 0.003097,
+                "observed_order": 1.99
+            },
+            {
+                "grid_spacing": 0.05000000074505806,
+                "aspect_ratio": 1.0,
+                "max_error": 0.000873,
+                "observed_order": 1.83
             }
         ],
         "anisotropic_cases": [
             {
-                "grid_spacing": 0.800000011920929,
-                "aspect_ratio": 1.25,
-                "max_error": 0.094033,
-                "observed_order": 0.0
-            },
-            {
                 "grid_spacing": 0.4000000059604645,
                 "aspect_ratio": 1.25,
-                "max_error": 0.025672,
-                "observed_order": 1.87
+                "max_error": 0.061035,
+                "observed_order": 0.0
             },
             {
                 "grid_spacing": 0.20000000298023225,
                 "aspect_ratio": 1.25,
-                "max_error": 0.004582,
-                "observed_order": 2.49
+                "max_error": 0.015771,
+                "observed_order": 1.95
             },
             {
                 "grid_spacing": 0.10000000149011612,
                 "aspect_ratio": 1.25,
-                "max_error": 0.000619,
-                "observed_order": 2.89
+                "max_error": 0.003957,
+                "observed_order": 1.99
+            },
+            {
+                "grid_spacing": 0.05000000074505806,
+                "aspect_ratio": 1.25,
+                "max_error": 0.001061,
+                "observed_order": 1.9
             }
         ]
     },
@@ -488,56 +378,60 @@
         "status": "PASS"
     },
     "time_integration_comparison": {
-        "classification": "基礎数理検証 (CPU単一振動子) / GPU実装は未実施",
+        "classification": "【CPU参照試験】(単一調和振動子による基礎数理検証) / GPU実装は【未実施】",
         "schemes": [
             {
                 "scheme_name": "Symplectic Euler (Kick-Drift) [現行方式]",
                 "dt_cases": [
                     {
                         "dt": 0.019999999552965165,
-                        "total_steps": 200,
-                        "cpu_time_ms": 0.008,
-                        "eta_error": 0.071927,
-                        "vel_error": 3.938146,
+                        "total_steps": 62,
+                        "cpu_time_ms": 0.006,
+                        "eta_error": 0.159472,
+                        "vel_error": 1.389544,
+                        "normalized_state_error": 0.182364,
                         "observed_convergence_order": 0.0,
-                        "phase_error_rad": -0.274916,
-                        "amplitude_ratio": 0.9614,
+                        "phase_error_rad": 0.159902,
+                        "amplitude_ratio": 1.0762,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.009999999776482582,
-                        "total_steps": 400,
-                        "cpu_time_ms": 0.008,
-                        "eta_error": 0.006874,
-                        "vel_error": 0.970297,
-                        "observed_convergence_order": 3.39,
-                        "phase_error_rad": -0.064667,
-                        "amplitude_ratio": 0.995,
+                        "total_steps": 125,
+                        "cpu_time_ms": 0.001,
+                        "eta_error": 0.062002,
+                        "vel_error": 0.652758,
+                        "normalized_state_error": 0.07464,
+                        "observed_convergence_order": 1.29,
+                        "phase_error_rad": 0.059458,
+                        "amplitude_ratio": 1.0434,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.004999999888241291,
-                        "total_steps": 800,
-                        "cpu_time_ms": 0.016,
-                        "eta_error": 0.000725,
-                        "vel_error": 0.234423,
-                        "observed_convergence_order": 3.25,
-                        "phase_error_rad": -0.015544,
-                        "amplitude_ratio": 0.9994,
+                        "total_steps": 250,
+                        "cpu_time_ms": 0.002,
+                        "eta_error": 0.025187,
+                        "vel_error": 0.316109,
+                        "normalized_state_error": 0.032239,
+                        "observed_convergence_order": 1.21,
+                        "phase_error_rad": 0.024685,
+                        "amplitude_ratio": 1.0204,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.0024999999441206457,
-                        "total_steps": 1600,
-                        "cpu_time_ms": 0.029,
-                        "eta_error": 0.000081,
-                        "vel_error": 0.051304,
-                        "observed_convergence_order": 3.17,
-                        "phase_error_rad": -0.0034,
-                        "amplitude_ratio": 0.9999,
+                        "total_steps": 500,
+                        "cpu_time_ms": 0.005,
+                        "eta_error": 0.01119,
+                        "vel_error": 0.15593,
+                        "normalized_state_error": 0.014958,
+                        "observed_convergence_order": 1.11,
+                        "phase_error_rad": 0.011079,
+                        "amplitude_ratio": 1.01,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     }
@@ -548,49 +442,53 @@
                 "dt_cases": [
                     {
                         "dt": 0.019999999552965165,
-                        "total_steps": 200,
-                        "cpu_time_ms": 0.007,
-                        "eta_error": 0.032459,
-                        "vel_error": 3.840746,
+                        "total_steps": 62,
+                        "cpu_time_ms": 0.003,
+                        "eta_error": 0.086219,
+                        "vel_error": 0.058154,
+                        "normalized_state_error": 0.086299,
                         "observed_convergence_order": 0.0,
-                        "phase_error_rad": -0.257517,
-                        "amplitude_ratio": 0.9993,
+                        "phase_error_rad": 0.086373,
+                        "amplitude_ratio": 0.9939,
                         "dispatches_per_step": 2,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.009999999776482582,
-                        "total_steps": 400,
-                        "cpu_time_ms": 0.011,
-                        "eta_error": 0.001974,
-                        "vel_error": 0.964265,
-                        "observed_convergence_order": 4.04,
-                        "phase_error_rad": -0.063935,
-                        "amplitude_ratio": 1.0,
+                        "total_steps": 125,
+                        "cpu_time_ms": 0.003,
+                        "eta_error": 0.021821,
+                        "vel_error": 0.027961,
+                        "normalized_state_error": 0.021894,
+                        "observed_convergence_order": 1.98,
+                        "phase_error_rad": 0.021857,
+                        "amplitude_ratio": 0.9985,
                         "dispatches_per_step": 2,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.004999999888241291,
-                        "total_steps": 800,
-                        "cpu_time_ms": 0.022,
-                        "eta_error": 0.000117,
-                        "vel_error": 0.234046,
-                        "observed_convergence_order": 4.08,
-                        "phase_error_rad": -0.015508,
-                        "amplitude_ratio": 1.0,
+                        "total_steps": 250,
+                        "cpu_time_ms": 0.005,
+                        "eta_error": 0.005437,
+                        "vel_error": 0.00628,
+                        "normalized_state_error": 0.005452,
+                        "observed_convergence_order": 2.01,
+                        "phase_error_rad": 0.00544,
+                        "amplitude_ratio": 0.9996,
                         "dispatches_per_step": 2,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.0024999999441206457,
-                        "total_steps": 1600,
-                        "cpu_time_ms": 0.044,
-                        "eta_error": 0.000006,
-                        "vel_error": 0.051258,
-                        "observed_convergence_order": 4.17,
-                        "phase_error_rad": -0.003396,
-                        "amplitude_ratio": 1.0,
+                        "total_steps": 500,
+                        "cpu_time_ms": 0.01,
+                        "eta_error": 0.001358,
+                        "vel_error": 0.001528,
+                        "normalized_state_error": 0.001361,
+                        "observed_convergence_order": 2.0,
+                        "phase_error_rad": 0.001358,
+                        "amplitude_ratio": 0.9999,
                         "dispatches_per_step": 2,
                         "state_textures_required": 2
                     }
@@ -601,49 +499,53 @@
                 "dt_cases": [
                     {
                         "dt": 0.019999999552965165,
-                        "total_steps": 200,
-                        "cpu_time_ms": 0.004,
-                        "eta_error": 0.032459,
-                        "vel_error": 3.840754,
+                        "total_steps": 62,
+                        "cpu_time_ms": 0.001,
+                        "eta_error": 0.086219,
+                        "vel_error": 0.058146,
+                        "normalized_state_error": 0.086299,
                         "observed_convergence_order": 0.0,
-                        "phase_error_rad": -0.257517,
-                        "amplitude_ratio": 0.9993,
+                        "phase_error_rad": 0.086373,
+                        "amplitude_ratio": 0.9939,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.009999999776482582,
-                        "total_steps": 400,
-                        "cpu_time_ms": 0.007,
-                        "eta_error": 0.001975,
-                        "vel_error": 0.964258,
-                        "observed_convergence_order": 4.04,
-                        "phase_error_rad": -0.063935,
-                        "amplitude_ratio": 1.0,
+                        "total_steps": 125,
+                        "cpu_time_ms": 0.002,
+                        "eta_error": 0.021821,
+                        "vel_error": 0.027963,
+                        "normalized_state_error": 0.021893,
+                        "observed_convergence_order": 1.98,
+                        "phase_error_rad": 0.021856,
+                        "amplitude_ratio": 0.9985,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.004999999888241291,
-                        "total_steps": 800,
-                        "cpu_time_ms": 0.014,
-                        "eta_error": 0.000115,
-                        "vel_error": 0.234032,
-                        "observed_convergence_order": 4.1,
-                        "phase_error_rad": -0.015508,
-                        "amplitude_ratio": 1.0,
+                        "total_steps": 250,
+                        "cpu_time_ms": 0.004,
+                        "eta_error": 0.005437,
+                        "vel_error": 0.006285,
+                        "normalized_state_error": 0.005452,
+                        "observed_convergence_order": 2.01,
+                        "phase_error_rad": 0.00544,
+                        "amplitude_ratio": 0.9996,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     },
                     {
                         "dt": 0.0024999999441206457,
-                        "total_steps": 1600,
-                        "cpu_time_ms": 0.027,
-                        "eta_error": 0.000005,
-                        "vel_error": 0.051284,
-                        "observed_convergence_order": 4.63,
-                        "phase_error_rad": -0.003398,
-                        "amplitude_ratio": 1.0,
+                        "total_steps": 500,
+                        "cpu_time_ms": 0.008,
+                        "eta_error": 0.001358,
+                        "vel_error": 0.001539,
+                        "normalized_state_error": 0.001361,
+                        "observed_convergence_order": 2.0,
+                        "phase_error_rad": 0.001358,
+                        "amplitude_ratio": 0.9999,
                         "dispatches_per_step": 1,
                         "state_textures_required": 2
                     }
@@ -654,56 +556,60 @@
                 "dt_cases": [
                     {
                         "dt": 0.019999999552965165,
-                        "total_steps": 200,
-                        "cpu_time_ms": 0.004,
-                        "eta_error": 0.032457,
-                        "vel_error": 0.816778,
+                        "total_steps": 62,
+                        "cpu_time_ms": 0.002,
+                        "eta_error": 0.08622,
+                        "vel_error": 1.048279,
+                        "normalized_state_error": 0.10903,
                         "observed_convergence_order": 0.0,
-                        "phase_error_rad": 0.055934,
-                        "amplitude_ratio": 0.9677,
+                        "phase_error_rad": 0.080986,
+                        "amplitude_ratio": 0.9236,
                         "dispatches_per_step": 1,
                         "state_textures_required": 3
                     },
                     {
                         "dt": 0.009999999776482582,
-                        "total_steps": 400,
-                        "cpu_time_ms": 0.007,
-                        "eta_error": 0.001975,
-                        "vel_error": 1.399018,
-                        "observed_convergence_order": 4.04,
-                        "phase_error_rad": 0.092628,
-                        "amplitude_ratio": 1.0022,
+                        "total_steps": 125,
+                        "cpu_time_ms": 0.002,
+                        "eta_error": 0.021821,
+                        "vel_error": 0.167895,
+                        "normalized_state_error": 0.024298,
+                        "observed_convergence_order": 2.17,
+                        "phase_error_rad": 0.022053,
+                        "amplitude_ratio": 0.9896,
                         "dispatches_per_step": 1,
                         "state_textures_required": 3
                     },
                     {
                         "dt": 0.004999999888241291,
-                        "total_steps": 800,
-                        "cpu_time_ms": 0.013,
-                        "eta_error": 0.000116,
-                        "vel_error": 0.950015,
-                        "observed_convergence_order": 4.09,
-                        "phase_error_rad": 0.062875,
-                        "amplitude_ratio": 1.0018,
+                        "total_steps": 250,
+                        "cpu_time_ms": 0.004,
+                        "eta_error": 0.005439,
+                        "vel_error": 0.048033,
+                        "normalized_state_error": 0.006239,
+                        "observed_convergence_order": 1.96,
+                        "phase_error_rad": 0.005455,
+                        "amplitude_ratio": 0.997,
                         "dispatches_per_step": 1,
                         "state_textures_required": 3
                     },
                     {
                         "dt": 0.0024999999441206457,
-                        "total_steps": 1600,
-                        "cpu_time_ms": 0.025,
-                        "eta_error": 0.000004,
-                        "vel_error": 0.541172,
-                        "observed_convergence_order": 4.79,
-                        "phase_error_rad": 0.035843,
-                        "amplitude_ratio": 1.0006,
+                        "total_steps": 500,
+                        "cpu_time_ms": 0.007,
+                        "eta_error": 0.001351,
+                        "vel_error": 0.01262,
+                        "normalized_state_error": 0.001572,
+                        "observed_convergence_order": 1.99,
+                        "phase_error_rad": 0.001352,
+                        "amplitude_ratio": 0.9992,
                         "dispatches_per_step": 1,
                         "state_textures_required": 3
                     }
                 ]
             }
         ],
-        "conclusion": "【数理的知見】Kick-DriftおよびVelocity Verletはいずれも同一時刻状態誤差において約2次の収束性(order ~ 2.0)を示し、振幅比もシンプレクティック幾何構造により極めて高い保存性(1.000)を示す。【ディスパッチ・メモリ構造】Kick-Driftは1ステップあたり加速度評価が1回(1 Dispatch/step)・RGFloat(8B)1ペアで完結するのに対し、同期Velocity Verletは加速度評価が2回(2 Dispatch/step)必要となる。【GPU評価ステータス: 未実施】Velocity VerletのGPUコンピュートシェーダーは未実装であり、GPU実行時間は未実測(未実施)。現行Kick-Driftを維持するが、GPUでの性能差の断定は行わない。"
+        "conclusion": "【数理的知見（実測次数に基づく評価）】\n- Kick-Drift (Symplectic Euler) の同一時刻状態誤差収束次数は実測で **1.11次 (1次)** です。シンプレクティック幾何構造により振幅比 (1.0100) は極めて高く保存されますが、同一時刻に評価された (η, v) の同時状態精度としては1次精度にとどまります。\n- 一方、Velocity Verlet の状態収束次数は **2.00次 (2次)** であり、同時刻評価において高い状態精度を示します。\n- 【ディスパッチ・メモリ構造】Kick-Drift は1ステップあたり加速度評価が1回 (1 Dispatch/step)・RGFloat (8B) 1ペアで完結するのに対し、同期 Velocity Verlet は加速度評価が2回 (2 Dispatch/step) 必要となります。\n- 【GPU評価ステータス: 未実施】Velocity Verlet の GPU コンピュートシェーダーは未実装であり、GPU 実行時間およびテクスチャ帯域の比較は未実測（未実施）です。現行 Kick-Drift を維持しますが、GPU 最適解とは断定せず判断保留とします。"
     },
     "cfl_verification": {
         "dx": 0.5,
