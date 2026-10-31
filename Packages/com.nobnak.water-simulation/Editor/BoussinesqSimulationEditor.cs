@@ -43,6 +43,22 @@ namespace Nobnak.WaterSimulation.Editor {
                 EditorGUILayout.Space(2);
             }
 
+            var diag = sim.GetDispersionWavelengthDiagnostics();
+            EditorGUILayout.LabelField("Dispersion & Resolution Diagnostics", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField($"Grid Spacing: dx = {diag.dx:F2}m, dz = {diag.dz:F2}m");
+            EditorGUILayout.LabelField($"Deep Water (h={sim.DeepWaterDepth:F1}m): λ = {diag.lambdaDeep:F1}m ({diag.cellsDeep:F1} cells/wl)");
+            EditorGUILayout.LabelField($"Shallow Shoal (h={sim.ShallowWaterDepth:F1}m): λ = {diag.lambdaShallow:F1}m ({diag.cellsShallow:F1} cells/wl)");
+
+            if (!sim.IsResolutionSufficientForPeregrine(out string resWarning)) {
+                EditorGUILayout.HelpBox(resWarning, MessageType.Warning);
+            } else {
+                EditorGUILayout.HelpBox(
+                    $"[Resolution Status: OK]\n" +
+                    $"Shallow water wavelength has {diag.cellsShallow:F1} cells/wavelength (>= 32 cells/wl provisional recommendation based on CPU reference studies; not an official GPU guarantee).",
+                    MessageType.Info);
+            }
+            EditorGUILayout.Space(4);
+
             base.OnInspectorGUI();
         }
     }

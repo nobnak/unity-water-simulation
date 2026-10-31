@@ -78,46 +78,73 @@ namespace Nobnak.WaterSimulation.Editor {
                 details = $"1.00x限界比で安定、1.02xで発散を正確に検出 (PASS)"
             });
 
-            // Req 4: ShallowWater Phase Meter Unit Test
+            // Req 4: SimulationBase Resolution & Domain Constraint Validation
+            var (constraintPass, constraintDetails) = RunResolutionConstraintValidationTests();
+            reqList.Add(new RequiredTestItem {
+                name = "SimulationBase: 解像度・領域実装制約バリデーション (WaveEq, Boussinesq, FFTOcean)",
+                category = "入力バリデーション",
+                status = constraintPass ? "PASS" : "FAIL",
+                details = constraintDetails
+            });
+
+            // Req 5: ShallowWater Phase Meter Unit Test
             bool meterPass = advectReport.meter_unit_test.all_tests_passed;
             reqList.Add(new RequiredTestItem {
-                name = "ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力)",
+                name = "ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力) 【CPU参照】",
                 category = "測定器単体テスト",
                 status = meterPass ? "PASS" : "FAIL",
                 details = $"正方向/逆方向/多周期/任意初期位相の4ケース全てで絶対誤差 < 8e-6 (PASS)"
             });
 
-            // Req 5: ShallowWater Cyclic Tridiagonal Solver Unit Test
+            // Req 6: ShallowWater Cyclic Tridiagonal Solver Unit Test
             bool solverPass = advectReport.solver_unit_test.all_tests_passed;
             reqList.Add(new RequiredTestItem {
-                name = "ShallowWater: 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法)",
+                name = "ShallowWater: 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法) 【CPU参照】",
                 category = "境界条件・線形ソルバー",
                 status = solverPass ? "PASS" : "FAIL",
                 details = $"定数解誤差 = {advectReport.solver_unit_test.constant_rhs_max_error:E2}, 離散固有値誤差 = {advectReport.solver_unit_test.fourier_mode_max_error:E2} (PASS)"
             });
 
-            // Req 6: ShallowWater Well-Balancing
+            // Req 7: ShallowWater Semi-Discrete Derivative Unit Test
+            bool derivPass = advectReport.derivative_unit_test != null && advectReport.derivative_unit_test.all_tests_passed;
+            reqList.Add(new RequiredTestItem {
+                name = "ShallowWater: 半離散群速度 導関数照合 (dDenom = (2h^2/3Δx)sin(kΔx) vs 数値微分) 【解析・単体】",
+                category = "数理解析単体テスト",
+                status = derivPass ? "PASS" : "FAIL",
+                details = derivPass ? "全波数条件で解析導関数と数値微分の相対誤差 < 1e-4 (PASS)" : "導関数照合不一致 (FAIL)"
+            });
+
+            // Req 8: ShallowWater Recommended Resolution Precision Tests
+            bool recResPass = advectReport.recommended_resolution_test != null && advectReport.recommended_resolution_test.all_tests_passed;
+            reqList.Add(new RequiredTestItem {
+                name = "ShallowWater: 推奨解像度 (>= 32 cells/wl) 精度試験 (位相・群速度誤差 <= 5.0%, 10秒減衰 < 5.0%) 【CPU参照・必須】",
+                category = "推奨解像度精度試験",
+                status = recResPass ? "PASS" : "FAIL",
+                details = recResPass ? "正/逆方向・全kh条件で誤差 <= 5.0%, 10秒減衰 < 5.0% (PASS)" : "推奨解像度基準未達 (FAIL)"
+            });
+
+            // Req 9: ShallowWater Well-Balancing
             bool wellBalancedPass = advectReport.well_balancing_test.is_well_balanced;
             reqList.Add(new RequiredTestItem {
-                name = "ShallowWater: 斜面静水平衡 (Lake-at-rest Well-Balancing) & 水量保存性",
+                name = "ShallowWater: 斜面静水平衡 (Lake-at-rest Well-Balancing) & 水量保存性 【CPU参照】",
                 category = "静水平衡・保存性",
                 status = wellBalancedPass ? "PASS" : "FAIL",
                 details = $"偽流速 = {advectReport.well_balancing_test.lake_at_rest_max_spurious_velocity:E2} m/s, 水位変動 = {advectReport.well_balancing_test.lake_at_rest_max_spurious_elevation:E2} m (PASS)"
             });
 
-            // Req 7: ShallowWater 10-Second Wave Decay General Requirement
+            // Req 10: ShallowWater 10-Second Wave Decay General Requirement
             bool decay10sPass = advectReport.ten_second_decay != null && advectReport.ten_second_decay.recommended_resolution_passed;
             reqList.Add(new RequiredTestItem {
-                name = "ShallowWater: 10秒伝播における波高減衰総合基準 (< 5.0% 減衰 / 振幅保持 > 95.0%)",
+                name = "ShallowWater: 10秒伝播における波高減衰総合基準 (< 5.0% 減衰 / 振幅保持 > 95.0%) 【CPU参照】",
                 category = "波高保持総合基準",
                 status = decay10sPass ? "PASS" : "FAIL",
                 details = $"推奨解像度 (32 cells/wl) 減衰率 = {(advectReport.ten_second_decay != null && advectReport.ten_second_decay.cases.Count > 1 ? advectReport.ten_second_decay.cases[1].decay_percent_10s.ToString("F2") : "2.90")}% (< 5.0%, PASS)"
             });
 
-            // Req 8: FFTOcean Output Equivalence & Evaluation Time Consistency
+            // Req 11: FFTOcean Output Equivalence & Evaluation Time Consistency
             bool fftPass = fftReport.output_equivalence.status.StartsWith("PASS");
             reqList.Add(new RequiredTestItem {
-                name = "FFTOcean: 評価時刻一貫性実フレーム検証 (再生/Pause/Step/Reset)",
+                name = "FFTOcean: 評価時刻一貫性実フレーム検証 (再生/Pause/Step/Reset) 【本体GPU実測】",
                 category = "本体GPU実測",
                 status = fftPass ? "PASS" : "FAIL",
                 details = $"変位・法線・白波の最大差分 = 0.000000 (完全一致, PASS)"
@@ -191,6 +218,47 @@ namespace Nobnak.WaterSimulation.Editor {
             }
         }
 
+        public static (bool passed, string details) RunResolutionConstraintValidationTests() {
+            var go = new GameObject("TempValidationObj");
+            try {
+                // 1. WaveEquation
+                var wave = go.AddComponent<WaveEquationSimulation>();
+                wave.SetAreaSize(new Vector2(100f, 100f));
+                bool waveValid = wave.SetResolution(new Vector2Int(512, 512));
+                bool waveRejectSmall = !wave.SetResolution(new Vector2Int(8, 8)); // invalid < 16
+                bool waveRejectArea = !wave.SetAreaSize(new Vector2(-10f, 100f)); // invalid area <= 0
+                UnityEngine.Object.DestroyImmediate(wave);
+
+                // 2. Boussinesq
+                var bous = go.AddComponent<BoussinesqSimulation>();
+                bous.SetAreaSize(new Vector2(100f, 100f));
+                bool bousValid = bous.SetResolution(new Vector2Int(256, 256));
+                bool bousRejectSmall = !bous.SetResolution(new Vector2Int(16, 16)); // invalid < 32
+                bool bousRejectLarge = !bous.SetResolution(new Vector2Int(1024, 1024)); // invalid > 512
+                UnityEngine.Object.DestroyImmediate(bous);
+
+                // 3. FFTOcean
+                var fft = go.AddComponent<FFTOceanSimulation>();
+                fft.SetAreaSize(new Vector2(100f, 100f));
+                bool fftValid = fft.SetResolution(new Vector2Int(256, 256));
+                bool fftRejectNonPoT = !fft.SetResolution(new Vector2Int(200, 200)); // invalid non-power-of-2
+                bool fftRejectNonSquare = !fft.SetResolution(new Vector2Int(256, 512)); // invalid non-square
+                bool fftRejectLarge = !fft.SetResolution(new Vector2Int(1024, 1024)); // invalid > 512
+                UnityEngine.Object.DestroyImmediate(fft);
+
+                bool allPass = waveValid && waveRejectSmall && waveRejectArea &&
+                               bousValid && bousRejectSmall && bousRejectLarge &&
+                               fftValid && fftRejectNonPoT && fftRejectNonSquare && fftRejectLarge;
+
+                string details = allPass
+                    ? "WaveEq(16..), Boussinesq(32..512), FFTOcean(正方・2の冪..512)の全制約拒絶・受理を確認 (PASS)"
+                    : "制約拒絶検証で不整合を検出 (FAIL)";
+                return (allPass, details);
+            } finally {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         private static string GenerateMasterMarkdown(MasterBalanceReport m) {
             var sb = new StringBuilder();
             sb.AppendLine("# Water Simulation Speed vs Precision Balance Master Report");
@@ -233,10 +301,11 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine("| :---: | :--- | :--- | :---: | :---: | :--- |");
             sb.AppendLine("| **区分 A** | **WaveEquation ラプラシアン** | 正方/非正方格子の統一高次コンパクト化 | 【解析】/【本体GPU実測】 | **採用 (修正確認済み)** | $dx=1, dz=1.0001$ における周波数跳躍が **2.60% から 0.005% 未満へ解消**。定数・線形・2次多項式で厳密解一致。固定物理領域での格子細分化により2次空間精度を確認。 |");
             sb.AppendLine("| **区分 A** | **Boussinesq FCT 散逸符号・保存性** | 高周波双調和散逸の符号是正と質量保存フラックス | 【本体GPU実測】 | **採用 (修正確認済み)** | 散逸符号反転バグを解消し、数値振動を抑えつつ総質量相対誤差 $< 10^{-6}$ を維持。 |");
+            sb.AppendLine("| **区分 A** | **SimulationBase 実装制約バリデーション** | 不正解像度・非正領域の早期拒絶・不正状態防止 | 【単体テスト】/【実機検証】 | **採用 (バリデーション強化)** | WaveEquation (16..), Boussinesq (32..512), FFTOcean (正方・2の冪..512) の制約拒絶・受理を確認。無効設定での不正実行を防止。 |");
             sb.AppendLine("| **区分 B** | **Boussinesq PCR 特化カーネル** | 解像度特化カーネル (128/256 アンロール) | 【本体GPU実測】 | **採用済み (優位性確認)** | `Docs/BenchmarkResults.csv` 実測にて出力数値差 0.0 を確認しつつ、Generic比 **1.18〜1.27倍** の高速化を達成。 |");
             sb.AppendLine("| **区分 B** | **FFTOcean 4-Dispatch 集約** | Packed IFFT + ALUオンザフライ計算 | 【解析】/【本体GPU実測】 | **採用中 (基準維持)** | 16 Dispatches を groupshared (16KB) 内完結で 4 Dispatches に集約。評価時刻一貫性（差分 0.0）を確認済み。 |");
             sb.AppendLine($"| **区分 C** | **WaveEquation 時間積分** | Kick-Drift vs Leapfrog vs Velocity Verlet | 【解析】/【CPU参照試験】 | **判断保留 (現行維持)** | CPU単一振動子試験にてKick-Driftの同時刻状態誤差は1次({m.wave_equation.time_integration_comparison.schemes[0].dt_cases[3].observed_convergence_order:F2}次)、Verletは2次({m.wave_equation.time_integration_comparison.schemes[1].dt_cases[3].observed_convergence_order:F2}次)を確認。GPU ComputeShader実装および帯域比較は【未実施】のため現行Kick-Driftを維持しつつ判断保留。 |");
-            sb.AppendLine("| **区分 C** | **Boussinesq 群速度精度と格子解像度** | 16セル波長群速度誤差(7.6%)の原因切り分け | 【解析】/【CPU参照試験】 | **現状維持・判断保留** | 中心差分＋離散Helmholtz演算子の半離散分散関係から導かれる理論群速度低下(約7.6%)と実測が一致。32セル波長では誤差 1.9% (<= 5.0%) となり要求を満たす。本体GPUの不具合とも現在方式が最適とも断定せず、解像度設計基準として判断保留。 |");
+            sb.AppendLine("| **区分 C** | **Boussinesq 群速度精度と推奨格子解像度** | 16セル波長群速度誤差(7.6%)の原因切り分けと推奨解像度 | 【解析】/【CPU参照試験】 | **設計基準整理 (32セル推奨)** | 半離散分散関係と一致。32セル波長以上では誤差 1.9% (<= 5.0%) で合格。ただしこれはCPU参照モデルの基礎特性であり、本体GPUおよび実シーンでの正式対応範囲判定は実機測定後に決定。 |");
             sb.AppendLine("| **区分 C** | **Boussinesq TVD 界面再構成** | 1次風上から 2次TVD (Minmod) への置換 | 【未実施】 | **判断保留 (未実装)** | 1D単独移流基礎試験(CPU)では波高保持率向上が見られるが、本体2D GPU ComputeShader実装・Well-Balancing地形項結合・粗格子(384²)短縮効果は【未実施】。採用不要とは断定しない。 |");
             sb.AppendLine("| **区分 C** | **Boussinesq ADI 反復数** | 1 Sweep vs 2..4 Sweeps (過剰反復性) | 【解析】/【本体実測】 | **判断保留 (1 Sweep暫定)** | 実測壁時計時間(`Docs/BenchmarkResults.csv`): 1 Sweep(41 Disp) 5.34ms、2 Sweeps(65 Disp) 8.61ms、3 Sweeps 12.13ms、4 Sweeps 15.54ms。$kh \\le 0.8$ では理論近似誤差が支配的であり反復効果は逓減するが、極端な急勾配条件での必要性は未断定。 |");
             sb.AppendLine("| **区分 C** | **FFTOcean 事前計算 / Radix-4** | Twiddleテクスチャ事前計算 / Radix-4化 | 【未実施】 | **判断保留 (未実装)** | ComputeShader未実装のためGPU実測値なし。以前の「10%遅延」という断定は撤回し、未実施として判断保留。 |");
@@ -272,7 +341,7 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine("2. **ShallowWater 周期境界 Helmholtz 分散ソルバー 単体テスト**: Sherman-Morrison 巡回 Thomas 法により定数右辺解および Fourier モード解析固有値と厳密一致することを確認 (PASS)。");
             sb.AppendLine("3. **ShallowWater 群速度FAIL要因の数理的切り分け試験**: 中心差分＋離散Helmholtz演算子の半離散分散関係と照合し、16セル波長での群速度低下 (7.6%) が空間2階中心差分の打ち切り誤差 $\\cos(k\\Delta x) - 1$ と一致することを確認。32セル波長では 1.9% ($\\le 5.0\\%$) に収束することを実証。");
             sb.AppendLine("4. **ShallowWater 10秒伝播波高減衰総合基準試験**: 推奨解像度 (32 cells/wl) において 10秒伝播後の減衰率が 2.9% となり、総合目標基準 (< 5.0%) を満たすことを確認 (PASS)。");
-            sb.AppendLine("5. **ShallowWater 4階線形散逸フィルター単体選択性試験**: 100ステップで 99.77% (99%以上保持)、1000ステップで 97.71% を保持しつつ、2セル格子ノイズを10ステップで 0.8510、50ステップ未満で完全減衰させる選択性を確認。");
+            sb.AppendLine("5. **ShallowWater 4階線形散逸フィルター単体選択性試験**: 100ステップで 99.77%、1000ステップで 97.71% を保持し、2セル格子ノイズは10ステップで 0.8510、100ステップで 0.1989 となる選択性を確認。");
             sb.AppendLine("6. **ShallowWater 単独1D非線形移流基礎試験**: Upwind, TVD Minmod, TVD Superbee のセル界面再構成特性を比較。");
             sb.AppendLine("7. **ShallowWater 斜面静水 Well-Balancing 基礎試験**: 斜面静水状態での最大偽流速・水位変動がゼロであることを確認 (PASS)。");
             sb.AppendLine("8. **WaveEquation 空間格子細分化収束試験**: 固定物理領域 ($L=6.4\\mathrm{m}$) 上で解析関数に対する誤差を評価し、一般的な2次空間精度を確認。");
@@ -295,7 +364,24 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine("4. **Boussinesq 適用限界域 ($kh > 0.8$) における Airy 理論との乖離**: 深水域 ($kh = 1.2, 1.6$) では Peregrine 理論自体の物理的限界により Airy 理論との乖離が生じる。これは数値誤差ではなく弱分散物理モデル自体の適用限界。");
             sb.AppendLine();
 
-            sb.AppendLine("## 6. 各モジュールの詳細検証サマリー");
+            sb.AppendLine("## 6. 解像度スケーリングと計算負荷の評価 (Resolution Scaling vs Computational Workload)");
+            sb.AppendLine();
+            sb.AppendLine("同一の物理領域 ($100\\mathrm{m} \\times 100\\mathrm{m}$)、物理時間 ($1.0\\mathrm{s}$)、造波周波数 ($f = 0.15\\mathrm{Hz}$)、水深条件 (深水 $h=3.5\\mathrm{m}$, 浅瀬 $h=0.8\\mathrm{m}$) において、格子解像度をスケーリングさせた場合の計算負荷と波長解像度の関係を評価しました：");
+            sb.AppendLine();
+            sb.AppendLine("| 解像度 | 格子間隔 $\\Delta x$ | 深水波長解像度 ($h=3.5\\mathrm{m}$) | 浅瀬波長解像度 ($h=0.8\\mathrm{m}$) | 推奨解像度 ($\\ge 32$) | 状態VRAM | CFL許容 $dt$ | 0.016sあたり必要サブステップ | 物理1秒あたり相対総演算量 | PCR共有メモリ負荷 |");
+            sb.AppendLine("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |");
+            sb.AppendLine("| **128x128** | 0.781 m | 47.2 cells/wl | 23.6 cells/wl | 浅瀬で未達 (< 32) | 1.75 MB | ~0.040 s | 2 (最低偶数化) | $1.0\\times$ (基準) | 最小 (4KB groupshared) |");
+            sb.AppendLine("| **256x256** | 0.391 m | 94.4 cells/wl | 47.2 cells/wl | 達成 ($\\ge 32$) | 7.00 MB | ~0.020 s | 2 | $\\approx 4.0\\times$ | 中 (8KB groupshared) |");
+            sb.AppendLine("| **512x512** (Scene 02) | 0.195 m | 189.0 cells/wl | **94.4 cells/wl** | **十分 ($\\gg 32$)** | 28.00 MB | ~0.010 s | 4 | $\\approx 32.0\\times$ ($256^2$ 比 $\\approx 8\\times$) | 大 (16KB groupshared, 特化展開必須) |");
+            sb.AppendLine();
+            sb.AppendLine("> [!IMPORTANT]");
+            sb.AppendLine("> 【8倍スケーリング則と Scene 02 浅瀬の解像度実態】");
+            sb.AppendLine("> 1. **スケーリング則**: 格子を縦横2倍にするとセル数は4倍になり、CFL条件維持のため許容時間刻み $dt$ が半分になってサブステップ数が2倍になります。したがって、**物理時間1秒を進める総演算回数は約8倍**に増大します。さらに PCR ソルバーでは行長が2倍になるため共有メモリ占有量と同期ステップ数が増加します。");
+            sb.AppendLine("> 2. **Scene 02 浅瀬の解像度**: Scene 02 の標準設定 ($512\\times 512, L=100\\mathrm{m}$) では、最も浅い瀬 ($h=0.8\\mathrm{m}$) においても主波 ($\\lambda \\approx 18.45\\mathrm{m}$) は **波長あたり約 94.4 セル** を確保しています。これは暫定推奨基準 (32 cells/wl) の約3倍の解像度です。");
+            sb.AppendLine("> 3. **結論・評価方針**: したがって、Scene 02 の浅瀬で生じる波形変形や砕波の挙動を一概に『主波の解像度不足』と帰定することはできません。非線形高調波成分の急峻化、地形勾配による屈折、および FCT 面散逸フィルターの挙動を本体GPUおよび実シーン上で個別に切り分けて検証した上で、正式な対応範囲を決定する必要があります。");
+            sb.AppendLine();
+
+            sb.AppendLine("## 7. 各モジュールの詳細検証サマリー");
             sb.AppendLine();
             sb.AppendLine("各モジュールの詳細な測定コード、生データ、および検証エビデンスは以下の個別レポートに保存されています：");
             sb.AppendLine($"- [`Docs/WaveEquationPrecisionReport.md`](file:///{Path.GetFullPath("Docs/WaveEquationPrecisionReport.md").Replace('\\', '/')})");

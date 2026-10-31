@@ -255,10 +255,13 @@ namespace Nobnak.WaterSimulation {
         }
 #endif
 
-        protected virtual void OnValidate() {
+#if UNITY_EDITOR
+        protected override void OnValidate() {
+            base.OnValidate();
             if (deepWaterDepth < shallowWaterDepth) shallowWaterDepth = deepWaterDepth;
             if (wavemakerFrequency <= 0f) wavemakerFrequency = 0.01f;
         }
+#endif
 
         protected override void OnEnable() {
             ResolveComputeShader();
@@ -371,6 +374,64 @@ namespace Nobnak.WaterSimulation {
         }
 
         public void FinalizeFrameOutput() => ComputeNormalAndPackOutput();
+
+        public override bool ValidateConfiguration(out string errorMessage) {
+            if (!base.ValidateConfiguration(out errorMessage)) return false;
+            if (resolution.x < 32 || resolution.x > MaxTridiagonalN || resolution.y < 32 || resolution.y > MaxTridiagonalN) {
+                errorMessage = $"Resolution ({resolution.x}, {resolution.y}) is outside the supported PCR range [32, {MaxTridiagonalN}] on each axis. Shared-memory PCR solver requires dimensions between 32 and {MaxTridiagonalN}.";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Evaluates local wavelengths and grid resolution metrics using the exact linear Peregrine dispersion relation:
+        /// omega^2 = gh k^2 / (1 + h^2 k^2 / 3) -> k = omega / sqrt(gh * (1 - omega^2 h / (3g))).
+        /// </summary>
+        public (float lambdaDeep, float lambdaShallow, float cellsDeep, float cellsShallow, float dx, float dz) GetDispersionWavelengthDiagnostics() {
+            float dx = areaSize.x / math.max(1, resolution.x);
+            float dz = areaSize.y / math.max(1, resolution.y);
+            float maxGrid = math.max(dx, dz);
+
+            float f = math.max(0.01f, wavemakerFrequency);
+            float omega = 2.0f * math.PI * f;
+
+            float hDeep = math.max(0.2f, deepWaterDepth);
+            float hShallow = math.max(0.2f, shallowWaterDepth);
+
+            float discDeep = Gravity * hDeep * (1.0f - (omega * omega * hDeep) / (3.0f * Gravity));
+            float kDeep = discDeep > 1e-4f ? omega / math.sqrt(discDeep) : (omega / math.sqrt(Gravity * hDeep));
+            float lambdaDeep = (2.0f * math.PI) / math.max(1e-4f, kDeep);
+
+            float discShallow = Gravity * hShallow * (1.0f - (omega * omega * hShallow) / (3.0f * Gravity));
+            float kShallow = discShallow > 1e-4f ? omega / math.sqrt(discShallow) : (omega / math.sqrt(Gravity * hShallow));
+            float lambdaShallow = (2.0f * math.PI) / math.max(1e-4f, kShallow);
+
+            float cellsDeep = lambdaDeep / maxGrid;
+            float cellsShallow = lambdaShallow / maxGrid;
+
+            return (lambdaDeep, lambdaShallow, cellsDeep, cellsShallow, dx, dz);
+        }
+
+        /// <summary>
+        /// Checks whether grid resolution satisfies the provisional recommendation (>= 32 cells / shortest local wavelength
+        /// based on CPU reference studies). Does NOT silently modify frequency, depth, or resolution.
+        /// </summary>
+        public bool IsResolutionSufficientForPeregrine(out string warningMessage) {
+            var diag = GetDispersionWavelengthDiagnostics();
+            if (diag.cellsShallow < 32.0f) {
+                float reqDx = diag.lambdaShallow / 32.0f;
+                int recResX = (int)math.ceil(areaSize.x / reqDx);
+                int recResZ = (int)math.ceil(areaSize.y / reqDx);
+                warningMessage = $"[Provisional Resolution Warning]\n" +
+                    $"Shallow water wavelength has {diag.cellsShallow:F1} cells/wavelength (< 32 cells/wl provisional recommendation based on CPU reference studies; not a codebase GPU guarantee).\n" +
+                    $"Grid: dx={diag.dx:F2}m, dz={diag.dz:F2}m | Deep (h={deepWaterDepth:F1}m): λ={diag.lambdaDeep:F1}m ({diag.cellsDeep:F1} cells/wl) | Shallow (h={shallowWaterDepth:F1}m): λ={diag.lambdaShallow:F1}m ({diag.cellsShallow:F1} cells/wl).\n" +
+                    $"Adjustment candidates: increase resolution to ~{recResX}x{recResZ}, or decrease wave frequency.";
+                return false;
+            }
+            warningMessage = string.Empty;
+            return true;
+        }
         #endregion
 
         #region private methods
@@ -389,9 +450,13 @@ namespace Nobnak.WaterSimulation {
         protected override void InitializeTextures() {
             ReleaseTextures();
 
-            int w = math.min(resolution.x, MaxTridiagonalN);
-            int h = math.min(resolution.y, MaxTridiagonalN);
-            resolution = new Vector2Int(w, h);
+            if (!ValidateConfiguration(out string validationErr)) {
+                Debug.LogError($"[BoussinesqSimulation] Configuration validation failed: {validationErr} Textures will not be initialized.", this);
+                return;
+            }
+
+            int w = resolution.x;
+            int h = resolution.y;
 
             stateTexA = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);
             stateTexB = CreateSimulationTexture(w, h, RenderTextureFormat.ARGBFloat);

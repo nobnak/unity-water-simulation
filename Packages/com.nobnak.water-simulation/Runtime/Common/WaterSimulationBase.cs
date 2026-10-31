@@ -65,6 +65,11 @@ namespace Nobnak.WaterSimulation {
 
         #region Unity lifecycle
         protected virtual void OnEnable() {
+            if (!ValidateConfiguration(out string validationError)) {
+                Debug.LogError($"[{GetType().Name}] Invalid configuration: {validationError}. Simulation will not run.", this);
+                isRunning = false;
+                return;
+            }
             InitializeTextures();
             ResetSimulation();
             isRunning = autoPlay;
@@ -72,6 +77,10 @@ namespace Nobnak.WaterSimulation {
 
         protected virtual void OnDisable() {
             ReleaseTextures();
+        }
+
+        protected virtual void OnValidate() {
+            ValidateConfiguration(out _);
         }
 
         protected virtual void Update() {
@@ -109,6 +118,10 @@ namespace Nobnak.WaterSimulation {
 
         public void Step(float dt) {
             if (dt <= 0f) return;
+            if (!ValidateConfiguration(out string validationError)) {
+                Debug.LogError($"[{GetType().Name}] Simulation Step blocked by invalid configuration: {validationError}", this);
+                return;
+            }
             long startTicks = System.Diagnostics.Stopwatch.GetTimestamp();
             lastDispatchCount = 0;
             OnStepSimulation(dt);
@@ -128,6 +141,44 @@ namespace Nobnak.WaterSimulation {
         /// <summary>Sample water surface elevation at local coordinates (x, z).</summary>
         public virtual float SampleElevation(float localX, float localZ) {
             return 0f;
+        }
+
+        public virtual bool ValidateConfiguration(out string errorMessage) {
+            if (areaSize.x <= 0f || areaSize.y <= 0f || float.IsNaN(areaSize.x) || float.IsNaN(areaSize.y)) {
+                errorMessage = $"AreaSize must have positive non-zero components, got ({areaSize.x}, {areaSize.y}).";
+                return false;
+            }
+            if (resolution.x <= 0 || resolution.y <= 0) {
+                errorMessage = $"Resolution must have positive non-zero components, got ({resolution.x}, {resolution.y}).";
+                return false;
+            }
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        public virtual bool SetAreaSize(Vector2 size) {
+            Vector2 prev = areaSize;
+            areaSize = size;
+            if (!ValidateConfiguration(out string err)) {
+                Debug.LogError($"[{GetType().Name}] Invalid AreaSize ({size.x}, {size.y}): {err}", this);
+                areaSize = prev;
+                return false;
+            }
+            return true;
+        }
+
+        public virtual bool SetResolution(Vector2Int res) {
+            Vector2Int prev = resolution;
+            resolution = res;
+            if (!ValidateConfiguration(out string err)) {
+                Debug.LogError($"[{GetType().Name}] Invalid resolution ({res.x}, {res.y}): {err}", this);
+                resolution = prev;
+                return false;
+            }
+            if (Application.isPlaying || isActiveAndEnabled) {
+                InitializeTextures();
+            }
+            return true;
         }
         #endregion
 

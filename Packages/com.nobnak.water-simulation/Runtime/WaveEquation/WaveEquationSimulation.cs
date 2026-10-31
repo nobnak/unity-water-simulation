@@ -164,6 +164,15 @@ namespace Nobnak.WaterSimulation {
         public void SetObstaclePattern(ObstaclePattern pattern) {
             Pattern = pattern;
         }
+
+        public override bool ValidateConfiguration(out string errorMessage) {
+            if (!base.ValidateConfiguration(out errorMessage)) return false;
+            if (resolution.x < 16 || resolution.y < 16) {
+                errorMessage = $"Resolution ({resolution.x}, {resolution.y}) is too small. Minimum grid resolution is 16x16.";
+                return false;
+            }
+            return true;
+        }
         #endregion
 
         #region private methods
@@ -181,6 +190,11 @@ namespace Nobnak.WaterSimulation {
 
         protected override void InitializeTextures() {
             ReleaseTextures();
+
+            if (!ValidateConfiguration(out string err)) {
+                Debug.LogError($"[WaveEquationSimulation] Configuration validation failed: {err} Textures will not be initialized.", this);
+                return;
+            }
 
             int w = resolution.x;
             int h = resolution.y;

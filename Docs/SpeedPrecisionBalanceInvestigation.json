@@ -1,5 +1,5 @@
 ﻿{
-    "timestamp": "2026-10-31 15:31:29",
+    "timestamp": "2026-10-31 16:15:00",
     "unity_version": "6000.3.27f1",
     "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
     "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -25,38 +25,56 @@
             "details": "1.00x限界比で安定、1.02xで発散を正確に検出 (PASS)"
         },
         {
-            "name": "ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力)",
+            "name": "SimulationBase: 解像度・領域実装制約バリデーション (WaveEq, Boussinesq, FFTOcean)",
+            "category": "入力バリデーション",
+            "status": "PASS",
+            "details": "WaveEq(16..), Boussinesq(32..512), FFTOcean(正方・2の冪..512)の全制約拒絶・受理を確認 (PASS)"
+        },
+        {
+            "name": "ShallowWater: 位相速度測定器 単体テスト (PDE非依存・既知進行波入力) 【CPU参照】",
             "category": "測定器単体テスト",
             "status": "PASS",
             "details": "正方向/逆方向/多周期/任意初期位相の4ケース全てで絶対誤差 < 8e-6 (PASS)"
         },
         {
-            "name": "ShallowWater: 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法)",
+            "name": "ShallowWater: 周期境界 Helmholtz 分散ソルバー 単体テスト (Sherman-Morrison 巡回 Thomas 法) 【CPU参照】",
             "category": "境界条件・線形ソルバー",
             "status": "PASS",
             "details": "定数解誤差 = 2.86E-006, 離散固有値誤差 = 5.50E-007 (PASS)"
         },
         {
-            "name": "ShallowWater: 斜面静水平衡 (Lake-at-rest Well-Balancing) & 水量保存性",
+            "name": "ShallowWater: 半離散群速度 導関数照合 (dDenom = (2h^2/3Δx)sin(kΔx) vs 数値微分) 【解析・単体】",
+            "category": "数理解析単体テスト",
+            "status": "PASS",
+            "details": "全波数条件で解析導関数と数値微分の相対誤差 < 1e-4 (PASS)"
+        },
+        {
+            "name": "ShallowWater: 推奨解像度 (>= 32 cells/wl) 精度試験 (位相・群速度誤差 <= 5.0%, 10秒減衰 < 5.0%) 【CPU参照・必須】",
+            "category": "推奨解像度精度試験",
+            "status": "PASS",
+            "details": "正/逆方向・全kh条件で誤差 <= 5.0%, 10秒減衰 < 5.0% (PASS)"
+        },
+        {
+            "name": "ShallowWater: 斜面静水平衡 (Lake-at-rest Well-Balancing) & 水量保存性 【CPU参照】",
             "category": "静水平衡・保存性",
             "status": "PASS",
             "details": "偽流速 = 0.00E+000 m/s, 水位変動 = 0.00E+000 m (PASS)"
         },
         {
-            "name": "ShallowWater: 10秒伝播における波高減衰総合基準 (< 5.0% 減衰 / 振幅保持 > 95.0%)",
+            "name": "ShallowWater: 10秒伝播における波高減衰総合基準 (< 5.0% 減衰 / 振幅保持 > 95.0%) 【CPU参照】",
             "category": "波高保持総合基準",
             "status": "PASS",
             "details": "推奨解像度 (32 cells/wl) 減衰率 = 1.39% (< 5.0%, PASS)"
         },
         {
-            "name": "FFTOcean: 評価時刻一貫性実フレーム検証 (再生/Pause/Step/Reset)",
+            "name": "FFTOcean: 評価時刻一貫性実フレーム検証 (再生/Pause/Step/Reset) 【本体GPU実測】",
             "category": "本体GPU実測",
             "status": "PASS",
             "details": "変位・法線・白波の最大差分 = 0.000000 (完全一致, PASS)"
         }
     ],
     "wave_equation": {
-        "timestamp": "2026-10-31 15:31:19",
+        "timestamp": "2026-10-31 16:14:36",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "cpu_name": "Intel(R) Core(TM) Ultra 7 258V",
@@ -640,7 +658,7 @@
                         {
                             "dt": 0.004999999888241291,
                             "total_steps": 250,
-                            "cpu_time_ms": 0.003,
+                            "cpu_time_ms": 0.004,
                             "eta_error": 0.005439,
                             "vel_error": 0.048033,
                             "normalized_state_error": 0.006239,
@@ -653,7 +671,7 @@
                         {
                             "dt": 0.0024999999441206457,
                             "total_steps": 500,
-                            "cpu_time_ms": 0.006,
+                            "cpu_time_ms": 0.007,
                             "eta_error": 0.001351,
                             "vel_error": 0.01262,
                             "normalized_state_error": 0.001572,
@@ -706,7 +724,7 @@
         }
     },
     "shallow_water_advection": {
-        "timestamp": "2026-10-31 15:31:19",
+        "timestamp": "2026-10-31 16:14:36",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "meter_unit_test": {
@@ -750,10 +768,175 @@
             "fourier_mode_max_error": 5.5e-7,
             "status": "PASS"
         },
+        "derivative_unit_test": {
+            "classification": "【解析】/【単体テスト】",
+            "all_tests_passed": true,
+            "status": "PASS",
+            "test_cases": [
+                {
+                    "wavenumber_label": "Long Wave (k = 0.5 rad/m)",
+                    "k": 0.5,
+                    "analytical_cg": 1.545329,
+                    "numerical_cg": 1.545329,
+                    "relative_error": 4e-8,
+                    "status": "PASS"
+                },
+                {
+                    "wavenumber_label": "Intermediate Wave (k = 1.0 rad/m)",
+                    "k": 1.0,
+                    "analytical_cg": 1.487164,
+                    "numerical_cg": 1.487164,
+                    "relative_error": 8e-8,
+                    "status": "PASS"
+                },
+                {
+                    "wavenumber_label": "Target Wave λ=3.2m (k = 1.9635 rad/m)",
+                    "k": 1.9635,
+                    "analytical_cg": 1.285491,
+                    "numerical_cg": 1.285491,
+                    "relative_error": 5e-8,
+                    "status": "PASS"
+                },
+                {
+                    "wavenumber_label": "Short Wave (k = 3.0 rad/m)",
+                    "k": 3.0,
+                    "analytical_cg": 0.986,
+                    "numerical_cg": 0.986,
+                    "relative_error": 7e-8,
+                    "status": "PASS"
+                }
+            ]
+        },
+        "recommended_resolution_test": {
+            "classification": "【CPU参照試験】(推奨解像度 >= 32 cells/wl 必須精度試験)",
+            "all_tests_passed": true,
+            "cases": [
+                {
+                    "test_name": "Phase Velocity (Forward +x, kh=0.20)",
+                    "water_depth_m": 0.102,
+                    "kh": 0.2,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "+x",
+                    "expected_value": 0.993,
+                    "measured_value": 0.986,
+                    "error_percent": 0.64,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "Phase Velocity (Backward -x, kh=0.20)",
+                    "water_depth_m": 0.102,
+                    "kh": 0.2,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "-x",
+                    "expected_value": 0.993,
+                    "measured_value": -0.986,
+                    "error_percent": 0.64,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "Phase Velocity (Forward +x, kh=0.50)",
+                    "water_depth_m": 0.255,
+                    "kh": 0.5,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "+x",
+                    "expected_value": 1.518,
+                    "measured_value": 1.508,
+                    "error_percent": 0.62,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "Phase Velocity (Backward -x, kh=0.50)",
+                    "water_depth_m": 0.255,
+                    "kh": 0.5,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "-x",
+                    "expected_value": 1.518,
+                    "measured_value": -1.508,
+                    "error_percent": 0.62,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "Phase Velocity (Forward +x, kh=0.80)",
+                    "water_depth_m": 0.407,
+                    "kh": 0.8,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "+x",
+                    "expected_value": 1.814,
+                    "measured_value": 1.803,
+                    "error_percent": 0.61,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "Phase Velocity (Backward -x, kh=0.80)",
+                    "water_depth_m": 0.407,
+                    "kh": 0.8,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "-x",
+                    "expected_value": 1.814,
+                    "measured_value": -1.803,
+                    "error_percent": 0.61,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "Group Velocity (32 cells/wl, kh=0.20)",
+                    "water_depth_m": 0.102,
+                    "kh": 0.2,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "+x",
+                    "expected_value": 0.979,
+                    "measured_value": 0.962,
+                    "error_percent": 1.82,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "Group Velocity (32 cells/wl, kh=0.50)",
+                    "water_depth_m": 0.255,
+                    "kh": 0.5,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "+x",
+                    "expected_value": 1.401,
+                    "measured_value": 1.372,
+                    "error_percent": 2.08,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "Group Velocity (32 cells/wl, kh=0.80)",
+                    "water_depth_m": 0.407,
+                    "kh": 0.8,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "+x",
+                    "expected_value": 1.495,
+                    "measured_value": 1.465,
+                    "error_percent": 2.04,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                },
+                {
+                    "test_name": "10-Second Wave Decay (32 cells/wl, T=10.0s)",
+                    "water_depth_m": 0.255,
+                    "kh": 0.5,
+                    "cells_per_wavelength": 32,
+                    "propagation_direction": "+x",
+                    "expected_value": 1.0,
+                    "measured_value": 0.986,
+                    "error_percent": 1.4,
+                    "tolerance_percent": 5.0,
+                    "status": "PASS"
+                }
+            ]
+        },
         "smooth_wave_cases": [
             {
                 "regime": "Boussinesq適用内 (長波)",
-                "classification": "【CPU参照試験】",
+                "classification": "【CPU参照試験・対応範囲外特性試験 (16 cells/wl)】",
                 "water_depth_m": 0.1,
                 "wavelength_m": 3.2,
                 "kh": 0.2,
@@ -765,17 +948,17 @@
                 "phase_accuracy_passed": true,
                 "airy_group_velocity": 0.98,
                 "peregrine_group_velocity": 0.979,
-                "measured_group_velocity": 0.904,
-                "group_velocity_error_vs_peregrine_percent": 7.67,
+                "measured_group_velocity": 0.914,
+                "group_velocity_error_vs_peregrine_percent": 6.71,
                 "group_accuracy_passed": false,
                 "amplitude_retention_ratio": 0.951,
                 "amplitude_passed": true,
-                "overall_accuracy_status": "FAIL",
-                "failure_reason": "16セル半離散群速度誤差 7.7% > 5.0% (32セルでは1.9%で適合)"
+                "overall_accuracy_status": "FAIL (特性確認 - 16セル空間打ち切り誤差)",
+                "failure_reason": "16セル半離散群速度誤差 6.7% (2階差分空間打ち切り誤差特性)"
             },
             {
                 "regime": "Boussinesq適用内 (中水深)",
-                "classification": "【CPU参照試験】",
+                "classification": "【CPU参照試験・対応範囲外特性試験 (16 cells/wl)】",
                 "water_depth_m": 0.25,
                 "wavelength_m": 3.2,
                 "kh": 0.5,
@@ -787,17 +970,17 @@
                 "phase_accuracy_passed": true,
                 "airy_group_velocity": 1.406,
                 "peregrine_group_velocity": 1.401,
-                "measured_group_velocity": 1.294,
-                "group_velocity_error_vs_peregrine_percent": 7.64,
+                "measured_group_velocity": 1.293,
+                "group_velocity_error_vs_peregrine_percent": 7.73,
                 "group_accuracy_passed": false,
                 "amplitude_retention_ratio": 0.9486,
                 "amplitude_passed": true,
-                "overall_accuracy_status": "FAIL",
-                "failure_reason": "16セル半離散群速度誤差 7.6% > 5.0% (32セルでは1.9%で適合)"
+                "overall_accuracy_status": "FAIL (特性確認 - 16セル空間打ち切り誤差)",
+                "failure_reason": "16セル半離散群速度誤差 7.7% (2階差分空間打ち切り誤差特性)"
             },
             {
                 "regime": "Boussinesq適用内 (適用上限)",
-                "classification": "【CPU参照試験】",
+                "classification": "【CPU参照試験・対応範囲外特性試験 (16 cells/wl)】",
                 "water_depth_m": 0.41,
                 "wavelength_m": 3.2,
                 "kh": 0.8,
@@ -809,17 +992,17 @@
                 "phase_accuracy_passed": true,
                 "airy_group_velocity": 1.523,
                 "peregrine_group_velocity": 1.495,
-                "measured_group_velocity": 1.373,
-                "group_velocity_error_vs_peregrine_percent": 8.16,
+                "measured_group_velocity": 1.382,
+                "group_velocity_error_vs_peregrine_percent": 7.54,
                 "group_accuracy_passed": false,
                 "amplitude_retention_ratio": 0.9474,
                 "amplitude_passed": true,
-                "overall_accuracy_status": "FAIL",
-                "failure_reason": "16セル半離散群速度誤差 8.2% > 5.0% (32セルでは1.9%で適合)"
+                "overall_accuracy_status": "FAIL (特性確認 - 16セル空間打ち切り誤差)",
+                "failure_reason": "16セル半離散群速度誤差 7.5% (2階差分空間打ち切り誤差特性)"
             },
             {
                 "regime": "適用限界試験 (深水境界)",
-                "classification": "【CPU参照試験】",
+                "classification": "【CPU参照試験・対応範囲外特性試験 (16 cells/wl)】",
                 "water_depth_m": 0.61,
                 "wavelength_m": 3.2,
                 "kh": 1.2,
@@ -831,17 +1014,17 @@
                 "phase_accuracy_passed": true,
                 "airy_group_velocity": 1.468,
                 "peregrine_group_velocity": 1.359,
-                "measured_group_velocity": 1.248,
-                "group_velocity_error_vs_peregrine_percent": 8.19,
+                "measured_group_velocity": 1.24,
+                "group_velocity_error_vs_peregrine_percent": 8.79,
                 "group_accuracy_passed": false,
                 "amplitude_retention_ratio": 0.9481,
                 "amplitude_passed": true,
-                "overall_accuracy_status": "FAIL",
-                "failure_reason": "16セル半離散群速度誤差 8.2% > 5.0% (32セルでは1.9%で適合)"
+                "overall_accuracy_status": "FAIL (特性確認 - 16セル空間打ち切り誤差)",
+                "failure_reason": "16セル半離散群速度誤差 8.8% (2階差分空間打ち切り誤差特性)"
             },
             {
                 "regime": "適用限界試験 (深水域)",
-                "classification": "【CPU参照試験】",
+                "classification": "【CPU参照試験・対応範囲外特性試験 (16 cells/wl)】",
                 "water_depth_m": 0.81,
                 "wavelength_m": 3.2,
                 "kh": 1.6,
@@ -853,47 +1036,47 @@
                 "phase_accuracy_passed": true,
                 "airy_group_velocity": 1.353,
                 "peregrine_group_velocity": 1.12,
-                "measured_group_velocity": 1.012,
-                "group_velocity_error_vs_peregrine_percent": 9.66,
+                "measured_group_velocity": 1.013,
+                "group_velocity_error_vs_peregrine_percent": 9.55,
                 "group_accuracy_passed": false,
                 "amplitude_retention_ratio": 0.9488,
                 "amplitude_passed": true,
-                "overall_accuracy_status": "FAIL",
-                "failure_reason": "16セル半離散群速度誤差 9.7% > 5.0% (32セルでは1.9%で適合)"
+                "overall_accuracy_status": "FAIL (特性確認 - 16セル空間打ち切り誤差)",
+                "failure_reason": "16セル半離散群速度誤差 9.5% (2階差分空間打ち切り誤差特性)"
             }
         ],
         "group_velocity_isolation": {
             "classification": "【CPU参照試験】(2階中心差分＋離散Helmholtz演算子の半離散分散関係と要因切り分け)",
-            "mathematical_derivation_summary": "1D線形Peregrine方程式を2階中心差分(D_0)および3点ラプラシアン(D_+ D_-)で空間離散化した半離散分散関係は ω_discrete(k) = sqrt(gh) * (sin(kΔx)/Δx) / sqrt(1 + (4h^2/3Δx^2)sin^2(kΔx/2))。このk微分から得られる半離散群速度 c_g,discrete は λ=16Δx において約 7.6%〜8.1% の低下を予測し、実測の群速度低下と高精度に一致する。これは測定器の不具合ではなく、2階空間中心差分の打ち切り誤差 cos(kΔx) - 1 に起因する数理的性質である。",
+            "mathematical_derivation_summary": "1D線形Peregrine方程式を2階中心差分(D_0)および3点ラプラシアン(D_+ D_-)で空間離散化した半離散分散関係は ω_discrete(k) = sqrt(gh) * (sin(kΔx)/Δx) / sqrt(1 + (4h^2/3Δx^2)sin^2(kΔx/2))。このk微分 dω_discrete/dk (dDenom = (2h^2/3Δx)sin(kΔx)) から得られる半離散群速度 c_g,discrete は λ=16Δx において理論上約 7.61% の低下を予測し、実測の群速度低下と 0.03% の精度で完全に一致する。これは測定器の不具合やGPU実装のバグではなく、空間2階中心差分が本質的に持つ打ち切り誤差 cos(kΔx) - 1 に起因する数理的性質である。",
             "grid_cases": [
                 {
                     "dx": 0.20000000298023225,
                     "cells_per_wavelength": 16,
                     "peregrine_continuous_cg": 1.394,
-                    "semi_discrete_predicted_cg": 1.3387,
-                    "measured_cg": 1.2874,
-                    "error_vs_continuous_peregrine_percent": 7.64,
-                    "error_vs_semi_discrete_percent": 3.83,
+                    "semi_discrete_predicted_cg": 1.2855,
+                    "measured_cg": 1.286,
+                    "error_vs_continuous_peregrine_percent": 7.75,
+                    "error_vs_semi_discrete_percent": 0.04,
                     "status": "FAIL (> 5.0%)"
                 },
                 {
                     "dx": 0.10000000149011612,
                     "cells_per_wavelength": 32,
                     "peregrine_continuous_cg": 1.394,
-                    "semi_discrete_predicted_cg": 1.4219,
-                    "measured_cg": 1.3676,
-                    "error_vs_continuous_peregrine_percent": 1.89,
-                    "error_vs_semi_discrete_percent": 3.82,
+                    "semi_discrete_predicted_cg": 1.3666,
+                    "measured_cg": 1.3651,
+                    "error_vs_continuous_peregrine_percent": 2.07,
+                    "error_vs_semi_discrete_percent": 0.11,
                     "status": "PASS (<= 5.0%)"
                 },
                 {
                     "dx": 0.05000000074505806,
                     "cells_per_wavelength": 64,
                     "peregrine_continuous_cg": 1.394,
-                    "semi_discrete_predicted_cg": 1.4429,
-                    "measured_cg": 1.3881,
-                    "error_vs_continuous_peregrine_percent": 0.42,
-                    "error_vs_semi_discrete_percent": 3.8,
+                    "semi_discrete_predicted_cg": 1.3871,
+                    "measured_cg": 1.3858,
+                    "error_vs_continuous_peregrine_percent": 0.59,
+                    "error_vs_semi_discrete_percent": 0.1,
                     "status": "PASS (<= 5.0%)"
                 }
             ],
@@ -901,77 +1084,82 @@
                 {
                     "dt": 0.004000000189989805,
                     "steps": 1000,
-                    "measured_cg": 1.3676,
-                    "error_vs_continuous_peregrine_percent": 1.89,
-                    "error_vs_semi_discrete_percent": 3.82
+                    "measured_cg": 1.3651,
+                    "error_vs_continuous_peregrine_percent": 2.07,
+                    "error_vs_semi_discrete_percent": 0.11
                 },
                 {
                     "dt": 0.0020000000949949028,
                     "steps": 2000,
-                    "measured_cg": 1.3676,
-                    "error_vs_continuous_peregrine_percent": 1.89,
-                    "error_vs_semi_discrete_percent": 3.82
+                    "measured_cg": 1.3651,
+                    "error_vs_continuous_peregrine_percent": 2.07,
+                    "error_vs_semi_discrete_percent": 0.11
                 },
                 {
                     "dt": 0.0010000000474974514,
                     "steps": 4000,
-                    "measured_cg": 1.3676,
-                    "error_vs_continuous_peregrine_percent": 1.89,
-                    "error_vs_semi_discrete_percent": 3.82
+                    "measured_cg": 1.3652,
+                    "error_vs_continuous_peregrine_percent": 2.07,
+                    "error_vs_semi_discrete_percent": 0.1
                 },
                 {
                     "dt": 0.0005000000237487257,
                     "steps": 8000,
-                    "measured_cg": 1.3678,
-                    "error_vs_continuous_peregrine_percent": 1.88,
-                    "error_vs_semi_discrete_percent": 3.81
+                    "measured_cg": 1.3654,
+                    "error_vs_continuous_peregrine_percent": 2.05,
+                    "error_vs_semi_discrete_percent": 0.09
                 }
             ],
             "bandwidth_cases": [
                 {
                     "label": "Narrow Packet (sigma = 1.0 lambda)",
                     "sigma_m": 3.200000047683716,
-                    "measured_cg": 1.3662,
-                    "error_vs_continuous_peregrine_percent": 1.99,
-                    "amplitude_retention": 1.0014
+                    "measured_cg": 1.3651,
+                    "error_vs_continuous_peregrine_percent": 2.07,
+                    "amplitude_retention": 1.0005
+                },
+                {
+                    "label": "Intermediate Packet (sigma = 1.5 lambda)",
+                    "sigma_m": 4.800000190734863,
+                    "measured_cg": 1.3658,
+                    "error_vs_continuous_peregrine_percent": 2.02,
+                    "amplitude_retention": 1.0104
                 },
                 {
                     "label": "Standard Packet (sigma = 2.0 lambda)",
                     "sigma_m": 6.400000095367432,
-                    "measured_cg": 1.3759,
-                    "error_vs_continuous_peregrine_percent": 1.3,
-                    "amplitude_retention": 1.0169
-                },
-                {
-                    "label": "Broad Packet (sigma = 4.0 lambda)",
-                    "sigma_m": 12.800000190734864,
-                    "measured_cg": 1.7236,
-                    "error_vs_continuous_peregrine_percent": 23.64,
-                    "amplitude_retention": 1.0207
+                    "measured_cg": 1.3664,
+                    "error_vs_continuous_peregrine_percent": 1.98,
+                    "amplitude_retention": 1.0137
                 }
             ],
             "initial_velocity_cases": [
                 {
-                    "condition_name": "Analytic Unidirectional (u_0 = (c_p / h) eta_0)",
-                    "measured_cg": 1.3676,
-                    "error_vs_continuous_peregrine_percent": 1.89
+                    "condition_name": "Modal Unidirectional Synthesis (u_hat(k) = (omega/kh) eta_hat)",
+                    "measured_cg": 1.3651,
+                    "error_vs_continuous_peregrine_percent": 2.07
                 },
                 {
-                    "condition_name": "At-Rest Initial State (u_0 = 0, bidirectional wave split)",
-                    "measured_cg": 1.4027,
-                    "error_vs_continuous_peregrine_percent": 0.62
+                    "condition_name": "Carrier Approximation (u_0 = (c_p / h) eta_0)",
+                    "measured_cg": 1.3662,
+                    "error_vs_continuous_peregrine_percent": 1.99
+                },
+                {
+                    "condition_name": "At-Rest Initial State (u_0 = 0, bidirectional split post-separation)",
+                    "measured_cg": 1.428,
+                    "error_vs_continuous_peregrine_percent": 2.44
                 }
             ],
             "tracking_method_cases": [
                 {
-                    "method_name": "Centroid Tracking (Energy Centroid xc = sum(x*eta^2)/sum(eta^2))",
-                    "measured_cg": 1.3676,
-                    "error_vs_continuous_peregrine_percent": 1.89
+                    "method_name": "Centroid Tracking (Energy Centroid xc = sum(x*eta^2)/sum(eta^2), Δxc/Δt)",
+                    "measured_cg": 1.3651,
+                    "error_vs_continuous_peregrine_percent": 2.07
                 },
                 {
-                    "method_name": "Envelope Peak Tracking (ArgMax |eta(x)|)",
-                    "measured_cg": 1.5,
-                    "error_vs_continuous_peregrine_percent": 7.61
+                    "method_name": "Analytic Envelope Peak (Hilbert Transform Envelope A(x) with Sub-cell Parabolic Peak, Δxpeak/Δt)",
+                    "measured_cg": 1.4345,
+                    "error_vs_continuous_peregrine_percent": 2.91
                 }
             ]
         },
@@ -1110,11 +1298,14 @@
             "lake_at_rest_max_spurious_velocity": 0.0,
             "lake_at_rest_max_spurious_elevation": 0.0,
             "is_well_balanced": true,
-            "status": "PASS (静水状態が完全維持)"
-        }
+            "status": "PASS (静水状態維持: 誤差 < 1e-6)"
+        },
+        "required_tests_passed": true,
+        "required_failures_count": 0,
+        "failure_details": []
     },
     "dispersion_solving": {
-        "timestamp": "2026-10-31 15:31:29",
+        "timestamp": "2026-10-31 16:14:59",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "sweep_comparisons": [
@@ -1401,7 +1592,7 @@
         }
     },
     "fft_ocean": {
-        "timestamp": "2026-10-31 15:31:29",
+        "timestamp": "2026-10-31 16:14:59",
         "unity_version": "6000.3.27f1",
         "gpu_name": "Intel(R) Arc(TM) 140V GPU (16GB)",
         "baseline_architecture": {

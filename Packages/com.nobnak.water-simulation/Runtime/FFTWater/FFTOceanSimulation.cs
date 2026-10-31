@@ -214,6 +214,23 @@ namespace Nobnak.WaterSimulation {
             }
             MarkSpectrumDirty();
         }
+
+        public override bool ValidateConfiguration(out string errorMessage) {
+            if (!base.ValidateConfiguration(out errorMessage)) return false;
+            if (resolution.x != resolution.y) {
+                errorMessage = $"Resolution must be square, but got ({resolution.x}, {resolution.y}).";
+                return false;
+            }
+            if (!Mathf.IsPowerOfTwo(resolution.x)) {
+                errorMessage = $"Resolution {resolution.x} is not a power of 2. Supported power-of-two sizes are 16, 32, 64, 128, 256, 512.";
+                return false;
+            }
+            if (resolution.x < 16 || resolution.x > 512) {
+                errorMessage = $"Resolution {resolution.x} is outside supported range [16, 512] (MAX_FFT_N = 512).";
+                return false;
+            }
+            return true;
+        }
         #endregion
 
         #region private methods
@@ -237,11 +254,12 @@ namespace Nobnak.WaterSimulation {
         protected override void InitializeTextures() {
             ReleaseTextures();
 
-            int n = resolution.x; // Must be power of two
-            if (!Mathf.IsPowerOfTwo(n)) {
-                n = Mathf.ClosestPowerOfTwo(n);
+            if (!ValidateConfiguration(out string validationErr)) {
+                Debug.LogError($"[FFTOceanSimulation] Configuration validation failed: {validationErr} Textures will not be initialized.", this);
+                return;
             }
-            resolution = new Vector2Int(n, n);
+
+            int n = resolution.x;
 
             initialSpectrumTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat, FilterMode.Point);
             spectrumPackedTex = CreateSimulationTexture(n, n, RenderTextureFormat.ARGBFloat, FilterMode.Point);
