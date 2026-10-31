@@ -1,6 +1,6 @@
 ﻿{
-    "timestamp": "2026-10-31 13:47:28 UTC",
-    "gitCommit": "6bd4291-dirty",
+    "timestamp": "2026-10-31 14:02:36 UTC",
+    "gitCommit": "ad49364-dirty",
     "gitDirty": true,
     "computeShaderHash": "d08ecfed00b754b311350afc2b473d4a0b6481333f9f253f2f8f8b7e7dd89a60",
     "unityVersion": "6000.3.27f1",
@@ -15,47 +15,48 @@
         "details": "MaxDiff: 0.2026, Enabled Kappa: 0.1200 (65 faces), Disabled Kappa: 0.0000 (0 faces)"
     },
     "referenceComparison": {
-        "primaryReferenceSource": "Madsen, O. S., & Mei, C. C. (1969). The transformation of a solitary wave over an uneven bottom. Journal of Fluid Mechanics, 39(4), 781-791.",
-        "primaryFigureTable": "Figure 4 (Transformation of a solitary wave over a 1:20 slope onto a horizontal shelf, h1/h2 = 3.0)",
+        "literatureComparisonStatus": "未実施 (追跡可能な元データCSV・デジタイズ点列が未取得のため、文献照合および文献一致率の合否判定は未実施)",
+        "primaryReferenceCitation": "Madsen, O. S., & Mei, C. C. (1969). The transformation of a solitary wave over an uneven bottom. J. Fluid Mech. 39(4), 781-791.",
+        "customProfileDescription": "独自の比較用近似曲線 (Custom Exploratory Curve): t=14.0s における単一峰モデル (z_peak=29.2m, H=0.067m, w=1.6m, 後続棚=0.016m)",
         "h1": 0.6000000238418579,
         "h2": 0.20000000298023225,
         "a0": 0.11999999731779099,
         "slope": 0.05000000074505806,
         "slopeStart": 10.0,
         "slopeEnd": 18.0,
-        "stationsDescription": "x/h1 = 0 (z=10.0m toe), x/h1 = 13.3 (z=18.0m top), x/h1 = 20.0 (z=22.0m), x/h1 = 33.3 (z=30.0m), x/h1 = 46.7 (z=38.0m)",
+        "stationsDescription": "toe=10.0m, top=18.0m, mid-shelf=22.0m, 30.0m, 38.0m",
         "evalTime": 14.0,
-        "referenceLeadPeakHeight": 0.06700000166893006,
-        "leadPeakErrorFCT256": 0.05127411708235741,
-        "leadPeakErrorFCT512": 0.0141840148717165,
-        "leadPeakErrorFilterOff256": 0.04585854336619377,
+        "customCurveLeadPeakHeight": 0.06700000166893006,
+        "leadPeakDiffFCT256": -0.003435365855693817,
+        "leadPeakDiffFCT512": 0.0009503290057182312,
+        "leadPeakDiffFilterOff256": 0.0030725225806236269,
         "rmseShelfProfileFCT256": 0.024654053151607515,
         "rmseShelfProfileFCT512": 0.024538546800613405,
         "rmseShelfProfileFilterOff256": 0.021935023367404939,
-        "physicalFissionMechanism": "理論的IST解（Johnson 1973, Tappert & Zabusky 1971）は棚上でN=3のソリトン分裂を予測。ただし棚上進入初期 (x/h1 < 50, z <= 40m) では段波状の先頭峰と後続棚（pedestal）のみが存在し、明瞭な第2ソリトンの完全分離には x/h1 >= 100 の長距離伝播が必要。",
-        "fctReproductionVerdict": "CurrentFCTは先頭波高誤差 5.1% (N=256) / 1.4% (N=512) であり、t=14sにおける浅水段波変形初期の参照解（単一先頭峰+後続棚）と高精度に整合。",
-        "filterOffReproductionVerdict": "FilterOffはt=14sの早期段階で多数の副次峰を形成（峰数=3）。しかし参照解Fig. 4ではこの位置で副次峰は未分離であり、平坦床でも同様の多峰化が生じることから、数値分散波長 (7-9Δz) を拾った数値振動と判定。",
-        "synthesisSummary": "【参照解照合の結論】FilterOffの多峰化は数値分散振動と確定。CurrentFCTは初期棚上伝播 (t=14s) で参照解と整合するが、超長距離 (x/h1 > 100) での物理的分裂を解像できるか、または過剰散逸するかは領域長不足のため【未確定】を維持する。"
+        "rmseFormula": "RMSE = sqrt( (1/M) * sum (eta_sim - eta_custom)^2 ), z in [18.0m, 40.0m], M=200",
+        "rmseObservation": "独自の比較用近似曲線に対する棚上全波形RMSEは、FilterOff(0.0219m)がCurrentFCT(0.0247m)より若干小さい。これはFilterOffの後続水位低下が近似曲線の設定値と近いためであり、RMSEの大小だけで物理的優劣は判定できない。",
+        "synthesisSummary": "【比較用近似曲線照合の結論】追跡可能な文献デジタイズデータとの直接照合は【未実施】。FP32で設定間の波形差（CurrentFCTの単一波維持とFilterOffの多峰化）および格子依存性を測定したが、文献照合が未完了のため物理的分裂の妥当性と過剰散逸は【未確定（Inconclusive）】を維持。"
     },
     "gridConvergence": {
         "commonZMin": 0.0,
         "commonZMax": 50.0,
         "resampledPointsM": 2048,
         "evalTime": 14.0,
-        "fct_L1_128_vs_512": 0.002470731735229492,
-        "fct_L2_128_vs_512": 0.00509099243208766,
-        "fct_LInf_128_vs_512": 0.03860669955611229,
-        "fct_L1_256_vs_512": 0.000850196520332247,
-        "fct_L2_256_vs_512": 0.0021138435695320369,
-        "fct_LInf_256_vs_512": 0.017473511397838594,
-        "fct_ConvergenceOrderL1": 1.5390701293945313,
-        "fct_ConvergenceOrderL2": 1.268078327178955,
-        "filterOff_L1_128_vs_512": 0.002558997832238674,
-        "filterOff_L2_128_vs_512": 0.005114741623401642,
-        "filterOff_LInf_128_vs_512": 0.03217903524637222,
-        "filterOff_L1_256_vs_512": 0.0012325022835284472,
-        "filterOff_L2_256_vs_512": 0.0032450680155307056,
-        "filterOff_LInf_256_vs_512": 0.030336033552885057,
+        "fct_diff_L1_128_vs_256": 0.002092466689646244,
+        "fct_diff_L2_128_vs_256": 0.0045585231855511669,
+        "fct_diff_LInf_128_vs_256": 0.027433350682258607,
+        "fct_diff_L1_256_vs_512": 0.000850196520332247,
+        "fct_diff_L2_256_vs_512": 0.0021138435695320369,
+        "fct_diff_LInf_256_vs_512": 0.017473511397838594,
+        "fct_observedOrderL1": 1.2993364334106446,
+        "fct_observedOrderL2": 1.1086978912353516,
+        "fct_convergenceInterpretation": "格子細分化に伴う隣接格子差分の減少傾向（収束傾向）。時間刻み誤差・補間誤差・リミッター効果等を含むため漸近収束次数の確定とはみなさない。",
+        "filterOff_diff_L1_128_vs_256": 0.002188550541177392,
+        "filterOff_diff_L2_128_vs_256": 0.00508061284199357,
+        "filterOff_diff_LInf_128_vs_256": 0.03949466347694397,
+        "filterOff_diff_L1_256_vs_512": 0.0012325022835284472,
+        "filterOff_diff_L2_256_vs_512": 0.0032450680155307056,
+        "filterOff_diff_LInf_256_vs_512": 0.030336033552885057,
         "filterOff_Dz_128": 0.390625,
         "filterOff_Dz_256": 0.1953125,
         "filterOff_Dz_512": 0.09765625,
@@ -65,7 +66,8 @@
         "filterOff_SpacingRatio_128": 8.916650772094727,
         "filterOff_SpacingRatio_256": 7.076191425323486,
         "filterOff_SpacingRatio_512": 6.751874923706055,
-        "isFilterOffGridDependent": true,
+        "filterOff_MinSepImpactAnalysis": "旧検出処理に含まれていた minSep = max(4*dz, 0.6m) の影響を検証。minSep を撤廃しプロミネンス基準のみで抽出しても、先頭峰直後の第2峰との実間隔は格子細分化とともに縮小する傾向を示す。",
+        "filterOff_gridDependencyInterpretation": "峰間隔の格子依存性は数値分散（高周波位相誤差）の存在を疑わせる有力な根拠であるが、物理的分裂全体を完全に否定する数学的証明ではない。",
         "fct_ArrivalTime_128": 11.847870826721192,
         "fct_ArrivalTime_256": 11.287911415100098,
         "fct_ArrivalTime_512": 11.047928810119629,
@@ -540421,6 +540423,13 @@
                             "height": 0.12648306787014008,
                             "prominence": 0.1226348876953125,
                             "role": "LeadWave"
+                        },
+                        {
+                            "peakIndex": 201,
+                            "z": 19.685699462890626,
+                            "height": 0.1085575670003891,
+                            "prominence": 0.040180034935474399,
+                            "role": "SecondaryWave"
                         }
                     ],
                     "maxSlope": 0.49672073125839236
@@ -544532,6 +544541,13 @@
                             "height": 0.12644672393798829,
                             "prominence": 0.12256425619125366,
                             "role": "LeadWave"
+                        },
+                        {
+                            "peakIndex": 201,
+                            "z": 19.699798583984376,
+                            "height": 0.10819921642541886,
+                            "prominence": 0.03963939845561981,
+                            "role": "SecondaryWave"
                         }
                     ],
                     "maxSlope": 0.5055038928985596
@@ -548645,11 +548661,18 @@
                             "role": "LeadWave"
                         },
                         {
+                            "peakIndex": 237,
+                            "z": 23.1938533782959,
+                            "height": 0.08636023104190827,
+                            "prominence": 0.030566100031137468,
+                            "role": "SecondaryWave"
+                        },
+                        {
                             "peakIndex": 231,
                             "z": 22.6080379486084,
                             "height": 0.07462603598833084,
                             "prominence": 0.013776149600744248,
-                            "role": "SecondaryWave"
+                            "role": "TrailingWave"
                         }
                     ],
                     "maxSlope": 0.41072726249694826
@@ -552763,11 +552786,18 @@
                             "role": "LeadWave"
                         },
                         {
+                            "peakIndex": 237,
+                            "z": 23.206418991088868,
+                            "height": 0.08618390560150147,
+                            "prominence": 0.03041769191622734,
+                            "role": "SecondaryWave"
+                        },
+                        {
                             "peakIndex": 231,
                             "z": 22.62071990966797,
                             "height": 0.07455119490623474,
                             "prominence": 0.01378731057047844,
-                            "role": "SecondaryWave"
+                            "role": "TrailingWave"
                         }
                     ],
                     "maxSlope": 0.40904808044433596
@@ -714453,10 +714483,24 @@
                             "role": "TrailingWave"
                         },
                         {
+                            "peakIndex": 249,
+                            "z": 24.402847290039064,
+                            "height": 0.007787757087498903,
+                            "prominence": 0.009280194528400898,
+                            "role": "TrailingWave"
+                        },
+                        {
                             "peakIndex": 243,
                             "z": 23.821168899536134,
                             "height": 0.0075759971514344219,
                             "prominence": 0.00872509554028511,
+                            "role": "TrailingWave"
+                        },
+                        {
+                            "peakIndex": 238,
+                            "z": 23.248720169067384,
+                            "height": 0.007371584884822369,
+                            "prominence": 0.008462493307888508,
                             "role": "TrailingWave"
                         },
                         {
@@ -714467,10 +714511,24 @@
                             "role": "TrailingWave"
                         },
                         {
+                            "peakIndex": 226,
+                            "z": 22.119678497314454,
+                            "height": 0.007035159971565008,
+                            "prominence": 0.007880927994847298,
+                            "role": "TrailingWave"
+                        },
+                        {
                             "peakIndex": 220,
                             "z": 21.563955307006837,
                             "height": 0.006731582339853048,
                             "prominence": 0.007067575119435787,
+                            "role": "TrailingWave"
+                        },
+                        {
+                            "peakIndex": 215,
+                            "z": 21.02064323425293,
+                            "height": 0.00653336476534605,
+                            "prominence": 0.006668136455118656,
                             "role": "TrailingWave"
                         },
                         {
@@ -718711,10 +718769,24 @@
                             "role": "TrailingWave"
                         },
                         {
+                            "peakIndex": 278,
+                            "z": 27.228954315185548,
+                            "height": 0.011116547510027886,
+                            "prominence": 0.01534111239016056,
+                            "role": "TrailingWave"
+                        },
+                        {
                             "peakIndex": 272,
                             "z": 26.641820907592775,
                             "height": 0.010869720950722695,
                             "prominence": 0.01473300252109766,
+                            "role": "TrailingWave"
+                        },
+                        {
+                            "peakIndex": 266,
+                            "z": 26.06219482421875,
+                            "height": 0.01055232435464859,
+                            "prominence": 0.013814491219818592,
                             "role": "TrailingWave"
                         },
                         {
@@ -718725,10 +718797,24 @@
                             "role": "TrailingWave"
                         },
                         {
+                            "peakIndex": 255,
+                            "z": 24.926048278808595,
+                            "height": 0.010018803179264069,
+                            "prominence": 0.013259363360702992,
+                            "role": "TrailingWave"
+                        },
+                        {
                             "peakIndex": 249,
                             "z": 24.36375617980957,
                             "height": 0.009767357259988785,
                             "prominence": 0.012666363269090653,
+                            "role": "TrailingWave"
+                        },
+                        {
+                            "peakIndex": 243,
+                            "z": 23.807218551635743,
+                            "height": 0.009327596053481102,
+                            "prominence": 0.01149176899343729,
                             "role": "TrailingWave"
                         },
                         {
@@ -718739,10 +718825,24 @@
                             "role": "TrailingWave"
                         },
                         {
+                            "peakIndex": 232,
+                            "z": 22.71648406982422,
+                            "height": 0.008722118102014065,
+                            "prominence": 0.010093103162944317,
+                            "role": "TrailingWave"
+                        },
+                        {
                             "peakIndex": 227,
                             "z": 22.1825008392334,
                             "height": 0.008287199772894383,
                             "prominence": 0.00961826741695404,
+                            "role": "TrailingWave"
+                        },
+                        {
+                            "peakIndex": 221,
+                            "z": 21.646228790283204,
+                            "height": 0.008027222007513047,
+                            "prominence": 0.008630971424281598,
                             "role": "TrailingWave"
                         },
                         {
@@ -718753,10 +718853,24 @@
                             "role": "TrailingWave"
                         },
                         {
+                            "peakIndex": 210,
+                            "z": 20.597034454345704,
+                            "height": 0.007267895620316267,
+                            "prominence": 0.007398614659905434,
+                            "role": "TrailingWave"
+                        },
+                        {
                             "peakIndex": 205,
                             "z": 20.079126358032228,
                             "height": 0.007078420836478472,
                             "prominence": 0.0064859651029109959,
+                            "role": "TrailingWave"
+                        },
+                        {
+                            "peakIndex": 200,
+                            "z": 19.568864822387697,
+                            "height": 0.006789620500057936,
+                            "prominence": 0.006109158508479595,
                             "role": "TrailingWave"
                         }
                     ],
@@ -840011,5 +840125,5 @@
             ]
         }
     ],
-    "overallSynthesis": "【客観的検証総括（4段階判定枠組みに基づく評価）】\r\n1. 参照解との定量比較 (Madsen & Mei 1969 Fig. 4):\r\n   - 先頭波高相対誤差: CurrentFCT N=256: 5.1%, N=512: 1.4%, FilterOff N=256: 4.6%.\r\n   - 棚上全波形RMSE: CurrentFCT N=256: 0.0247m, FilterOff N=256: 0.0219m.\r\n   - t=14sにおける棚上初期伝播では、参照解も単一先頭峰と後続棚であり、CurrentFCTはこの形態を高精度に再現。\r\n2. 波形全体の空間格子収束性 (同一物理座標 z への再サンプリング M=2048):\r\n   - CurrentFCT: L1(128 vs 512)=0.0025m -> L1(256 vs 512)=0.0009m (収束次数 p=1.54)。\r\n   - FilterOffの峰間隔縮小: N=128 (3.48m / 8.9Δz) -> N=256 (1.38m / 7.1Δz) -> N=512 (0.66m / 6.8Δz)。\r\n   - 峰間隔が格子幅Δzに比例して縮小（約7-9格子幅で一定）しており、物理的ソリトン分離ではなく数値分散波長を拾っていることを確認。平坦床対照実験（段差なし）でも多峰化することと整合。\r\n3. 因果関係の識別と留保事項:\r\n   - FP16の波高減衰（0.022m vs FP32 0.064m）は事実だが、11ビット仮数部の丸め誤差のほか、中間積算精度や非線形項の打ち切り等の寄与の詳細は未分離。\r\n   - 散逸率一定条件 (kappa4/subDt = 12.0/s) での波高維持は「名目パラメータ率を揃えた結果」であり、FCT非線形リミッターが時間刻み依存性を完全に脱したとは断定しない。\r\n   - 初期版で見えていた分裂が数値振動であったかは、当時の実装・条件が完全再現されるまでは仮説として扱う。\r\n4. 最終判定:\r\n   - 【未確定（Inconclusive）を維持】。FilterOffの多峰化が数値分散であることは証明されたが、超長距離（x/h1 > 100）での物理的分裂に対するFCTの過剰散逸の有無は領域長不足のため未検証。本体の係数・しきい値・計算方式は変更しない。\r\n"
+    "overallSynthesis": "【客観的検証総括（保留・訂正後の評価）】\r\n1. 文献参照解との直接照合:\r\n   - 追跡可能な元データCSV・デジタイズ点列が未取得のため、文献照合および一致率合否判定は【未実施】とする。\r\n   - 独自の比較用近似曲線（t=14.0s）に対する棚上全波形RMSE: CurrentFCT N=256: 0.0247m, FilterOff N=256: 0.0219m。\r\n   - 比較用近似曲線の後続棚標高とFilterOffの水位低下が近いため、FilterOffのRMSEが若干小さい値を示す。RMSE単独で物理的優劣は判定できない。\r\n2. 空間格子収束性 (同一物理座標 z への再サンプリング M=2048):\r\n   - CurrentFCT 隣接格子差: L1(128 vs 256)=0.0021m -> L1(256 vs 512)=0.0009m (観測次数 p=1.30)。格子細分化に伴う差分減少傾向（収束傾向）を確認。\r\n   - FilterOff 峰間隔: N=128 (3.48m / 8.9Δz) -> N=256 (1.38m / 7.1Δz) -> N=512 (0.66m / 6.8Δz)。\r\n   - minSep 制限を撤廃したプロミネンス抽出でも、峰間隔が格子幅に比例して縮小する傾向を示す。これは数値成分を疑う有力な根拠であるが、物理的分裂全体を完全に否定する数学的証明とはしない。\r\n3. 因果関係の識別と留保事項:\r\n   - FP16の波高減衰（0.022m vs FP32 0.064m）は実測事実だが、11ビット仮数部の丸め誤差のほか、中間積算精度や非線形項の打ち切り等の寄与の詳細は未分離。\r\n   - 散逸率一定条件 (kappa4/subDt = 12.0/s) での波高維持は「名目パラメータ率を揃えた結果」であり、FCT非線形リミッターが時間刻み依存性を完全に脱したとは断定しない。\r\n   - 初期版で見えていた分裂が数値振動であったかは、当時の実装・条件が完全再現されるまでは仮説として扱う。\r\n4. 最終判定ステータス:\r\n   - 【未確定（Inconclusive）を維持】。FP32で設定間の波形差と格子依存性を測定した。ただし追跡可能な参照データとの照合が未完了（未実施）のため、物理的分裂の妥当性と過剰散逸は未確定とする。本体の係数・しきい値・計算方式は変更しない。\r\n"
 }

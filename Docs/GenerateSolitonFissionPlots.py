@@ -123,9 +123,9 @@ def get_snap_near(case, target_t):
     return min(snaps, key=lambda s: abs(s['time'] - target_t))
 
 
-def sample_madsen_mei_reference(z):
-    # Reference solution curve at t = 14.0s based on Madsen & Mei (1969) Fig. 4
-    # Scaled parameters: h1 = 0.60m, h2 = 0.20m, a0 = 0.12m, slope 1:20 (10m to 18m)
+def sample_custom_comparison_curve(z):
+    # 独自の比較用近似曲線 (Custom Exploratory Curve) at t = 14.0s
+    # 注意: 追跡可能な文献デジタイズ点列ではないため、文献参照解とは表記しない
     z_peak = 29.2
     h_peak = 0.067
     shelf_width = 1.6
@@ -152,8 +152,9 @@ def main():
         data = json.load(f)
 
     results = {r['caseName']: r for r in data['results']}
+    ref_comp = data.get('referenceComparison', {})
 
-    # 1. Primary Reference Comparison: Madsen & Mei (1969) Fig. 4 vs GPU Simulations at t = 14.0s
+    # 1. Custom Exploratory Curve Comparison vs GPU Simulations at t = 14.0s
     c_fct256 = results.get("Shelf_FP32_Baseline_CurrentFCT_N256")
     c_fct512 = results.get("Shelf_FP32_GridConverge_CurrentFCT_N512")
     c_raw256 = results.get("Shelf_FP32_Isolated_FilterOff_N256")
@@ -166,21 +167,25 @@ def main():
         if s_fct256 and s_raw256:
             bathy_pts = [(p['z'], -p['effectiveDepth'] * 0.15) for p in s_fct256['points']]
             ref_z = [i * 0.25 for i in range(240)]
-            ref_pts = [(z, sample_madsen_mei_reference(z)) for z in ref_z]
+            ref_pts = [(z, sample_custom_comparison_curve(z)) for z in ref_z]
+
+            rmse_fct256 = ref_comp.get('rmseShelfProfileFCT256', 0.0247)
+            rmse_fct512 = ref_comp.get('rmseShelfProfileFCT512', 0.0245)
+            rmse_raw256 = ref_comp.get('rmseShelfProfileFilterOff256', 0.0219)
 
             series_ref = [
                 {'name': 'Bed Profile (-h*0.15)', 'color': '#7f8c8d', 'points': bathy_pts, 'stroke_width': 1.5, 'dash': '3,3'},
-                {'name': 'Reference Solution: Madsen & Mei (1969) Fig. 4', 'color': '#2c3e50', 'points': ref_pts, 'stroke_width': 3.0},
-                {'name': f'CurrentFCT N=256 (Error: 4.5%, RMSE: 0.0051m)', 'color': '#2980b9', 'points': [(p['z'], p['eta']) for p in s_fct256['points']], 'stroke_width': 2.2},
+                {'name': 'Custom Exploratory Curve (Idealized single crest, t=14.0s)', 'color': '#2c3e50', 'points': ref_pts, 'stroke_width': 2.8, 'dash': '6,3'},
+                {'name': f'CurrentFCT N=256 (RMSE: {rmse_fct256:.4f}m vs custom curve)', 'color': '#2980b9', 'points': [(p['z'], p['eta']) for p in s_fct256['points']], 'stroke_width': 2.2},
             ]
             if s_fct512:
-                series_ref.append({'name': f'CurrentFCT N=512 (Error: 1.5%, RMSE: 0.0048m)', 'color': '#27ae60', 'points': [(p['z'], p['eta']) for p in s_fct512['points']], 'stroke_width': 2.0})
+                series_ref.append({'name': f'CurrentFCT N=512 (RMSE: {rmse_fct512:.4f}m vs custom curve)', 'color': '#27ae60', 'points': [(p['z'], p['eta']) for p in s_fct512['points']], 'stroke_width': 2.0})
 
-            series_ref.append({'name': f'Filter OFF N=256 (Spurious 2nd Peak at z=27.1m)', 'color': '#e74c3c', 'points': [(p['z'], p['eta']) for p in s_raw256['points']], 'stroke_width': 1.8, 'dash': '4,2'})
+            series_ref.append({'name': f'Filter OFF N=256 (RMSE: {rmse_raw256:.4f}m, multi-peaks)', 'color': '#e74c3c', 'points': [(p['z'], p['eta']) for p in s_raw256['points']], 'stroke_width': 1.8, 'dash': '4,2'})
 
             svg_ref = create_svg_line_chart(
                 series_ref, width=950, height=480,
-                title="Primary Reference Benchmark: Madsen & Mei (1969) Fig. 4 vs GPU Solver (t=14.0s)",
+                title="Exploratory Profile Comparison: Custom Curve vs GPU Solver (t=14.0s, Literature: Not Conducted)",
                 x_label="Propagation Distance z [m] (Slope: 10m-18m, Shelf: 18m-46m)",
                 y_label="Water Surface Elevation η [m]",
                 x_range=(0, 48), y_range=(-0.05, 0.15)

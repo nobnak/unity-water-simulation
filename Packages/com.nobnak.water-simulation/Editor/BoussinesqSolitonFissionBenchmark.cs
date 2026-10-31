@@ -248,8 +248,9 @@ namespace Nobnak.WaterSimulation.Editor {
 
         [Serializable]
         public class ReferenceComparisonReport {
-            public string primaryReferenceSource;
-            public string primaryFigureTable;
+            public string literatureComparisonStatus;
+            public string primaryReferenceCitation;
+            public string customProfileDescription;
             public float h1;
             public float h2;
             public float a0;
@@ -258,16 +259,15 @@ namespace Nobnak.WaterSimulation.Editor {
             public float slopeEnd;
             public string stationsDescription;
             public float evalTime;
-            public float referenceLeadPeakHeight;
-            public float leadPeakErrorFCT256;
-            public float leadPeakErrorFCT512;
-            public float leadPeakErrorFilterOff256;
+            public float customCurveLeadPeakHeight;
+            public float leadPeakDiffFCT256;
+            public float leadPeakDiffFCT512;
+            public float leadPeakDiffFilterOff256;
             public float rmseShelfProfileFCT256;
             public float rmseShelfProfileFCT512;
             public float rmseShelfProfileFilterOff256;
-            public string physicalFissionMechanism;
-            public string fctReproductionVerdict;
-            public string filterOffReproductionVerdict;
+            public string rmseFormula;
+            public string rmseObservation;
             public string synthesisSummary;
         }
 
@@ -278,23 +278,24 @@ namespace Nobnak.WaterSimulation.Editor {
             public int resampledPointsM;
             public float evalTime;
 
-            // CurrentFCT Grid Convergence (N=128, 256, 512)
-            public float fct_L1_128_vs_512;
-            public float fct_L2_128_vs_512;
-            public float fct_LInf_128_vs_512;
-            public float fct_L1_256_vs_512;
-            public float fct_L2_256_vs_512;
-            public float fct_LInf_256_vs_512;
-            public float fct_ConvergenceOrderL1;
-            public float fct_ConvergenceOrderL2;
+            // CurrentFCT Adjacent Grid Cauchy Differences (M=2048)
+            public float fct_diff_L1_128_vs_256;
+            public float fct_diff_L2_128_vs_256;
+            public float fct_diff_LInf_128_vs_256;
+            public float fct_diff_L1_256_vs_512;
+            public float fct_diff_L2_256_vs_512;
+            public float fct_diff_LInf_256_vs_512;
+            public float fct_observedOrderL1;
+            public float fct_observedOrderL2;
+            public string fct_convergenceInterpretation;
 
-            // FilterOff Grid Convergence
-            public float filterOff_L1_128_vs_512;
-            public float filterOff_L2_128_vs_512;
-            public float filterOff_LInf_128_vs_512;
-            public float filterOff_L1_256_vs_512;
-            public float filterOff_L2_256_vs_512;
-            public float filterOff_LInf_256_vs_512;
+            // FilterOff Adjacent Grid Cauchy Differences
+            public float filterOff_diff_L1_128_vs_256;
+            public float filterOff_diff_L2_128_vs_256;
+            public float filterOff_diff_LInf_128_vs_256;
+            public float filterOff_diff_L1_256_vs_512;
+            public float filterOff_diff_L2_256_vs_512;
+            public float filterOff_diff_LInf_256_vs_512;
 
             // FilterOff peak spacing vs cell size analysis
             public float filterOff_Dz_128;
@@ -306,7 +307,8 @@ namespace Nobnak.WaterSimulation.Editor {
             public float filterOff_SpacingRatio_128; // PeakSpacing / Dz
             public float filterOff_SpacingRatio_256;
             public float filterOff_SpacingRatio_512;
-            public bool isFilterOffGridDependent;
+            public string filterOff_MinSepImpactAnalysis;
+            public string filterOff_gridDependencyInterpretation;
 
             // Station 4 (Mid-shelf, z=29.2m) arrival times
             public float fct_ArrivalTime_128;
@@ -1158,33 +1160,18 @@ namespace Nobnak.WaterSimulation.Editor {
 
             if (rawPeaks.Count == 0) return rawPeaks;
 
-            // 2. Spatial separation filtering: enforce minimum physical separation >= max(4*dz, 0.6m)
-            float minSep = math.max(4f * dz, 0.6f);
-            var filtered = new List<TrackedPeak>();
-            // Sort by prominence descending to prioritize true solitary peaks over ripples
-            rawPeaks.Sort((a, b) => b.prominence.CompareTo(a.prominence));
+            // 2. Sort by spatial position z descending (Lead wave is furthest in +z propagation direction)
+            // Note: Spatial distance filtering minSep = max(4*dz, 0.6m) was removed to avoid artificially
+            // biasing or constraining peak spacing measurements across different grid resolutions.
+            rawPeaks.Sort((a, b) => b.z.CompareTo(a.z));
 
-            foreach (var cand in rawPeaks) {
-                bool tooClose = false;
-                foreach (var keep in filtered) {
-                    if (math.abs(cand.z - keep.z) < minSep) {
-                        tooClose = true;
-                        break;
-                    }
-                }
-                if (!tooClose) filtered.Add(cand);
+            for (int i = 0; i < rawPeaks.Count; i++) {
+                if (i == 0) rawPeaks[i].role = "LeadWave";
+                else if (i == 1) rawPeaks[i].role = "SecondaryWave";
+                else rawPeaks[i].role = "TrailingWave";
             }
 
-            // 3. Sort by spatial position z descending (Lead wave is furthest in +z propagation direction)
-            filtered.Sort((a, b) => b.z.CompareTo(a.z));
-
-            for (int i = 0; i < filtered.Count; i++) {
-                if (i == 0) filtered[i].role = "LeadWave";
-                else if (i == 1) filtered[i].role = "SecondaryWave";
-                else filtered[i].role = "TrailingWave";
-            }
-
-            return filtered;
+            return rawPeaks;
         }
 
         private static void AssignObjectiveVerdict(
@@ -1244,38 +1231,40 @@ namespace Nobnak.WaterSimulation.Editor {
         #region reports & synthesis
         private static string SynthesizeObjectiveFindings(BenchmarkMasterReport report) {
             var sb = new StringBuilder();
-            sb.AppendLine("【客観的検証総括（4段階判定枠組みに基づく評価）】");
-            sb.AppendLine("1. 参照解との定量比較 (Madsen & Mei 1969 Fig. 4):");
-            sb.AppendLine($"   - 先頭波高相対誤差: CurrentFCT N=256: {report.referenceComparison.leadPeakErrorFCT256 * 100f:F1}%, N=512: {report.referenceComparison.leadPeakErrorFCT512 * 100f:F1}%, FilterOff N=256: {report.referenceComparison.leadPeakErrorFilterOff256 * 100f:F1}%.");
-            sb.AppendLine($"   - 棚上全波形RMSE: CurrentFCT N=256: {report.referenceComparison.rmseShelfProfileFCT256:F4}m, FilterOff N=256: {report.referenceComparison.rmseShelfProfileFilterOff256:F4}m.");
-            sb.AppendLine("   - t=14sにおける棚上初期伝播では、参照解も単一先頭峰と後続棚であり、CurrentFCTはこの形態を高精度に再現。");
-            sb.AppendLine("2. 波形全体の空間格子収束性 (同一物理座標 z への再サンプリング M=2048):");
-            sb.AppendLine($"   - CurrentFCT: L1(128 vs 512)={report.gridConvergence.fct_L1_128_vs_512:F4}m -> L1(256 vs 512)={report.gridConvergence.fct_L1_256_vs_512:F4}m (収束次数 p={report.gridConvergence.fct_ConvergenceOrderL1:F2})。");
-            sb.AppendLine($"   - FilterOffの峰間隔縮小: N=128 ({report.gridConvergence.filterOff_PeakSpacing_128:F2}m / {report.gridConvergence.filterOff_SpacingRatio_128:F1}Δz) -> N=256 ({report.gridConvergence.filterOff_PeakSpacing_256:F2}m / {report.gridConvergence.filterOff_SpacingRatio_256:F1}Δz) -> N=512 ({report.gridConvergence.filterOff_PeakSpacing_512:F2}m / {report.gridConvergence.filterOff_SpacingRatio_512:F1}Δz)。");
-            sb.AppendLine("   - 峰間隔が格子幅Δzに比例して縮小（約7-9格子幅で一定）しており、物理的ソリトン分離ではなく数値分散波長を拾っていることを確認。平坦床対照実験（段差なし）でも多峰化することと整合。");
+            sb.AppendLine("【客観的検証総括（保留・訂正後の評価）】");
+            sb.AppendLine("1. 文献参照解との直接照合:");
+            sb.AppendLine("   - 追跡可能な元データCSV・デジタイズ点列が未取得のため、文献照合および一致率合否判定は【未実施】とする。");
+            sb.AppendLine($"   - 独自の比較用近似曲線（t=14.0s）に対する棚上全波形RMSE: CurrentFCT N=256: {report.referenceComparison.rmseShelfProfileFCT256:F4}m, FilterOff N=256: {report.referenceComparison.rmseShelfProfileFilterOff256:F4}m。");
+            sb.AppendLine("   - 比較用近似曲線の後続棚標高とFilterOffの水位低下が近いため、FilterOffのRMSEが若干小さい値を示す。RMSE単独で物理的優劣は判定できない。");
+            sb.AppendLine("2. 空間格子収束性 (同一物理座標 z への再サンプリング M=2048):");
+            sb.AppendLine($"   - CurrentFCT 隣接格子差: L1(128 vs 256)={report.gridConvergence.fct_diff_L1_128_vs_256:F4}m -> L1(256 vs 512)={report.gridConvergence.fct_diff_L1_256_vs_512:F4}m (観測次数 p={report.gridConvergence.fct_observedOrderL1:F2})。格子細分化に伴う差分減少傾向（収束傾向）を確認。");
+            sb.AppendLine($"   - FilterOff 峰間隔: N=128 ({report.gridConvergence.filterOff_PeakSpacing_128:F2}m / {report.gridConvergence.filterOff_SpacingRatio_128:F1}Δz) -> N=256 ({report.gridConvergence.filterOff_PeakSpacing_256:F2}m / {report.gridConvergence.filterOff_SpacingRatio_256:F1}Δz) -> N=512 ({report.gridConvergence.filterOff_PeakSpacing_512:F2}m / {report.gridConvergence.filterOff_SpacingRatio_512:F1}Δz)。");
+            sb.AppendLine("   - minSep 制限を撤廃したプロミネンス抽出でも、峰間隔が格子幅に比例して縮小する傾向を示す。これは数値成分を疑う有力な根拠であるが、物理的分裂全体を完全に否定する数学的証明とはしない。");
             sb.AppendLine("3. 因果関係の識別と留保事項:");
-            sb.AppendLine("   - FP16の波高減衰（0.022m vs FP32 0.064m）は事実だが、11ビット仮数部の丸め誤差のほか、中間積算精度や非線形項の打ち切り等の寄与の詳細は未分離。");
+            sb.AppendLine("   - FP16の波高減衰（0.022m vs FP32 0.064m）は実測事実だが、11ビット仮数部の丸め誤差のほか、中間積算精度や非線形項の打ち切り等の寄与の詳細は未分離。");
             sb.AppendLine("   - 散逸率一定条件 (kappa4/subDt = 12.0/s) での波高維持は「名目パラメータ率を揃えた結果」であり、FCT非線形リミッターが時間刻み依存性を完全に脱したとは断定しない。");
             sb.AppendLine("   - 初期版で見えていた分裂が数値振動であったかは、当時の実装・条件が完全再現されるまでは仮説として扱う。");
-            sb.AppendLine("4. 最終判定:");
-            sb.AppendLine("   - 【未確定（Inconclusive）を維持】。FilterOffの多峰化が数値分散であることは証明されたが、超長距離（x/h1 > 100）での物理的分裂に対するFCTの過剰散逸の有無は領域長不足のため未検証。本体の係数・しきい値・計算方式は変更しない。");
+            sb.AppendLine("4. 最終判定ステータス:");
+            sb.AppendLine("   - 【未確定（Inconclusive）を維持】。FP32で設定間の波形差と格子依存性を測定した。ただし追跡可能な参照データとの照合が未完了（未実施）のため、物理的分裂の妥当性と過剰散逸は未確定とする。本体の係数・しきい値・計算方式は変更しない。");
             return sb.ToString();
         }
 
         private static ReferenceComparisonReport EvaluateReferenceComparison(List<CaseResult> results) {
             var rep = new ReferenceComparisonReport {
-                primaryReferenceSource = "Madsen, O. S., & Mei, C. C. (1969). The transformation of a solitary wave over an uneven bottom. Journal of Fluid Mechanics, 39(4), 781-791.",
-                primaryFigureTable = "Figure 4 (Transformation of a solitary wave over a 1:20 slope onto a horizontal shelf, h1/h2 = 3.0)",
+                literatureComparisonStatus = "未実施 (追跡可能な元データCSV・デジタイズ点列が未取得のため、文献照合および文献一致率の合否判定は未実施)",
+                primaryReferenceCitation = "Madsen, O. S., & Mei, C. C. (1969). The transformation of a solitary wave over an uneven bottom. J. Fluid Mech. 39(4), 781-791.",
+                customProfileDescription = "独自の比較用近似曲線 (Custom Exploratory Curve): t=14.0s における単一峰モデル (z_peak=29.2m, H=0.067m, w=1.6m, 後続棚=0.016m)",
                 h1 = 0.60f,
                 h2 = 0.20f,
                 a0 = 0.12f,
                 slope = 0.05f,
                 slopeStart = 10.0f,
                 slopeEnd = 18.0f,
-                stationsDescription = "x/h1 = 0 (z=10.0m toe), x/h1 = 13.3 (z=18.0m top), x/h1 = 20.0 (z=22.0m), x/h1 = 33.3 (z=30.0m), x/h1 = 46.7 (z=38.0m)",
+                stationsDescription = "toe=10.0m, top=18.0m, mid-shelf=22.0m, 30.0m, 38.0m",
                 evalTime = 14.0f,
-                referenceLeadPeakHeight = 0.067f,
-                physicalFissionMechanism = "理論的IST解（Johnson 1973, Tappert & Zabusky 1971）は棚上でN=3のソリトン分裂を予測。ただし棚上進入初期 (x/h1 < 50, z <= 40m) では段波状の先頭峰と後続棚（pedestal）のみが存在し、明瞭な第2ソリトンの完全分離には x/h1 >= 100 の長距離伝播が必要。"
+                customCurveLeadPeakHeight = 0.067f,
+                rmseFormula = "RMSE = sqrt( (1/M) * sum (eta_sim - eta_custom)^2 ), z in [18.0m, 40.0m], M=200",
+                rmseObservation = "独自の比較用近似曲線に対する棚上全波形RMSEは、FilterOff(0.0219m)がCurrentFCT(0.0247m)より若干小さい。これはFilterOffの後続水位低下が近似曲線の設定値と近いためであり、RMSEの大小だけで物理的優劣は判定できない。"
             };
 
             CaseResult fct256 = results.Find(r => r.caseName == "Shelf_FP32_Baseline_CurrentFCT_N256");
@@ -1283,26 +1272,19 @@ namespace Nobnak.WaterSimulation.Editor {
             CaseResult raw256 = results.Find(r => r.caseName == "Shelf_FP32_Isolated_FilterOff_N256");
 
             if (fct256 != null) {
-                rep.leadPeakErrorFCT256 = math.abs(fct256.leadWaveHeight - rep.referenceLeadPeakHeight) / rep.referenceLeadPeakHeight;
-                rep.rmseShelfProfileFCT256 = ComputeShelfRMSEVsReference(GetSnapshotNear(fct256, 14.0f));
+                rep.leadPeakDiffFCT256 = fct256.leadWaveHeight - rep.customCurveLeadPeakHeight;
+                rep.rmseShelfProfileFCT256 = ComputeShelfRMSEVsCustomCurve(GetSnapshotNear(fct256, 14.0f));
             }
             if (fct512 != null) {
-                rep.leadPeakErrorFCT512 = math.abs(fct512.leadWaveHeight - rep.referenceLeadPeakHeight) / rep.referenceLeadPeakHeight;
-                rep.rmseShelfProfileFCT512 = ComputeShelfRMSEVsReference(GetSnapshotNear(fct512, 14.0f));
+                rep.leadPeakDiffFCT512 = fct512.leadWaveHeight - rep.customCurveLeadPeakHeight;
+                rep.rmseShelfProfileFCT512 = ComputeShelfRMSEVsCustomCurve(GetSnapshotNear(fct512, 14.0f));
             }
             if (raw256 != null) {
-                rep.leadPeakErrorFilterOff256 = math.abs(raw256.leadWaveHeight - rep.referenceLeadPeakHeight) / rep.referenceLeadPeakHeight;
-                rep.rmseShelfProfileFilterOff256 = ComputeShelfRMSEVsReference(GetSnapshotNear(raw256, 14.0f));
+                rep.leadPeakDiffFilterOff256 = raw256.leadWaveHeight - rep.customCurveLeadPeakHeight;
+                rep.rmseShelfProfileFilterOff256 = ComputeShelfRMSEVsCustomCurve(GetSnapshotNear(raw256, 14.0f));
             }
 
-            rep.fctReproductionVerdict = (rep.leadPeakErrorFCT256 < 0.10f && rep.leadPeakErrorFCT512 < 0.10f)
-                ? $"CurrentFCTは先頭波高誤差 {rep.leadPeakErrorFCT256 * 100f:F1}% (N=256) / {rep.leadPeakErrorFCT512 * 100f:F1}% (N=512) であり、t=14sにおける浅水段波変形初期の参照解（単一先頭峰+後続棚）と高精度に整合。"
-                : "CurrentFCT波高誤差が10%超過。";
-
-            rep.filterOffReproductionVerdict = $"FilterOffはt=14sの早期段階で多数の副次峰を形成（峰数={raw256?.significantPeakCountOnShelf ?? 0}）。しかし参照解Fig. 4ではこの位置で副次峰は未分離であり、平坦床でも同様の多峰化が生じることから、数値分散波長 (7-9Δz) を拾った数値振動と判定。";
-
-            rep.synthesisSummary = "【参照解照合の結論】FilterOffの多峰化は数値分散振動と確定。CurrentFCTは初期棚上伝播 (t=14s) で参照解と整合するが、超長距離 (x/h1 > 100) での物理的分裂を解像できるか、または過剰散逸するかは領域長不足のため【未確定】を維持する。";
-
+            rep.synthesisSummary = "【比較用近似曲線照合の結論】追跡可能な文献デジタイズデータとの直接照合は【未実施】。FP32で設定間の波形差（CurrentFCTの単一波維持とFilterOffの多峰化）および格子依存性を測定したが、文献照合が未完了のため物理的分裂の妥当性と過剰散逸は【未確定（Inconclusive）】を維持。";
             return rep;
         }
 
@@ -1331,13 +1313,15 @@ namespace Nobnak.WaterSimulation.Editor {
                 float[] eta256 = ResampleProfileToCommonZ(s256, rep.resampledPointsM, rep.commonZMin, rep.commonZMax);
                 float[] eta512 = ResampleProfileToCommonZ(s512, rep.resampledPointsM, rep.commonZMin, rep.commonZMax);
 
-                ComputeNormDifferences(eta128, eta512, rep.commonZMax - rep.commonZMin, out rep.fct_L1_128_vs_512, out rep.fct_L2_128_vs_512, out rep.fct_LInf_128_vs_512);
-                ComputeNormDifferences(eta256, eta512, rep.commonZMax - rep.commonZMin, out rep.fct_L1_256_vs_512, out rep.fct_L2_256_vs_512, out rep.fct_LInf_256_vs_512);
+                ComputeNormDifferences(eta128, eta256, rep.commonZMax - rep.commonZMin, out rep.fct_diff_L1_128_vs_256, out rep.fct_diff_L2_128_vs_256, out rep.fct_diff_LInf_128_vs_256);
+                ComputeNormDifferences(eta256, eta512, rep.commonZMax - rep.commonZMin, out rep.fct_diff_L1_256_vs_512, out rep.fct_diff_L2_256_vs_512, out rep.fct_diff_LInf_256_vs_512);
 
-                if (rep.fct_L1_256_vs_512 > 1e-6f) {
-                    rep.fct_ConvergenceOrderL1 = math.log2(rep.fct_L1_128_vs_512 / rep.fct_L1_256_vs_512);
-                    rep.fct_ConvergenceOrderL2 = math.log2(rep.fct_L2_128_vs_512 / rep.fct_L2_256_vs_512);
+                if (rep.fct_diff_L1_256_vs_512 > 1e-6f) {
+                    rep.fct_observedOrderL1 = math.log2(rep.fct_diff_L1_128_vs_256 / rep.fct_diff_L1_256_vs_512);
+                    rep.fct_observedOrderL2 = math.log2(rep.fct_diff_L2_128_vs_256 / rep.fct_diff_L2_256_vs_512);
                 }
+
+                rep.fct_convergenceInterpretation = "格子細分化に伴う隣接格子差分の減少傾向（収束傾向）。時間刻み誤差・補間誤差・リミッター効果等を含むため漸近収束次数の確定とはみなさない。";
 
                 rep.fct_ArrivalTime_128 = FindStationPeakArrivalTime(fct128, 3);
                 rep.fct_ArrivalTime_256 = FindStationPeakArrivalTime(fct256, 3);
@@ -1353,8 +1337,8 @@ namespace Nobnak.WaterSimulation.Editor {
                 float[] eta256 = ResampleProfileToCommonZ(s256, rep.resampledPointsM, rep.commonZMin, rep.commonZMax);
                 float[] eta512 = ResampleProfileToCommonZ(s512, rep.resampledPointsM, rep.commonZMin, rep.commonZMax);
 
-                ComputeNormDifferences(eta128, eta512, rep.commonZMax - rep.commonZMin, out rep.filterOff_L1_128_vs_512, out rep.filterOff_L2_128_vs_512, out rep.filterOff_LInf_128_vs_512);
-                ComputeNormDifferences(eta256, eta512, rep.commonZMax - rep.commonZMin, out rep.filterOff_L1_256_vs_512, out rep.filterOff_L2_256_vs_512, out rep.filterOff_LInf_256_vs_512);
+                ComputeNormDifferences(eta128, eta256, rep.commonZMax - rep.commonZMin, out rep.filterOff_diff_L1_128_vs_256, out rep.filterOff_diff_L2_128_vs_256, out rep.filterOff_diff_LInf_128_vs_256);
+                ComputeNormDifferences(eta256, eta512, rep.commonZMax - rep.commonZMin, out rep.filterOff_diff_L1_256_vs_512, out rep.filterOff_diff_L2_256_vs_512, out rep.filterOff_diff_LInf_256_vs_512);
 
                 rep.filterOff_Dz_128 = 50f / 128f;
                 rep.filterOff_Dz_256 = 50f / 256f;
@@ -1368,9 +1352,8 @@ namespace Nobnak.WaterSimulation.Editor {
                 rep.filterOff_SpacingRatio_256 = rep.filterOff_PeakSpacing_256 / math.max(1e-4f, rep.filterOff_Dz_256);
                 rep.filterOff_SpacingRatio_512 = rep.filterOff_PeakSpacing_512 / math.max(1e-4f, rep.filterOff_Dz_512);
 
-                rep.isFilterOffGridDependent = (rep.filterOff_SpacingRatio_128 >= 5f && rep.filterOff_SpacingRatio_128 <= 12f)
-                                            && (rep.filterOff_SpacingRatio_256 >= 5f && rep.filterOff_SpacingRatio_256 <= 12f)
-                                            && (rep.filterOff_SpacingRatio_512 >= 5f && rep.filterOff_SpacingRatio_512 <= 12f);
+                rep.filterOff_MinSepImpactAnalysis = "旧検出処理に含まれていた minSep = max(4*dz, 0.6m) の影響を検証。minSep を撤廃しプロミネンス基準のみで抽出しても、先頭峰直後の第2峰との実間隔は格子細分化とともに縮小する傾向を示す。";
+                rep.filterOff_gridDependencyInterpretation = "峰間隔の格子依存性は数値分散（高周波位相誤差）の存在を疑わせる有力な根拠であるが、物理的分裂全体を完全に否定する数学的証明ではない。";
 
                 rep.filterOff_ArrivalTime_128 = FindStationPeakArrivalTime(raw128, 3);
                 rep.filterOff_ArrivalTime_256 = FindStationPeakArrivalTime(raw256, 3);
@@ -1380,10 +1363,10 @@ namespace Nobnak.WaterSimulation.Editor {
             return rep;
         }
 
-        public static float SampleMadsenMeiReferenceProfile(float z, float t) {
-            // Madsen & Mei (1969) Fig. 4 reference solution at t = 14.0s
-            // Scaled dimensional parameters: h1 = 0.60m, h2 = 0.20m, a0 = 0.12m
-            // Shoaled lead solitary crest on shelf (centered at z ≈ 29.2m)
+        public static float SampleCustomComparisonCurve(float z, float t) {
+            // 独自の比較用近似曲線 (Custom Exploratory Curve) at t = 14.0s
+            // 注意: これは追跡可能な文献デジタイズ点列ではなく、探索比較用の理想化単一峰モデルである。
+            // 先頭峰: zPeak = 29.2m, hPeak = 0.067m, width = 1.6m
             float zPeak = 29.2f;
             float hPeak = 0.067f;
             float shelfWidth = 1.6f;
@@ -1391,7 +1374,7 @@ namespace Nobnak.WaterSimulation.Editor {
             float sech = (math.abs(arg) < 20f) ? (1.0f / math.cosh(arg)) : 0f;
             float etaSoliton = hPeak * sech * sech;
 
-            // Trailing shelf pedestal behind the soliton on the shelf (z between 17m and 27.5m)
+            // 後続棚: z in [17.0m, 27.5m]
             float trailingPedestal = 0f;
             if (z >= 17.0f && z <= 27.5f) {
                 float plateauArg = (z - 22.0f) / 4.0f;
@@ -1401,7 +1384,7 @@ namespace Nobnak.WaterSimulation.Editor {
             return math.max(etaSoliton, trailingPedestal);
         }
 
-        private static float ComputeShelfRMSEVsReference(SnapshotProfile snap) {
+        private static float ComputeShelfRMSEVsCustomCurve(SnapshotProfile snap) {
             if (snap == null || snap.points.Count == 0) return 0f;
             int M = 200;
             float zStart = 18.0f;
@@ -1412,7 +1395,7 @@ namespace Nobnak.WaterSimulation.Editor {
             for (int m = 0; m < M; m++) {
                 float z = zStart + m * dz;
                 float simEta = SampleProfileAtZ(snap, z);
-                float refEta = SampleMadsenMeiReferenceProfile(z, snap.time);
+                float refEta = SampleCustomComparisonCurve(z, snap.time);
                 float diff = simEta - refEta;
                 sumSq += diff * diff;
             }
@@ -1510,62 +1493,67 @@ namespace Nobnak.WaterSimulation.Editor {
             sb.AppendLine($"- **Shader Hash (SHA256)**: `{report.computeShaderHash}`");
             sb.AppendLine($"- **Unity Version**: `{report.unityVersion}`");
             sb.AppendLine($"- **GPU Device**: `{report.gpuRenderer}`");
-            sb.AppendLine("- **Primary Reference**: Madsen & Mei (1969), *The transformation of a solitary wave over an uneven bottom*, J. Fluid Mech. 39(4), 781-791, Fig. 4.");
-            sb.AppendLine("- **Secondary Reference**: Seabra-Santos, Renouard, & Temperville (1987), *Numerical and experimental study of the transformation of a solitary wave over a shelf or isolated obstacle*, J. Fluid Mech. 176, 117-134, Fig. 6.");
+            sb.AppendLine("- **文献参照解照合ステータス**: **【未実施】** (追跡可能な元データCSV・デジタイズ点列が未取得のため、合否判定から除外)");
+            sb.AppendLine("- **波形比較対象**: 独自の比較用近似曲線 (Custom Exploratory Curve, t=14.0s) および解像度間 Cauchy 収束性");
             sb.AppendLine();
-            sb.AppendLine("## 1. 総合エグゼクティブサマリー & 4段階判定枠組み");
+            sb.AppendLine("## 1. 総合エグゼクティブサマリー & 判定枠組み");
             sb.AppendLine();
             sb.AppendLine("### 判定ステータス: **【未確定（Inconclusive）を維持】**");
             sb.AppendLine();
             sb.AppendLine("ユーザー指示に基づく厳格な判定フレームワークに従い、客観的証拠を整理します。");
             sb.AppendLine();
-            sb.AppendLine("1. **一次参照解との直接比較結果 (Madsen & Mei 1969 Fig. 4)**:");
-            sb.AppendLine($"   - 参照解における物理特性: 水深比 $h_1/h_2 = 3.0$、斜面 1:20 において、段波進入初期 ($x/h_1 < 50$, $z \\le 40$ m, $t = 14$ s) では**単一の浅水化先頭孤立波 ($H \\approx 0.067$ m) と後続棚 (pedestal) のみ**が存在し、副次ソリトンの完全分離には $x/h_1 \\ge 100$ 以上の長距離伝播が必要です。");
-            sb.AppendLine($"   - CurrentFCTの再現性: 先頭波高誤差は $N=256$ で **{report.referenceComparison.leadPeakErrorFCT256 * 100f:F1}%** (0.064 m vs 0.067 m)、$N=512$ で **{report.referenceComparison.leadPeakErrorFCT512 * 100f:F1}%** (0.068 m vs 0.067 m)。棚上全波形RMSEは 0.0051 m であり、参照解の波形と高精度に整合します。");
-            sb.AppendLine($"   - FilterOffの多峰化: $t = 14$ s の早期段階で複数峰 ($H_2 = 0.038$ m) を形成しますが、参照解ではこの位置で副次峰は未分離です。");
+            sb.AppendLine("1. **文献照合ステータスと独自の比較用近似曲線との比較結果**:");
+            sb.AppendLine("   - 追跡可能な文献デジタイズ点列が未取得のため、文献参照解との一致率合否判定は行わず【未実施】とします。");
+            sb.AppendLine($"   - $t=14.0$ s における独自の比較用近似曲線 ($z_{{\\text{{peak}}}}=29.2$ m, $H=0.067$ m, $w=1.6$ m, 後続棚 $0.016$ m) に対する全波形RMSE:");
+            sb.AppendLine($"     - CurrentFCT ($N=256$): **{report.referenceComparison.rmseShelfProfileFCT256:F4} m** (先頭波高差 {report.referenceComparison.leadPeakDiffFCT256:+0.000;-0.000;0.000} m)");
+            sb.AppendLine($"     - CurrentFCT ($N=512$): **{report.referenceComparison.rmseShelfProfileFCT512:F4} m** (先頭波高差 {report.referenceComparison.leadPeakDiffFCT512:+0.000;-0.000;0.000} m)");
+            sb.AppendLine($"     - FilterOff ($N=256$): **{report.referenceComparison.rmseShelfProfileFilterOff256:F4} m** (先頭波高差 {report.referenceComparison.leadPeakDiffFilterOff256:+0.000;-0.000;0.000} m)");
+            sb.AppendLine("   - **客観的事実**: 比較用近似曲線の後続棚標高とFilterOffの後続水位低下が近いため、棚上全波形RMSEはFilterOffがCurrentFCTより若干小さい値を示します。RMSE単独の大小をもって物理的妥当性や優劣を判定することはできません。");
             sb.AppendLine();
-            sb.AppendLine("2. **波形全体の空間格子収束性評価 (同一物理座標 $z \\in [0, 50\\text{ m}]$ へ再サンプリング $M=2048$)**:");
-            sb.AppendLine($"   - CurrentFCTの収束性: $L_1(128, 512) = {report.gridConvergence.fct_L1_128_vs_512:F4} m \\to L_1(256, 512) = {report.gridConvergence.fct_L1_256_vs_512:F4} m (収束次数 $p = {report.gridConvergence.fct_ConvergenceOrderL1:F2}$)。$L_2$ 誤差も単調減少。");
-            sb.AppendLine($"   - FilterOffの峰間隔のスケーリング:");
+            sb.AppendLine("2. **波形全体の空間格子収束性評価 (同一物理座標 $z \\in [0, 50\\text{ m}]$、$M=2048$)**:");
+            sb.AppendLine($"   - CurrentFCT 隣接格子 Cauchy 差分:");
+            sb.AppendLine($"     - $L_1(128, 256) = {report.gridConvergence.fct_diff_L1_128_vs_256:F4}$ m $\\to L_1(256, 512) = {report.gridConvergence.fct_diff_L1_256_vs_512:F4}$ m (観測次数 $p = {report.gridConvergence.fct_observedOrderL1:F2}$)");
+            sb.AppendLine($"     - $L_2(128, 256) = {report.gridConvergence.fct_diff_L2_128_vs_256:F4}$ m $\\to L_2(256, 512) = {report.gridConvergence.fct_diff_L2_256_vs_512:F4}$ m (観測次数 $p = {report.gridConvergence.fct_observedOrderL2:F2}$)");
+            sb.AppendLine("     - 格子細分化に伴う差分減少傾向（収束傾向）を確認。ただし時間刻み誤差・補間誤差・リミッター効果等を含むため、漸近収束次数の確定とはみなさず「収束傾向」にとどめます。");
+            sb.AppendLine("   - FilterOff 峰間隔のスケーリング (プロミネンス抽出、minSep 撤廃後):");
             sb.AppendLine($"     - $N=128$ ($\\Delta z = {report.gridConvergence.filterOff_Dz_128:F4}$ m): 峰間隔 $\\Delta z_{{\\text{{peak}}}} = {report.gridConvergence.filterOff_PeakSpacing_128:F2}$ m ($\\approx {report.gridConvergence.filterOff_SpacingRatio_128:F1} \\Delta z$)");
             sb.AppendLine($"     - $N=256$ ($\\Delta z = {report.gridConvergence.filterOff_Dz_256:F4}$ m): 峰間隔 $\\Delta z_{{\\text{{peak}}}} = {report.gridConvergence.filterOff_PeakSpacing_256:F2}$ m ($\\approx {report.gridConvergence.filterOff_SpacingRatio_256:F1} \\Delta z$)");
             sb.AppendLine($"     - $N=512$ ($\\Delta z = {report.gridConvergence.filterOff_Dz_512:F4}$ m): 峰間隔 $\\Delta z_{{\\text{{peak}}}} = {report.gridConvergence.filterOff_PeakSpacing_512:F2}$ m ($\\approx {report.gridConvergence.filterOff_SpacingRatio_512:F1} \\Delta z$)");
-            sb.AppendLine("     - **数学的判定**: 物理的なソリトン分離であれば峰間隔は位相速度差 $(c_1 - c_2)\\Delta t$ で決まり格子幅に依存しません。しかしFilterOffでは格子細分化に伴い峰間隔が $\\approx 7 \\sim 9 \\Delta z$ で比例縮小しており、**MacCormack法の数値分散波長（高周波位相誤差）を拾ったアーティファクト**であることが確定しました。");
-            sb.AppendLine("     - さらに平坦床対照実験（段差なし、分裂の物理的原因皆無）でもFilterOffは多峰化（$N=256$で2峰、$N=512$で5峰）し、数値振動であることが裏付けられました。");
+            sb.AppendLine("     - 旧コードの `minSep = max(4*dz, 0.6m)` を撤廃しても、峰間隔が格子幅に比例して縮小する傾向を示します。これは数値分散（高周波位相誤差）の存在を疑わせる有力な根拠ですが、物理的分裂全体を完全に否定する数学的証明とはしません。");
+            sb.AppendLine("     - 平坦床対照実験（段差なし、分裂の物理的原因皆無）でもFilterOffは多峰化（$N=256$で2峰、$N=512$で5峰）し、数値振動成分の混入を示唆します。");
             sb.AppendLine();
             sb.AppendLine("3. **因果関係の客観的限定と留保事項**:");
             sb.AppendLine("   - FP16 vs FP32の波高減衰差（FP16: 0.022 m vs FP32: 0.064 m）は実測事実ですが、11ビット仮数部の丸め誤差のほか、中間積算精度や非線形積の丸めなど未検証要因が含まれるため、「浮動小数点打ち切りが主因」と細部まで断定せず留保します。");
             sb.AppendLine("   - 名目散逸率一定条件 ($\\kappa_4 / \\Delta t_{\\text{sub}} = 12.0\\text{ s}^{-1}$) で時間細分化しても波高が維持されたのは「名目パラメータ率を揃えた結果」であり、FCT非線形リミッターが時間刻み依存性を完全に脱したとは主張しません。");
             sb.AppendLine("   - 初期版（コミット `c60c0b1` 等）で見えていた分裂が数値振動であったかは、当時の条件が完全再現されるまでは仮説として扱います。");
             sb.AppendLine();
-            sb.AppendLine("4. **判定フレームワークに基づく結論**:");
-            sb.AppendLine("   - 「参照解に分裂があり、CurrentFCTが解像度を上げても再現できないか」を判定するには、$x/h_1 \\ge 100$（60 m以上の棚長、計算領域 $L \\ge 100$ m）が必要ですが、現在の計算領域（$L=50$ m）では物理的分裂が完了する距離に達していません。");
-            sb.AppendLine("   - したがって、「CurrentFCTが過剰散逸であるか」および「初期版の分裂の物理的妥当性」は**【未確定（Inconclusive）】**を維持し、本体コードの散逸係数・勾配しきい値・対流方式は変更しません。");
+            sb.AppendLine("4. **総合結論**:");
+            sb.AppendLine("   - 「FP32で設定間の波形差と格子依存性を測定した。ただし追跡可能な参照データとの照合が未完了（未実施）のため、物理的分裂の妥当性と過剰散逸は未確定」とします。");
+            sb.AppendLine("   - 本体コードの散逸係数・勾配しきい値・対流方式は変更しません。");
             sb.AppendLine();
-            sb.AppendLine("## 2. 参照解との定量比較詳細 (Madsen & Mei 1969 Fig. 4)");
+            sb.AppendLine("## 2. 独自の比較用近似曲線との波形差記述 (t = 14.0s)");
             sb.AppendLine();
-            sb.AppendLine($"- **出典**: {report.referenceComparison.primaryReferenceSource}");
-            sb.AppendLine($"- **図表番号**: {report.referenceComparison.primaryFigureTable}");
-            sb.AppendLine($"- **波源・水深・地形条件**: 水深 $h_1 = {report.referenceComparison.h1:F2}$ m, 棚水深 $h_2 = {report.referenceComparison.h2:F2}$ m (水深比 3.0), 初期孤立波振幅 $a_0 = {report.referenceComparison.a0:F2}$ m ($a_0/h_1 = 0.20$), 斜面 1:20 ($z = {report.referenceComparison.slopeStart:F1} \\sim {report.referenceComparison.slopeEnd:F1}$ m, 斜面長 8.0 m)");
-            sb.AppendLine($"- **観測位置**: {report.referenceComparison.stationsDescription}");
-            sb.AppendLine($"- **評価時刻**: $t = {report.referenceComparison.evalTime:F1}$ s");
+            sb.AppendLine($"- **近似曲線仕様**: {report.referenceComparison.customProfileDescription}");
+            sb.AppendLine($"- **文献照合ステータス**: {report.referenceComparison.literatureComparisonStatus}");
+            sb.AppendLine($"- **比較領域**: {report.referenceComparison.stationsDescription} (棚進入部 $z=18.0 \\sim 40.0$ m)");
+            sb.AppendLine($"- **RMSE定義式**: {report.referenceComparison.rmseFormula}");
             sb.AppendLine();
-            sb.AppendLine("| 手法 / 格子 | 先頭波高 (m) | 参照先頭波高 (m) | 相対誤差 | 棚上全波形 RMSE (m) | 浅瀬有意峰数 | 波形形態と判定 |");
-            sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :--- |");
-            sb.AppendLine($"| **CurrentFCT ($N=256$)** | 0.064 | {report.referenceComparison.referenceLeadPeakHeight:F3} | **{report.referenceComparison.leadPeakErrorFCT256 * 100f:F1}%** | **{report.referenceComparison.rmseShelfProfileFCT256:F4}** | 1 | 参照解の先頭段波+後続棚を高精度に再現 |");
-            sb.AppendLine($"| **CurrentFCT ($N=512$)** | 0.068 | {report.referenceComparison.referenceLeadPeakHeight:F3} | **{report.referenceComparison.leadPeakErrorFCT512 * 100f:F1}%** | **{report.referenceComparison.rmseShelfProfileFCT512:F4}** | 1 | 格子収束に伴い参照波高に極めて高精度一致 |");
-            sb.AppendLine($"| **FilterOff ($N=256$)** | 0.069 | {report.referenceComparison.referenceLeadPeakHeight:F3} | {report.referenceComparison.leadPeakErrorFilterOff256 * 100f:F1}% | {report.referenceComparison.rmseShelfProfileFilterOff256:F4} | 2 | 参照解に存在しない副次峰(0.038 m)が発生 (数値分散) |");
+            sb.AppendLine("| 手法 / 格子 | 先頭波高 (m) | 近似曲線先頭波高 (m) | 波高差 (m) | 浅瀬到達時刻 ($z=30$m) | 棚上全波形 RMSE (m) | 浅瀬有意峰数 | 波形形態と観察結果 |");
+            sb.AppendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |");
+            sb.AppendLine($"| **CurrentFCT ($N=256$)** | 0.064 | {report.referenceComparison.customCurveLeadPeakHeight:F3} | {report.referenceComparison.leadPeakDiffFCT256:+0.000;-0.000;0.000} | {report.gridConvergence.fct_ArrivalTime_256:F2} s | {report.referenceComparison.rmseShelfProfileFCT256:F4} | 1 | 先頭波と後続棚を保持 (第2波未分離) |");
+            sb.AppendLine($"| **CurrentFCT ($N=512$)** | 0.068 | {report.referenceComparison.customCurveLeadPeakHeight:F3} | {report.referenceComparison.leadPeakDiffFCT512:+0.000;-0.000;0.000} | {report.gridConvergence.fct_ArrivalTime_512:F2} s | {report.referenceComparison.rmseShelfProfileFCT512:F4} | 1 | 先頭波高が微増し単一峰維持 |");
+            sb.AppendLine($"| **FilterOff ($N=256$)** | 0.069 | {report.referenceComparison.customCurveLeadPeakHeight:F3} | {report.referenceComparison.leadPeakDiffFilterOff256:+0.000;-0.000;0.000} | {report.gridConvergence.filterOff_ArrivalTime_256:F2} s | {report.referenceComparison.rmseShelfProfileFilterOff256:F4} | 2 | 副次峰が発生。後続平坦部水位が低くRMSEは最小 |");
             sb.AppendLine();
             sb.AppendLine("## 3. 全波形の空間格子収束性詳細 ($z \\in [0, 50\\text{ m}]$, $M=2048$)");
             sb.AppendLine();
-            sb.AppendLine("| 評価項目 | $N=128$ ($\\Delta z=0.391$ m) | $N=256$ ($\\Delta z=0.195$ m) | $N=512$ ($\\Delta z=0.098$ m) | 収束特性 / スケーリング |");
+            sb.AppendLine("| 評価項目 | $N=128 \\to 256$ | $N=256 \\to 512$ | 観測次数 / スケーリング | 評価解釈 |");
             sb.AppendLine("| :--- | :---: | :---: | :---: | :--- |");
-            sb.AppendLine($"| **CurrentFCT $L_1$ 誤差 vs $N=512$** | {report.gridConvergence.fct_L1_128_vs_512:F4} m | {report.gridConvergence.fct_L1_256_vs_512:F4} m | 基準 (0.0000 m) | 収束次数 $p = {report.gridConvergence.fct_ConvergenceOrderL1:F2}$ (漸近収束) |");
-            sb.AppendLine($"| **CurrentFCT $L_2$ 誤差 vs $N=512$** | {report.gridConvergence.fct_L2_128_vs_512:F4} m | {report.gridConvergence.fct_L2_256_vs_512:F4} m | 基準 (0.0000 m) | 収束次数 $p = {report.gridConvergence.fct_ConvergenceOrderL2:F2}$ |");
-            sb.AppendLine($"| **CurrentFCT $L_\\infty$ 誤差 vs $N=512$** | {report.gridConvergence.fct_LInf_128_vs_512:F4} m | {report.gridConvergence.fct_LInf_256_vs_512:F4} m | 基準 (0.0000 m) | 最大波高差が半減 |");
-            sb.AppendLine($"| **CurrentFCT 浅瀬到達時刻 ($z=30$ m)** | {report.gridConvergence.fct_ArrivalTime_128:F2} s | {report.gridConvergence.fct_ArrivalTime_256:F2} s | {report.gridConvergence.fct_ArrivalTime_512:F2} s | 到達時刻の差 0.05 s 以内に収束 |");
-            sb.AppendLine($"| **FilterOff 峰間隔 $\\Delta z_{{\\text{{peak}}}}$** | **{report.gridConvergence.filterOff_PeakSpacing_128:F2} m** | **{report.gridConvergence.filterOff_PeakSpacing_256:F2} m** | **{report.gridConvergence.filterOff_PeakSpacing_512:F2} m** | **格子幅に正比例して半減** |");
-            sb.AppendLine($"| **FilterOff 峰間隔 / 格子幅比** | **{report.gridConvergence.filterOff_SpacingRatio_128:F1} $\\Delta z$** | **{report.gridConvergence.filterOff_SpacingRatio_256:F1} $\\Delta z$** | **{report.gridConvergence.filterOff_SpacingRatio_512:F1} $\\Delta z$** | **約 $7 \\sim 9$ 格子幅で一定 (数値分散確定)** |");
+            sb.AppendLine($"| **CurrentFCT $L_1$ 隣接差分** | {report.gridConvergence.fct_diff_L1_128_vs_256:F4} m | {report.gridConvergence.fct_diff_L1_256_vs_512:F4} m | 観測次数 $p = {report.gridConvergence.fct_observedOrderL1:F2}$ | 差分の減少傾向 (収束傾向) |");
+            sb.AppendLine($"| **CurrentFCT $L_2$ 隣接差分** | {report.gridConvergence.fct_diff_L2_128_vs_256:F4} m | {report.gridConvergence.fct_diff_L2_256_vs_512:F4} m | 観測次数 $p = {report.gridConvergence.fct_observedOrderL2:F2}$ | 差分の減少傾向 (収束傾向) |");
+            sb.AppendLine($"| **CurrentFCT $L_\\infty$ 隣接差分** | {report.gridConvergence.fct_diff_LInf_128_vs_256:F4} m | {report.gridConvergence.fct_diff_LInf_256_vs_512:F4} m | 最大波高差が半減 | 収束傾向 |");
+            sb.AppendLine($"| **CurrentFCT 浅瀬到達時刻 ($z=30$ m)** | {report.gridConvergence.fct_ArrivalTime_128:F2} s ($N=128$) | {report.gridConvergence.fct_ArrivalTime_256:F2} s ($N=256$) | {report.gridConvergence.fct_ArrivalTime_512:F2} s ($N=512$) | 到達時刻の差 0.24 s 以内に収束 |");
+            sb.AppendLine($"| **FilterOff 峰間隔 $\\Delta z_{{\\text{{peak}}}}$** | **{report.gridConvergence.filterOff_PeakSpacing_128:F2} m** ($N=128$) | **{report.gridConvergence.filterOff_PeakSpacing_256:F2} m** ($N=256$) | **{report.gridConvergence.filterOff_PeakSpacing_512:F2} m** ($N=512$) | **格子幅に比例して縮小** |");
+            sb.AppendLine($"| **FilterOff 峰間隔 / 格子幅比** | **{report.gridConvergence.filterOff_SpacingRatio_128:F1} $\\Delta z$** | **{report.gridConvergence.filterOff_SpacingRatio_256:F1} $\\Delta z$** | **{report.gridConvergence.filterOff_SpacingRatio_512:F1} $\\Delta z$** | **約 $7 \\sim 9$ 格子幅で推移 (数値成分示唆)** |");
             sb.AppendLine();
             sb.AppendLine("## 4. 本体実装とベンチマークのバッファ形式対応表");
             sb.AppendLine();
