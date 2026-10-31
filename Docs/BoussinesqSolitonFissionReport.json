@@ -1,6 +1,6 @@
 ﻿{
-    "timestamp": "2026-10-31 12:24:36 UTC",
-    "gitCommit": "3f7954d-dirty",
+    "timestamp": "2026-10-31 13:47:28 UTC",
+    "gitCommit": "6bd4291-dirty",
     "gitDirty": true,
     "computeShaderHash": "d08ecfed00b754b311350afc2b473d4a0b6481333f9f253f2f8f8b7e7dd89a60",
     "unityVersion": "6000.3.27f1",
@@ -13,6 +13,65 @@
         "maxKappaEnabled": 0.12000000476837158,
         "maxKappaDisabled": 0.0,
         "details": "MaxDiff: 0.2026, Enabled Kappa: 0.1200 (65 faces), Disabled Kappa: 0.0000 (0 faces)"
+    },
+    "referenceComparison": {
+        "primaryReferenceSource": "Madsen, O. S., & Mei, C. C. (1969). The transformation of a solitary wave over an uneven bottom. Journal of Fluid Mechanics, 39(4), 781-791.",
+        "primaryFigureTable": "Figure 4 (Transformation of a solitary wave over a 1:20 slope onto a horizontal shelf, h1/h2 = 3.0)",
+        "h1": 0.6000000238418579,
+        "h2": 0.20000000298023225,
+        "a0": 0.11999999731779099,
+        "slope": 0.05000000074505806,
+        "slopeStart": 10.0,
+        "slopeEnd": 18.0,
+        "stationsDescription": "x/h1 = 0 (z=10.0m toe), x/h1 = 13.3 (z=18.0m top), x/h1 = 20.0 (z=22.0m), x/h1 = 33.3 (z=30.0m), x/h1 = 46.7 (z=38.0m)",
+        "evalTime": 14.0,
+        "referenceLeadPeakHeight": 0.06700000166893006,
+        "leadPeakErrorFCT256": 0.05127411708235741,
+        "leadPeakErrorFCT512": 0.0141840148717165,
+        "leadPeakErrorFilterOff256": 0.04585854336619377,
+        "rmseShelfProfileFCT256": 0.024654053151607515,
+        "rmseShelfProfileFCT512": 0.024538546800613405,
+        "rmseShelfProfileFilterOff256": 0.021935023367404939,
+        "physicalFissionMechanism": "理論的IST解（Johnson 1973, Tappert & Zabusky 1971）は棚上でN=3のソリトン分裂を予測。ただし棚上進入初期 (x/h1 < 50, z <= 40m) では段波状の先頭峰と後続棚（pedestal）のみが存在し、明瞭な第2ソリトンの完全分離には x/h1 >= 100 の長距離伝播が必要。",
+        "fctReproductionVerdict": "CurrentFCTは先頭波高誤差 5.1% (N=256) / 1.4% (N=512) であり、t=14sにおける浅水段波変形初期の参照解（単一先頭峰+後続棚）と高精度に整合。",
+        "filterOffReproductionVerdict": "FilterOffはt=14sの早期段階で多数の副次峰を形成（峰数=3）。しかし参照解Fig. 4ではこの位置で副次峰は未分離であり、平坦床でも同様の多峰化が生じることから、数値分散波長 (7-9Δz) を拾った数値振動と判定。",
+        "synthesisSummary": "【参照解照合の結論】FilterOffの多峰化は数値分散振動と確定。CurrentFCTは初期棚上伝播 (t=14s) で参照解と整合するが、超長距離 (x/h1 > 100) での物理的分裂を解像できるか、または過剰散逸するかは領域長不足のため【未確定】を維持する。"
+    },
+    "gridConvergence": {
+        "commonZMin": 0.0,
+        "commonZMax": 50.0,
+        "resampledPointsM": 2048,
+        "evalTime": 14.0,
+        "fct_L1_128_vs_512": 0.002470731735229492,
+        "fct_L2_128_vs_512": 0.00509099243208766,
+        "fct_LInf_128_vs_512": 0.03860669955611229,
+        "fct_L1_256_vs_512": 0.000850196520332247,
+        "fct_L2_256_vs_512": 0.0021138435695320369,
+        "fct_LInf_256_vs_512": 0.017473511397838594,
+        "fct_ConvergenceOrderL1": 1.5390701293945313,
+        "fct_ConvergenceOrderL2": 1.268078327178955,
+        "filterOff_L1_128_vs_512": 0.002558997832238674,
+        "filterOff_L2_128_vs_512": 0.005114741623401642,
+        "filterOff_LInf_128_vs_512": 0.03217903524637222,
+        "filterOff_L1_256_vs_512": 0.0012325022835284472,
+        "filterOff_L2_256_vs_512": 0.0032450680155307056,
+        "filterOff_LInf_256_vs_512": 0.030336033552885057,
+        "filterOff_Dz_128": 0.390625,
+        "filterOff_Dz_256": 0.1953125,
+        "filterOff_Dz_512": 0.09765625,
+        "filterOff_PeakSpacing_128": 3.4830665588378908,
+        "filterOff_PeakSpacing_256": 1.3820686340332032,
+        "filterOff_PeakSpacing_512": 0.65936279296875,
+        "filterOff_SpacingRatio_128": 8.916650772094727,
+        "filterOff_SpacingRatio_256": 7.076191425323486,
+        "filterOff_SpacingRatio_512": 6.751874923706055,
+        "isFilterOffGridDependent": true,
+        "fct_ArrivalTime_128": 11.847870826721192,
+        "fct_ArrivalTime_256": 11.287911415100098,
+        "fct_ArrivalTime_512": 11.047928810119629,
+        "filterOff_ArrivalTime_128": 11.567891120910645,
+        "filterOff_ArrivalTime_256": 11.327908515930176,
+        "filterOff_ArrivalTime_512": 11.24791431427002
     },
     "results": [
         {
@@ -201980,7 +202039,7 @@
                             "specifiedDepth": 0.20000000298023225,
                             "storedDepth": 0.20000000298023225,
                             "effectiveDepth": 0.20000000298023225,
-                            "eta": -0.0000050953958634636368,
+                            "eta": -0.0000050953958634636369,
                             "w": -0.00003420087887207046
                         },
                         {
@@ -259337,7 +259396,7 @@
                             "specifiedDepth": 0.20000000298023225,
                             "storedDepth": 0.20000000298023225,
                             "effectiveDepth": 0.20000000298023225,
-                            "eta": -0.0000065981112129520628,
+                            "eta": -0.0000065981112129520629,
                             "w": -0.000046249875595094636
                         },
                         {
@@ -421695,7 +421754,7 @@
                         8.366408223992039e-7,
                         0.0000017931348565980443,
                         0.0000029649468160641847,
-                        0.0000043244922380836218,
+                        0.0000043244922380836219,
                         0.00000586841724725673,
                         0.000007592000656586606,
                         0.00000946023101278115,
@@ -452690,7 +452749,7 @@
                             "specifiedDepth": 0.20000000298023225,
                             "storedDepth": 0.20000000298023225,
                             "effectiveDepth": 0.20000000298023225,
-                            "eta": -5.2906931860453716e-30,
+                            "eta": -5.2906931860453717e-30,
                             "w": -3.6655023934572556e-29
                         },
                         {
@@ -525311,7 +525370,7 @@
                         0.000004838180757360533,
                         0.000005353364031179808,
                         0.000005926484391238773,
-                        0.0000065643744164844978,
+                        0.0000065643744164844979,
                         0.000007274703875737032,
                         0.00000806609750725329,
                         0.000008948250069806818,
@@ -839952,5 +840011,5 @@
             ]
         }
     ],
-    "overallSynthesis": "【客観的検証総括（未確定事項の保持）】\r\n1. バッファ形式: 主検証は本体 BoussinesqSimulation.cs と一致する FP32 (ARGBFloat/RGFloat) で実行。FP16 との精度差も明示。\r\n2. 散逸率と時間細分化の分離: kappa4/subDt == 12.0 strictly constant 条件 (subDt <= 0.004s) で時間刻みを細分化し、4階散逸率の変動と時間離散化の影響を分離。\r\n3. 実効水深照合: GPU readback により指定値からの丸め誤差 (+0.0000732m) とクランプ変化 (0.0m) を区別し、全棚格子面で照合。\r\n4. 判定ステータス: 波形差と散逸作動量は測定できたが、物理的分裂の妥当性と第2波未検出の主因は【未確定】とする。\r\n"
+    "overallSynthesis": "【客観的検証総括（4段階判定枠組みに基づく評価）】\r\n1. 参照解との定量比較 (Madsen & Mei 1969 Fig. 4):\r\n   - 先頭波高相対誤差: CurrentFCT N=256: 5.1%, N=512: 1.4%, FilterOff N=256: 4.6%.\r\n   - 棚上全波形RMSE: CurrentFCT N=256: 0.0247m, FilterOff N=256: 0.0219m.\r\n   - t=14sにおける棚上初期伝播では、参照解も単一先頭峰と後続棚であり、CurrentFCTはこの形態を高精度に再現。\r\n2. 波形全体の空間格子収束性 (同一物理座標 z への再サンプリング M=2048):\r\n   - CurrentFCT: L1(128 vs 512)=0.0025m -> L1(256 vs 512)=0.0009m (収束次数 p=1.54)。\r\n   - FilterOffの峰間隔縮小: N=128 (3.48m / 8.9Δz) -> N=256 (1.38m / 7.1Δz) -> N=512 (0.66m / 6.8Δz)。\r\n   - 峰間隔が格子幅Δzに比例して縮小（約7-9格子幅で一定）しており、物理的ソリトン分離ではなく数値分散波長を拾っていることを確認。平坦床対照実験（段差なし）でも多峰化することと整合。\r\n3. 因果関係の識別と留保事項:\r\n   - FP16の波高減衰（0.022m vs FP32 0.064m）は事実だが、11ビット仮数部の丸め誤差のほか、中間積算精度や非線形項の打ち切り等の寄与の詳細は未分離。\r\n   - 散逸率一定条件 (kappa4/subDt = 12.0/s) での波高維持は「名目パラメータ率を揃えた結果」であり、FCT非線形リミッターが時間刻み依存性を完全に脱したとは断定しない。\r\n   - 初期版で見えていた分裂が数値振動であったかは、当時の実装・条件が完全再現されるまでは仮説として扱う。\r\n4. 最終判定:\r\n   - 【未確定（Inconclusive）を維持】。FilterOffの多峰化が数値分散であることは証明されたが、超長距離（x/h1 > 100）での物理的分裂に対するFCTの過剰散逸の有無は領域長不足のため未検証。本体の係数・しきい値・計算方式は変更しない。\r\n"
 }
