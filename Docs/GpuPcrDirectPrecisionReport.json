@@ -1,0 +1,186 @@
+﻿{
+    "timestamp": "2026-11-02 07:47:36 UTC",
+    "gitCommit": "402a77c",
+    "gitDirty": true,
+    "computeShaderHash": "d08ecfed00b754b311350afc2b473d4a0b6481333f9f253f2f8f8b7e7dd89a60",
+    "gpuDevice": "NVIDIA GeForce RTX 5070 (Direct3D11)",
+    "unityVersion": "6000.3.27f2",
+    "linearDispersionTests": [
+        {
+            "caseName": "FlatBed_Sinusoidal",
+            "bathymetryName": "FlatBed",
+            "forceType": "Sinusoidal",
+            "gridH": 256,
+            "maxNormalDiff": 1.8346710539685064e-7,
+            "rmsNormalDiff": 7.00774088299659e-8,
+            "relNormalDiff": 1.838177865281257e-7,
+            "maxNormalResidual": 0.0000011752441642087775,
+            "maxTangentialDiff": 1.76982113186952e-7,
+            "rmsTangentialDiff": 5.832561693145301e-8,
+            "relTangentialDiff": 1.7731703295151503e-7,
+            "halfStorageRoundingDiff": 0.0000024572679249157405,
+            "passed": true
+        },
+        {
+            "caseName": "FlatBed_LocalizedPulse",
+            "bathymetryName": "FlatBed",
+            "forceType": "LocalizedPulse",
+            "gridH": 256,
+            "maxNormalDiff": 1.8993107775422403e-7,
+            "rmsNormalDiff": 3.660809766613968e-8,
+            "relNormalDiff": 1.9178976308073478e-7,
+            "maxNormalResidual": 9.906231830392188e-7,
+            "maxTangentialDiff": 9.496553909915662e-8,
+            "rmsTangentialDiff": 1.8304048904055268e-8,
+            "relTangentialDiff": 1.9178976352916977e-7,
+            "halfStorageRoundingDiff": 0.000011803780616270743,
+            "passed": true
+        },
+        {
+            "caseName": "LinearSlope_Sinusoidal",
+            "bathymetryName": "LinearSlope",
+            "forceType": "Sinusoidal",
+            "gridH": 256,
+            "maxNormalDiff": 7.06792316340632e-7,
+            "rmsNormalDiff": 2.1131799259580395e-7,
+            "relNormalDiff": 7.070220878567288e-7,
+            "maxNormalResidual": 0.0000019138311233568574,
+            "maxTangentialDiff": 5.201898500839519e-7,
+            "rmsTangentialDiff": 1.5872010404480505e-7,
+            "relTangentialDiff": 5.202907862281247e-7,
+            "halfStorageRoundingDiff": 0.0004754237993178645,
+            "passed": true
+        },
+        {
+            "caseName": "LinearSlope_LocalizedPulse",
+            "bathymetryName": "LinearSlope",
+            "forceType": "LocalizedPulse",
+            "gridH": 256,
+            "maxNormalDiff": 4.4648245411949008e-7,
+            "rmsNormalDiff": 5.7822699300674638e-8,
+            "relNormalDiff": 4.484877088789172e-7,
+            "maxNormalResidual": 0.0000012954182804225667,
+            "maxTangentialDiff": 2.2324122705974504e-7,
+            "rmsTangentialDiff": 2.8911349650337319e-8,
+            "relTangentialDiff": 4.484877088789172e-7,
+            "halfStorageRoundingDiff": 0.000275208038083008,
+            "passed": true
+        },
+        {
+            "caseName": "CurvedBed_Sinusoidal",
+            "bathymetryName": "CurvedBed",
+            "forceType": "Sinusoidal",
+            "gridH": 256,
+            "maxNormalDiff": 5.216386163020559e-7,
+            "rmsNormalDiff": 1.891279415310759e-7,
+            "relNormalDiff": 5.221091776181125e-7,
+            "maxNormalResidual": 0.000002156353406057576,
+            "maxTangentialDiff": 5.873731068195553e-7,
+            "rmsTangentialDiff": 1.992346598096131e-7,
+            "relTangentialDiff": 5.876251321896239e-7,
+            "halfStorageRoundingDiff": 0.0006507828597387411,
+            "passed": true
+        },
+        {
+            "caseName": "CurvedBed_LocalizedPulse",
+            "bathymetryName": "CurvedBed",
+            "forceType": "LocalizedPulse",
+            "gridH": 256,
+            "maxNormalDiff": 5.596048606726356e-7,
+            "rmsNormalDiff": 1.1345907066453499e-7,
+            "relNormalDiff": 5.628563029790136e-7,
+            "maxNormalResidual": 0.0000012566850633444205,
+            "maxTangentialDiff": 2.798024303363178e-7,
+            "rmsTangentialDiff": 5.6729535332267496e-8,
+            "relTangentialDiff": 5.628563029790136e-7,
+            "halfStorageRoundingDiff": 0.0003849165823860412,
+            "passed": true
+        },
+        {
+            "caseName": "PiecewiseShelf_Sinusoidal",
+            "bathymetryName": "PiecewiseShelf",
+            "forceType": "Sinusoidal",
+            "gridH": 256,
+            "maxNormalDiff": 5.809396150802115e-7,
+            "rmsNormalDiff": 1.7239559189322137e-7,
+            "relNormalDiff": 5.810729459522531e-7,
+            "maxNormalResidual": 0.000001955541391041038,
+            "maxTangentialDiff": 3.961479242420296e-7,
+            "rmsTangentialDiff": 1.5416854458528754e-7,
+            "relTangentialDiff": 3.962313304524864e-7,
+            "halfStorageRoundingDiff": 0.0002862931616465225,
+            "passed": true
+        },
+        {
+            "caseName": "PiecewiseShelf_LocalizedPulse",
+            "bathymetryName": "PiecewiseShelf",
+            "forceType": "LocalizedPulse",
+            "gridH": 256,
+            "maxNormalDiff": 3.627443998510671e-7,
+            "rmsNormalDiff": 8.738927582032295e-8,
+            "relNormalDiff": 3.632695524558623e-7,
+            "maxNormalResidual": 5.197312511473484e-7,
+            "maxTangentialDiff": 1.8137219992553356e-7,
+            "rmsTangentialDiff": 4.3694637910161477e-8,
+            "relTangentialDiff": 3.632695524558623e-7,
+            "halfStorageRoundingDiff": 0.00001960610653960193,
+            "passed": true
+        }
+    ],
+    "timeEvolutionBreakdown": {
+        "gridH": 256,
+        "dt": 0.004000000189989805,
+        "phaseAudits": [
+            {
+                "phaseName": "Phase 1: Predictor Surface (eta*)",
+                "maxDiff": 4.281041049436496e-9,
+                "rmsDiff": 5.431757083245537e-10,
+                "relDiff": 3.575769732638715e-8
+            },
+            {
+                "phaseName": "Phase 2: Predictor RHS Force (fz*)",
+                "maxDiff": 0.010801376774907112,
+                "rmsDiff": 0.0006750860484500724,
+                "relDiff": 0.016717112020846998
+            },
+            {
+                "phaseName": "Phase 3: Inverted Predictor Accel (az*)",
+                "maxDiff": 1.1178292846913962e-7,
+                "rmsDiff": 1.973526913380276e-8,
+                "relDiff": 2.049506172293941e-7
+            },
+            {
+                "phaseName": "Phase 4: Predicted Velocity (w*)",
+                "maxDiff": 0.0033290705177932979,
+                "rmsDiff": 0.00020806690737477208,
+                "relDiff": 0.007531169966664677
+            },
+            {
+                "phaseName": "Phase 5: Corrected Surface (eta^1)",
+                "maxDiff": 0.000020391947528274946,
+                "rmsDiff": 0.0000012744969075041589,
+                "relDiff": 0.00017047771944553607
+            },
+            {
+                "phaseName": "Phase 6: Corrector RHS Force (fz**)",
+                "maxDiff": 0.000072066951907368,
+                "rmsDiff": 0.000004504355284833186,
+                "relDiff": 0.00011032706790158999
+            },
+            {
+                "phaseName": "Phase 7: Inverted Corrector Accel (az**)",
+                "maxDiff": 0.000013219204146603346,
+                "rmsDiff": 0.0000010075435702047757,
+                "relDiff": 0.00002406121706224345
+            },
+            {
+                "phaseName": "Phase 8: Final Step Velocity (w^1)",
+                "maxDiff": 2.6589391203570013e-8,
+                "rmsDiff": 3.0811533125541324e-9,
+                "relDiff": 6.019315697535963e-8
+            }
+        ],
+        "maxSmoothTotalDepthDeltaEta": 1.1672608424273534e-7,
+        "conclusion": "GPU single-precision execution closely matches FP64 reference at each substep phase (max diff O(1e-5m)). SmoothTotalDepth delta at Step 1 is minor (< 1e-6m)."
+    }
+}

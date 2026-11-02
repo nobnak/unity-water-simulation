@@ -200,10 +200,10 @@ def main():
     print("================================================================================")
     
     cases = [
-        ("Case 1: MacCormack Directional Advection (2nd order), No Filter", "maccormack_directional", "none"),
-        ("Case 2: 1st-Order Upwind Advection, No Filter", "upwind", "none"),
+        ("Case 1: MacCormack Directional One-Sided Advection (Alternating Forward/Backward, Combined 2nd-Order), No Filter", "maccormack_directional", "none"),
+        ("Case 2: 1st-Order Upwind Advection (Direction-Fixed Single-Stage 1st-Order), No Filter", "upwind", "none"),
         ("Case 3: 1st-Order Upwind Advection + Unconstrained 4th Dissipation", "upwind", "unconstrained_dissipation_4th"),
-        ("Case 4: No Advection (Linear Momentum), No Filter", "none", "none")
+        ("Case 4: No Advection (Linear Momentum w*w_z = 0), No Filter", "none", "none")
     ]
     
     results = {}
