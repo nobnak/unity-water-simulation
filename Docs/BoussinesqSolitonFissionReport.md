@@ -1,12 +1,12 @@
 # Boussinesq Solitary Wave Transformation & Soliton Fission Verification Report
 
-- **Timestamp**: `2026-11-02 08:05:00 UTC`
-- **Git Commit**: `21f36dd` + verifier update
+- **Timestamp**: `2026-11-02 08:25:00 UTC`
+- **Git Commit**: `caef994` + progression analysis
 - **Unity Version**: `6000.3.27f2`
 - **GPU Device**: `NVIDIA GeForce RTX 5070 (Direct3D11)`
 - **Reference Solvers & Data Sources**:
   1. **Direct GPU PCR vs FP64 Linear Inversion & Substep Audit** (`Docs/GpuPcrDirectPrecisionReport.json`, `Packages/com.nobnak.water-simulation/Editor/GpuPcrDirectPrecisionVerifier.cs`): Direct readback from GPU ComputeShader (`CSTridiagonalZ_256`, `CSPredict`, `CSCorrect`, `CSApplyPredictedDispersion`, `CSApplyDispersion`) compared with double-precision Thomas algorithm.
-  2. **Independent 1D High-Order Boussinesq Reference Solver** (`Docs/IndependentPeregrineReferenceSolver.py`): IEEE 754 FP64, RK4 time stepping, 4th-order spatial advection, exact discrete tridiagonal solve matching GPU $(I - \mathcal{D})$, strictly zero artificial dissipation.
+  2. **Shoaling Wave Progression & Factor Isolation Analysis** (`Docs/AnalyzeShoalingWaveProgression.py`): Time-series progression tracking (Pre-shelf $t=3$s, On-slope $t=6$s, On-shelf $t=10, 14$s) comparing FP64 Reference ($N=1024$), GPU-equivalent FP64 ($N=256, 512$), and candidate advection schemes.
   3. **NTHMP BP05 Laboratory Flume Experiment** (CHL / USACE flume, open benchmark `Docs/ReferenceData/NTHMP_BP05/`): Solitary wave shoaling on composite beach (Cases A and B).
 
 ---
@@ -16,7 +16,7 @@
 ### 判定ステータス: **【未確定（Inconclusive）】**
 
 > **【暫定結論】**
-> 対象条件でGPU PCRとFP64線形解は良好に一致した。一方、時間発展の予測段には境界条件の不一致があり、全段一致と長時間の物理的妥当性は未確認。
+> 対象条件においてGPU PCRとFP64線形解、および短時間の離散時間発展（逆Parity・壁面近傍・複数サブステップ）の実装整合を確認した。一方、長時間の波高不足（BP05 Case Bの$-27.5\%$ FAIL等）の原因は未解決であり、物理的妥当性は未確定。
 > 
 > ※ 以下の断定はすべて撤回・保留を継続します：
 > - 現在版が物理的に正しいことを確認した。
@@ -28,15 +28,14 @@
 
 ## 2. 同じ線形問題でのGPU PCRとFP64の直接比較
 
-実機GPU（NVIDIA GeForce RTX 5070）上で実際のComputeShaderカーネル（`CSTridiagonalZ_256`）を実行し、`AsyncGPUReadback` により取得した解ベクトルを、同一の格子（$N=256$, $\Delta z=0.196$ m）、地形、右辺外力、および境界条件で解いたFP64（倍精度Thomasアルゴリズム）の直接解と比較検証しました（`Docs/GpuPcrDirectPrecisionReport.json`）。
+実機GPU（NVIDIA GeForce RTX 5070）上で実際のComputeShaderカーネル（`CSTridiagonalZ_256`）を実行し、同一格子（$N=256$, $\Delta z=0.196$ m）、実効水深、外力、境界条件における倍精度Thomasアルゴリズム直接解と照合しました（`Docs/GpuPcrDirectPrecisionReport.json`）。
 
-### 2.1 境界条件の厳密な区別
-準1D伝播（Z方向）において、境界行は次のように厳密に分離されています：
-- **法線方向成分（$a_z$, float2のY成分）**: 境界 $j=0$ および $j=H-1$ において厳密な **Dirichlet 境界条件 $a_z = 0$**（$b=1.0, c=0.0, d=0.0$）。1D波動の物理流速 $w$ の加速度を支配。
-- **接線方向成分（$a_x$, float2のX成分）**: 境界 $j=0$ および $j=H-1$ において **Neumann 境界条件 $\partial a_x / \partial z = 0$**（$b=1+2\beta, c=-2\beta, d=f_x$）。
+### 2.1 境界条件の厳密分離
+- **法線方向（$a_z$）**: 境界 $j=0, H-1$ で **Dirichlet 境界条件 $a_z = 0$**（物理流速 $w$ の加速度）
+- **接線方向（$a_x$）**: 境界 $j=0, H-1$ で **Neumann 境界条件 $\partial a_x / \partial z = 0$**
 
-### 2.2 直接比較測定結果（GPU PCR vs FP64）
-合否判定は、法線成分（最大差 $\le 10^{-5}$ または相対差 $\le 10^{-4}$）、接線成分（最大差 $\le 10^{-5}$ または相対差 $\le 10^{-4}$）、および行列残差（$\| \mathbf{M} a - f \|_\infty \le 10^{-4}$）のすべてを満たすことを条件として動的に評価しています。
+### 2.2 測定結果と合否判定
+合否判定は法線成分（最大差 $\le 10^{-5}$ または相対差 $\le 10^{-4}$）、接線成分（最大差 $\le 10^{-5}$ または相対差 $\le 10^{-4}$）、行列残差（$\| \mathbf{M} a - f \|_\infty \le 10^{-4}$）のすべてを満たすことを条件に動的判定。
 
 | 地形ケース | 外力パターン | 法線最大差 $\max \|a_z^{\text{GPU}} - a_z^{\text{FP64}}\|$ | 法線相対差 | 行列残差ノルム $\| \mathbf{M} a^{\text{GPU}} - f \|_\infty$ | 水深格納誤差 [m] | 水深丸め加速度差 [m/s$^2$] | 判定 |
 |---|---|---|---|---|---|---|---|
@@ -49,36 +48,20 @@
 | **棚状地形 (折れ点 $z=10, 18$m)** | 正弦波 | **$5.81 \times 10^{-7}$** m/s$^2$ | $5.81 \times 10^{-7}$ | $1.96 \times 10^{-6}$ | $3.91 \times 10^{-4}$ m | $2.86 \times 10^{-4}$ m/s$^2$ | **PASS** |
 | **棚状地形 (折れ点 $z=10, 18$m)** | 局所パルス | **$3.63 \times 10^{-7}$** m/s$^2$ | $3.63 \times 10^{-7}$ | $5.20 \times 10^{-7}$ | $3.91 \times 10^{-4}$ m | $1.96 \times 10^{-5}$ m/s$^2$ | **PASS** |
 
-### 2.3 Half格納影響の分離と検証範囲の限定
-1. **水深格納誤差と加速度差の区別**:
-   - `halfStorageDepthRoundingDiff` [m]: 16ビット Half（`RGHalf`）による水深値自体の丸め誤差であり、全ケースで $3.91 \times 10^{-4} \sim 4.88 \times 10^{-4}$ m です。
-   - `halfStorageAccelRoundingDiff` [m/s$^2$]: この水深丸めによって生じる分散反転加速度の変動であり、斜面・曲率・棚で $2.46 \times 10^{-6} \sim 6.51 \times 10^{-4}$ m/s$^2$ です。PCRアルゴリズムの残差（$10^{-6}$）より大きく、テクスチャ量子化に起因します。
-2. **検証範囲の限定**:
-   - 今回確認できたのは $N=256$ の特定線形問題における PCR 反転精度（単精度限界）です。
-   - この合格結果をもって、他解像度、時間発展全体、あるいは物理的妥当性全般が保証されたと拡大解釈しません。
+- **Half格納誤差の区別**:
+  - `halfStorageDepthRoundingDiff` [m]: 16ビット Half 格納に伴う水深自体の丸め誤差（$\approx 4 \times 10^{-4}$ m）
+  - `halfStorageAccelRoundingDiff` [m/s$^2$]: 水深丸めに起因する加速度解の差（$10^{-6} \sim 10^{-4}$ m/s$^2$）
+- **検証範囲の限定**: $N=256$ 線形 PCR 試験の合格を他解像度・時間発展全体・物理的妥当性へ拡大解釈しません。
 
 ---
 
 ## 3. 時間発展の段階的照合と境界処理の厳密一致
 
-### 3.1 予測段境界処理の不一致の解明と訂正
-- **要因の解明**:
-  - 先の報告で測定された予測段外力差 $1.08 \times 10^{-2}$ m/s$^2$ および流速差 $3.33 \times 10^{-3}$ m/s は、**CPU参照ソルバー側のみが両端（$j=0, H-1$）で `fzPred` と `wPred` を人工的にゼロに固定していたため**に生じたものです。
-  - 孤立波初期条件の左端流速は $w_0[0] \approx 0.00332896$ m/s であり、以前の流速差 $0.00333$ m/s と完全に一致していました。
-  - したがって、この差を「単精度丸めや風上分岐の影響」とする説明は誤りであり撤回します。
-- **GPU本体の挙動**:
-  - GPUの `CSPredict` および `CSApplyPredictedDispersion` では境界流速 $w^*$ のゼロクランプは行われません（$w^*$ は $w_N + \Delta t \cdot a_z^*$ として計算され、端点流速が保持されます）。
-  - 不透過壁条件 $w=0$ の強制クランプは、サブステップ最終段の `CSApplyDispersion` でのみ実行されます。
-  - CPU参照側をGPUと同一のタイミング・条件（予測段で端点をゼロ化せず、PCRのDirichlet $a_z=0$ のみ適用し、最終段で端点流速をゼロ化）に修正した結果、予測段の不一致は解消されました。
+### 3.1 予測段境界処理の不一致の解明
+- 以前の予測段外力差 $1.08 \times 10^{-2}$ m/s$^2$ および流速差 $3.33 \times 10^{-3}$ m/s は、**CPU参照側のみが端点（$j=0, H-1$）で `fzPred` と `wPred` をゼロにしていたため**に生じたものです。初期条件の端点流速 $w_0[0] \approx 0.003329$ m/s と完全に一致しており、単精度丸めや風上分岐によるものではありませんでした。
+- GPU本体では予測段で端点流速をゼロ化せず、最終段 `CSApplyDispersion` でのみゼロクランプします。CPU参照をGPUと同じタイミング・条件に一致させた結果、予測段の差分は単精度限界に収まりました。
 
-### 3.2 フェーズ別許容値と動的合否判定基準
-各物理量に応じた絶対許容値および相対許容値を設定し、全域（境界含む）と内部領域（$1 \le j \le H-2$）の双方で合否を判定：
-- 水位 $\eta$ [m]: `absTol = 1.0e-4` m, `relTol = 1.0e-3`
-- 外力 $f_z$ [m/s$^2$]: `absTol = 1.0e-3` m/s$^2$, `relTol = 1.0e-3`
-- 加速度 $a_z$ [m/s$^2$]: `absTol = 1.0e-4` m/s$^2$, `relTol = 1.0e-3`
-- 流速 $w$ [m/s]: `absTol = 1.0e-4` m/s, `relTol = 1.0e-3`
-
-### 3.3 段階的検証シナリオの測定結果
+### 3.2 段階的検証シナリオ結果
 
 #### シナリオ 1: 第1サブステップ（Parity 0, 先頭波 $z_0=5$m）
 | フェーズ | 変数 | 単位 | 全域最大差 (Idx, 境界?) | 内部最大差 (Idx) | 相対差 | GPU値 | CPU値 | 判定 |
@@ -92,50 +75,64 @@
 | **Phase 7: 修正段反転加速度** | $a_z^{**}$ | m/s$^2$ | $1.697 \times 10^{-7}$ (22, no) | $1.697 \times 10^{-7}$ (22) | $3.088 \times 10^{-7}$ | $-0.5074$ | $-0.5074$ | **PASS** |
 | **Phase 8: 最終更新流速** | $w^1$ | m/s | $1.369 \times 10^{-8}$ (27, no) | $1.369 \times 10^{-8}$ (27) | $3.100 \times 10^{-8}$ | $0.4308$ | $0.4308$ | **PASS** |
 
-#### シナリオ 2: 逆Parity試験（Parity 1, 差分方向反転）
-- 全8フェーズで単精度限界の一致を確認（水面最大差 $4.43 \times 10^{-9}$ m, 外力最大差 $3.27 \times 10^{-7}$ m/s$^2$, 流速最大差 $1.49 \times 10^{-8}$ m/s）: **【全フェーズ PASS】**
+#### シナリオ 2: 逆Parity試験（Parity 1）
+- 全8フェーズで誤差 $\le 3.27 \times 10^{-7}$: **【全フェーズ PASS】**
 
-#### シナリオ 3: 境界近傍波試験（$z_0=0.8$m, 境界 $j=0$ に有意振幅が存在する条件）
-- 境界 $j=0$ において $\eta_0[0] \approx 0.092$ m, $w_0[0] \approx 0.35$ m/s の状態で実行。
-- 境界セル $j=0$ での差分: 水面差 $3.60 \times 10^{-9}$ m, 最終流速差 $1.36 \times 10^{-8}$ m/s。境界励起下でもGPUとFP64は整合: **【全フェーズ PASS】**
+#### シナリオ 3: 境界近傍波試験（$z_0=0.8$m, 境界 $j=0$ で波高 $\approx 0.09$m）
+- 境界セル $j=0$ での水面差 $3.60 \times 10^{-9}$ m、流速差 $1.36 \times 10^{-8}$ m/s: **【全フェーズ PASS】**
 
-#### シナリオ 4: 複数サブステップ累積試験（5連続サブステップ, Parity交互切替）
-| サブステップ | Parity | 水位最大差 $\max |\Delta \eta|$ [m] | 水位RMS差 [m] | 流速最大差 $\max |\Delta w|$ [m/s] | 流速RMS差 [m/s] | 判定 |
+#### シナリオ 4: 複数サブステップ累積試験（5連続サブステップ）
+- Step 1: $\max |\Delta \eta| = 3.99 \times 10^{-9}$ m, $\max |\Delta w| = 1.37 \times 10^{-8}$ m/s (PASS)
+- Step 2: $\max |\Delta \eta| = 1.25 \times 10^{-8}$ m, $\max |\Delta w| = 2.53 \times 10^{-8}$ m/s (PASS)
+- Step 3: $\max |\Delta \eta| = 1.16 \times 10^{-8}$ m, $\max |\Delta w| = 3.39 \times 10^{-8}$ m/s (PASS)
+- Step 4: $\max |\Delta \eta| = 1.15 \times 10^{-8}$ m, $\max |\Delta w| = 4.05 \times 10^{-8}$ m/s (PASS)
+- Step 5: $\max |\Delta \eta| = 1.70 \times 10^{-8}$ m, $\max |\Delta w| = 4.35 \times 10^{-8}$ m/s (PASS)
+
+---
+
+## 4. 長時間の波高不足の時系列進展と要因分離
+
+短時間の離散整合（$10^{-7}$精度）が確認されたため、主課題を「長時間の波高不足」へ移行し、棚への到達前・斜面通過中・棚上の3段階において時系列比較を実施しました（`Docs/AnalyzeShoalingWaveProgression.py`）。
+
+### 4.1 段階別波高・ピーク位置の時系列追跡
+| 時刻 $t$ [s] | 物理段階 | FP64 参照解 ($N=1024$) | FP64 風上移流 ($N=256$) | FP64 風上移流 ($N=512$) | FP64 逆向片側差分 ($N=256$) | FP64 逆向片側差分 ($N=512$) |
 |---|---|---|---|---|---|---|
-| **Step 1** | 0 | $3.990 \times 10^{-9}$ | $6.904 \times 10^{-10}$ | $1.369 \times 10^{-8}$ | $2.335 \times 10^{-9}$ | **PASS** |
-| **Step 2** | 1 | $1.253 \times 10^{-8}$ | $1.197 \times 10^{-9}$ | $2.531 \times 10^{-8}$ | $4.130 \times 10^{-9}$ | **PASS** |
-| **Step 3** | 0 | $1.160 \times 10^{-8}$ | $1.276 \times 10^{-9}$ | $3.394 \times 10^{-8}$ | $4.997 \times 10^{-9}$ | **PASS** |
-| **Step 4** | 1 | $1.149 \times 10^{-8}$ | $1.386 \times 10^{-9}$ | $4.050 \times 10^{-8}$ | $6.212 \times 10^{-9}$ | **PASS** |
-| **Step 5** | 0 | $1.697 \times 10^{-8}$ | $1.796 \times 10^{-9}$ | $4.351 \times 10^{-8}$ | $5.981 \times 10^{-9}$ | **PASS** |
+| **$t = 3.0$ s** | 棚前平坦床 ($z \approx 13$m) | $H=0.1272$m ($z=12.95$) | $H=0.1212$m ($z=12.94$) | $H=0.1247$m ($z=12.92$) | $H=0.1251$m ($z=12.94$) | $H=0.1269$m ($z=12.92$) |
+| **$t = 6.0$ s** | 斜面通過中 ($10 \le z \le 18$m) | $H=0.2202$m ($z=19.99$) | $H=0.1429$m ($z=19.61$) | $H=0.1701$m ($z=19.86$) | $H=0.1728$m ($z=19.80$) | $H=0.2023$m ($z=19.96$) |
+| **$t = 10.0$ s** | 棚上浅水域 ($z \ge 18$m) | $H=0.2674$m ($z=28.20$) | $H=0.1135$m ($z=27.06$) | $H=0.1307$m ($z=27.40$) | $H=0.2022$m ($z=27.65$) | $H=0.2333$m ($z=28.08$) |
+| **$t = 14.0$ s** | 棚上分裂領域 ($z \ge 18$m) | $H=0.2652$m ($z=36.41$) | $H=0.0859$m ($z=33.92$) | $H=0.0946$m ($z=34.34$) | $H=0.1935$m ($z=35.49$) | $H=0.2307$m ($z=36.11$) |
+
+### 4.2 GPU実機実行結果との照合 ($t = 14.0$ s)
+- **GPU FilterOff ($N=256$)**: $H = 0.0864$m（FP64 風上 $N=256$ の $0.0859$m と差わずか $+0.0005$m）
+- **GPU FilterOff ($N=512$)**: $H = 0.0947$m（FP64 風上 $N=512$ の $0.0946$m と差わずか $+0.0002$m）
+- **GPU CurrentFCT ($N=256$)**: $H = 0.0703$m（FCT散逸減衰: $-0.0161$m, $-18.7\%$）
+- **GPU CurrentFCT ($N=512$)**: $H = 0.0832$m（FCT散逸減衰: $-0.0116$m, $-12.2\%$）
+
+### 4.3 波高減衰要因の定量的分離
+1. **平坦床（$t \le 3$s）**: 風上移流の波高低下は $-4.7\%$（$N=256$）および $-2.0\%$（$N=512$）と極めて軽微。
+2. **斜面〜棚上（$t > 3$s）**: 水深急減に伴い空間速度勾配 $\partial w/\partial z$ が急増し、1次風上移流の数値粘性 $\nu_{\text{num}} = \frac{1}{2}|w|\Delta z$ が急拡大。
+3. **要因寄与率の分解（$t = 14$s, 全減衰量 $\Delta H = 0.2652 - 0.0703 = 0.1949$m に対する寄与）**:
+   - **移流数値粘性**: $\Delta H \approx 0.1076$m（**寄与率 約55%**）
+   - **格子未解像**: $\Delta H \approx 0.0717$m（**寄与率 約37%**）
+   - **FCT散逸フィルター**: $\Delta H \approx 0.0161$m（**寄与率 約8%**）
 
 ---
 
-## 4. 対流方式の表記と多面的評価基準
+## 5. BP05 Case B を改善判断の基準とする方針
 
-### 4.1 差分方式の表記訂正
-- `maccormack_directional` は「中心差分」ではありません。
-- **「予測段と修正段で逆向きの片側差分を使う方式（Alternating Forward/Backward Directional One-Sided Difference）」** と記述します。
-- **精度の区別**:
-  - 各段単体では $O(\Delta z)$ の片側差分ですが、予測段（前進）と修正段（後退）を合成した2段Heun型時間積分全体として対流項の数値粘性が打ち消され、時間・空間2次精度 $O(\Delta t^2, \Delta z^2)$ を達成します。
-  - 現行GPUの「1次風上移流」は予測・修正の両段で風上片側差分を固定適用するため、2段合成後も数値粘性 $\nu_{\text{num}} = \frac{1}{2} |w| \Delta z$ が残り1次精度に退化します。
+### 5.1 未解決項目としての固定
+- **Case B（中振幅非砕波浅水化 $a/h \approx 0.26$）**: 【FAIL 継続】
+  - 実水槽実験値: g5 ($h=0.20$m, $H=0.0531$m) から g7 ($h=0.144$m, $H=0.0705$m) へ **$+32.8\%$ 急成長**。
+  - GPU CurrentFCT ($N=512$): $H_{\text{peak}} = 0.0511$m（**g7波高誤差 $-27.5\%$ FAIL**）。
+  - GPU FilterOff ($N=512$): $H_{\text{peak}} = 0.0548$m（**g7波高誤差 $-22.2\%$ FAIL**）。
+- **事実**: 散逸フィルターを完全に切っても（FilterOff）波高は $+8\%$ しか成長せず、$-22.2\%$ の大幅過小評価となる。したがって、FCT散逸フィルターのみを犯人とする説明は成立しない。
 
-### 4.2 比較判定基準（波高単独評価の廃止）
-- 先頭波高の増加（$0.0943$ m $\to 0.2172$ m, $+130\%$）のみをもって優位と判定しません。
-- 以下の全項目を評価軸とします：
-  1. **波形全体の整合と位相**: 先頭波位置（$z=36.08$ m vs 高次解 $z=36.52$ m）
-  2. **高周波振動（粗さ）**: 逆向き片側差分（粗さ $7.60 \times 10^{-4}$）vs 風上移流（粗さ $3.00 \times 10^{-4}$）
-  3. **質量・体積保存性**: 誤差 $1.15 \times 10^{-5}$（保存型流束）
-  4. **格子・時間収束性**: 格子細分化による波形と散逸の安定性
+### 5.2 改善候補の評価軸（波高単独評価の厳禁）
+今後、対流方式などの改善候補を試す場合は、必ず一要因ずつ検証用設定で比較し、以下の多面的評価軸を満たすことを採用条件とします：
+1. **BP05実験波形・波高誤差**: g7波高誤差（許容10%以内）およびNRMSE。
+2. **位相・波速**: 到達時刻誤差（許容0.15s以内）。
+3. **格子振動（粗さ）**: 2グリッド振動指標（逆向片側差分では粗さ $1.6 \times 10^{-3}$ と風上移流 $6.3 \times 10^{-4}$ より2.5倍粗くなる点に留意）。
+4. **質量・体積保存性**: 水量収支誤差（$10^{-3}$ 以内）。
+5. **計算安定性と負荷**: 急勾配でのブローアップ耐性とGPUメモリ・スループット。
 
----
-
-## 5. NTHMP BP05 水槽実験ベンチマークの状況保持
-
-- **Case A（微小振幅非砕波 $a/h \approx 0.04$）: 【PASS】**
-  - g7波高誤差: FCT $N512 = +5.6\%$, FilterOff $N512 = +6.1\%$（許容10%以内）
-  - g5→g7相対到達時刻: FCT $N512 = -0.10$ s（許容0.15s以内）
-  - 特記事項: 方式間差は $\le 0.5\%$ であり、Case Aは散逸スキーム間の差異を識別できません。
-- **Case B（中振幅非砕波浅水化 $a/h \approx 0.26$）: 【FAIL】**
-  - **g7波高誤差: FCT $N512 = -27.5\%$, FilterOff $N512 = -22.2\%$, Legacy2D = -24.6% (FAIL)**
-  - FCT $N256$ 波高誤差: $-49.2\%$ (FAIL)
-  - 特記事項: 実測では波高が g5 (5.31cm) から g7 (7.05cm) へ $+33\%$ 急成長するのに対し、GPU計算では $+3 \sim +8\%$ しか成長せず、重大な波高過小評価が発生しています。
+通常設定の変更は、これら全項目において改善が確認できた後に判断します。

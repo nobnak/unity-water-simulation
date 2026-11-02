@@ -423,13 +423,17 @@ namespace Nobnak.WaterSimulation.Editor {
                 if (!sc.allPhasesPassed) allPassed = false;
             }
 
+            string conclusionText = allPassed
+                ? "対象条件においてGPU PCRとFP64線形解、および短時間の離散時間発展（逆Parity・壁面近傍・複数サブステップ）の実装整合を確認した。一方、長時間の波高不足（BP05 Case Bの-27.5% FAIL等）の原因は未解決であり、物理的妥当性は未確定"
+                : "時間発展検証において許容値を超える不一致が検出された（FAILフェーズあり）";
+
             return new TimeEvolutionBreakdownReport {
                 gridH = H,
                 dt = dt,
                 scenarios = scenarios,
                 maxSmoothTotalDepthDeltaEta = s1.maxSmoothTotalDepthDeltaEta,
                 allPassed = allPassed,
-                conclusion = "対象条件でGPU PCRとFP64線形解は良好に一致した。一方、時間発展の予測段には境界条件の不一致があり、全段一致と長時間の物理的妥当性は未確認"
+                conclusion = conclusionText
             };
         }
 

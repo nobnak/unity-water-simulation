@@ -1,6 +1,6 @@
 ﻿{
-    "timestamp": "2026-11-02 08:02:46 UTC",
-    "gitCommit": "21f36dd",
+    "timestamp": "2026-11-02 08:18:58 UTC",
+    "gitCommit": "caef994",
     "gitDirty": true,
     "computeShaderHash": "d08ecfed00b754b311350afc2b473d4a0b6481333f9f253f2f8f8b7e7dd89a60",
     "gpuDevice": "NVIDIA GeForce RTX 5070 (Direct3D11)",
@@ -745,6 +745,6 @@
         ],
         "maxSmoothTotalDepthDeltaEta": 1.1672608424273534e-7,
         "allPassed": true,
-        "conclusion": "対象条件でGPU PCRとFP64線形解は良好に一致した。一方、時間発展の予測段には境界条件の不一致があり、全段一致と長時間の物理的妥当性は未確認"
+        "conclusion": "対象条件においてGPU PCRとFP64線形解、および短時間の離散時間発展（逆Parity・壁面近傍・複数サブステップ）の実装整合を確認した。一方、長時間の波高不足（BP05 Case Bの-27.5% FAIL等）の原因は未解決であり、物理的妥当性は未確定"
     }
 }
