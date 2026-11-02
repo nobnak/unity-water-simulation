@@ -45,6 +45,8 @@ cbuffer SimParams {
     int _StepParity;         // Alternating 0 / 1 for Symmetric MacCormack (F-B / B-F)
     int _SideWallSponge;     // 1 = Sponge on all 4 borders, 0 = Lateral reflective slip walls (flume)
     float _DisableSlopeDissipation; // 0.0 = enabled (default), 1.0 = disabled (benchmark/isolation)
+    int _AdvectionMode;             // 0 = FirstOrderUpwind (baseline), 1 = MinmodTVD (candidate)
+    float2 _PadSimParams;
 };
 
 RWStructuredBuffer<uint> _DissipationMetricsBuffer;
@@ -147,6 +149,29 @@ float SmoothTotalDepth(float rawH) {
     return 0.05 + 0.5 * (d + sqrt(d * d + 0.0004));
 }
 
+// Minmod slope limiter for 2nd-order TVD reconstruction
+float Minmod(float a, float b) {
+    if (a * b <= 0.0) return 0.0;
+    return (abs(a) < abs(b)) ? a : b;
+}
+
+// 2nd-order TVD reconstructed directional upwind gradient for non-conservative velocity advection
+float ComputeAdvectionGradient(float phiLL, float phiL, float phiC, float phiR, float phiRR, float v, float invD) {
+    float dMinus = phiC - phiL;
+    float dPlus  = phiR - phiC;
+    if (v >= 0.0) {
+        float dMinusMinus = phiL - phiLL;
+        float sC = Minmod(dPlus, dMinus);
+        float sL = Minmod(dMinus, dMinusMinus);
+        return (dMinus + 0.5 * (sC - sL)) * invD;
+    } else {
+        float dPlusPlus = phiRR - phiR;
+        float sC = Minmod(dPlus, dMinus);
+        float sR = Minmod(dPlusPlus, dPlus);
+        return (dPlus - 0.5 * (sR - sC)) * invD;
+    }
+}
+
 // 1. Symmetric MacCormack Predictor: Forward on even parity, Backward on odd parity
 [numthreads(8, 8, 1)]
 void CSPredict(uint3 id : SV_DispatchThreadID) {
@@ -190,7 +215,7 @@ void CSPredict(uint3 id : SV_DispatchThreadID) {
     float detadx = (stateX.r - eta) * signedInvDx;
     float detadz = (stateZ.r - eta) * signedInvDz;
 
-    // Upwind convective velocity advection (eliminates downwind overshoots and parity oscillation)
+    // Velocity advection (Mode 0: 1st-order upwind baseline; Mode 1: Minmod TVD candidate)
     float invDx = 1.0 / GetDx();
     float invDz = 1.0 / GetDz();
     float4 stateL = _StateIn[int2(max(0, pos.x - 1), pos.y)];
@@ -198,10 +223,23 @@ void CSPredict(uint3 id : SV_DispatchThreadID) {
     float4 stateD = _StateIn[int2(pos.x, max(0, pos.y - 1))];
     float4 stateU = _StateIn[int2(pos.x, min(_Height - 1, pos.y + 1))];
 
-    float dudx = (u >= 0.0) ? (u - stateL.g) * invDx : (stateR.g - u) * invDx;
-    float dudz = (w >= 0.0) ? (u - stateD.g) * invDz : (stateU.g - u) * invDz;
-    float dwdx = (u >= 0.0) ? (w - stateL.b) * invDx : (stateR.b - w) * invDx;
-    float dwdz = (w >= 0.0) ? (w - stateD.b) * invDz : (stateU.b - w) * invDz;
+    float dudx, dudz, dwdx, dwdz;
+    if (_AdvectionMode == 1) {
+        float4 stateLL = _StateIn[int2(max(0, pos.x - 2), pos.y)];
+        float4 stateRR = _StateIn[int2(min(_Width - 1, pos.x + 2), pos.y)];
+        float4 stateDD = _StateIn[int2(pos.x, max(0, pos.y - 2))];
+        float4 stateUU = _StateIn[int2(pos.x, min(_Height - 1, pos.y + 2))];
+
+        dudx = ComputeAdvectionGradient(stateLL.g, stateL.g, u, stateR.g, stateRR.g, u, invDx);
+        dudz = ComputeAdvectionGradient(stateDD.g, stateD.g, u, stateU.g, stateUU.g, w, invDz);
+        dwdx = ComputeAdvectionGradient(stateLL.b, stateL.b, w, stateR.b, stateRR.b, u, invDx);
+        dwdz = ComputeAdvectionGradient(stateDD.b, stateD.b, w, stateU.b, stateUU.b, w, invDz);
+    } else {
+        dudx = (u >= 0.0) ? (u - stateL.g) * invDx : (stateR.g - u) * invDx;
+        dudz = (w >= 0.0) ? (u - stateD.g) * invDz : (stateU.g - u) * invDz;
+        dwdx = (u >= 0.0) ? (w - stateL.b) * invDx : (stateR.b - w) * invDx;
+        dwdz = (w >= 0.0) ? (w - stateD.b) * invDz : (stateU.b - w) * invDz;
+    }
 
     float advectX = u * dudx + w * dudz;
     float advectZ = u * dwdx + w * dwdz;
@@ -296,7 +334,7 @@ void CSCorrect(uint3 id : SV_DispatchThreadID) {
     float detadxStar = (statePredX.r - etaStar) * signedInvDx;
     float detadzStar = (statePredZ.r - etaStar) * signedInvDz;
 
-    // Upwind convective velocity advection on predicted state
+    // Velocity advection on predicted state (Mode 0: 1st-order upwind baseline; Mode 1: Minmod TVD candidate)
     float invDx = 1.0 / GetDx();
     float invDz = 1.0 / GetDz();
     float4 statePredL = _StatePred[int2(max(0, pos.x - 1), pos.y)];
@@ -304,10 +342,23 @@ void CSCorrect(uint3 id : SV_DispatchThreadID) {
     float4 statePredD = _StatePred[int2(pos.x, max(0, pos.y - 1))];
     float4 statePredU = _StatePred[int2(pos.x, min(_Height - 1, pos.y + 1))];
 
-    float dudxStar = (uStar >= 0.0) ? (uStar - statePredL.g) * invDx : (statePredR.g - uStar) * invDx;
-    float dudzStar = (wStar >= 0.0) ? (uStar - statePredD.g) * invDz : (statePredU.g - uStar) * invDz;
-    float dwdxStar = (uStar >= 0.0) ? (wStar - statePredL.b) * invDx : (statePredR.b - wStar) * invDx;
-    float dwdzStar = (wStar >= 0.0) ? (wStar - statePredD.b) * invDz : (statePredU.b - wStar) * invDz;
+    float dudxStar, dudzStar, dwdxStar, dwdzStar;
+    if (_AdvectionMode == 1) {
+        float4 statePredLL = _StatePred[int2(max(0, pos.x - 2), pos.y)];
+        float4 statePredRR = _StatePred[int2(min(_Width - 1, pos.x + 2), pos.y)];
+        float4 statePredDD = _StatePred[int2(pos.x, max(0, pos.y - 2))];
+        float4 statePredUU = _StatePred[int2(pos.x, min(_Height - 1, pos.y + 2))];
+
+        dudxStar = ComputeAdvectionGradient(statePredLL.g, statePredL.g, uStar, statePredR.g, statePredRR.g, uStar, invDx);
+        dudzStar = ComputeAdvectionGradient(statePredDD.g, statePredD.g, uStar, statePredU.g, statePredUU.g, wStar, invDz);
+        dwdxStar = ComputeAdvectionGradient(statePredLL.b, statePredL.b, wStar, statePredR.b, statePredRR.b, uStar, invDx);
+        dwdzStar = ComputeAdvectionGradient(statePredDD.b, statePredD.b, wStar, statePredU.b, statePredUU.b, wStar, invDz);
+    } else {
+        dudxStar = (uStar >= 0.0) ? (uStar - statePredL.g) * invDx : (statePredR.g - uStar) * invDx;
+        dudzStar = (wStar >= 0.0) ? (uStar - statePredD.g) * invDz : (statePredU.g - uStar) * invDz;
+        dwdxStar = (uStar >= 0.0) ? (wStar - statePredL.b) * invDx : (statePredR.b - wStar) * invDx;
+        dwdzStar = (wStar >= 0.0) ? (wStar - statePredD.b) * invDz : (statePredU.b - wStar) * invDz;
+    }
 
     float advectXStar = uStar * dudxStar + wStar * dudzStar;
     float advectZStar = uStar * dwdxStar + wStar * dwdzStar;

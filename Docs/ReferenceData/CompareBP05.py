@@ -175,7 +175,15 @@ def main():
     # ------- plots -------
     spec = importlib.util.spec_from_file_location("gp", os.path.join("Docs", "GenerateSolitonFissionPlots.py"))
     gp = importlib.util.module_from_spec(spec); spec.loader.exec_module(gp)
-    colors = {"FCT_N256": "#85c1e9", "FCT_N512": "#2471a3", "FilterOff_N512": "#e74c3c", "Legacy2D_N512": "#f39c12"}
+    colors = {
+        "FCT_N256": "#85c1e9",
+        "FCT_N512": "#2471a3",
+        "FilterOff_N512": "#e74c3c",
+        "MinmodTVD_FCT_N256": "#52be80",
+        "MinmodTVD_FCT_N512": "#1e8449",
+        "MinmodTVD_FilterOff_N512": "#8e44ad",
+        "Legacy2D_N512": "#f39c12"
+    }
     for case in "AB":
         te, ge = load_exp(case)
         for g in ("g5", "g7", "g9"):
@@ -186,7 +194,8 @@ def main():
             for lab, rr in out["bp05"][case]["runs"].items():
                 tag = lab.split(f"BP05_{case}_")[1]
                 y = np.array(rr["res"][g]["_y"])
-                ser.append(dict(name=f"GPU {tag}", color=colors[tag], points=list(zip((te[m] - c0).tolist(), (y[m] * 100).tolist())), stroke_width=1.8, dash="" if "FCT" in tag else "4,2"))
+                c_color = colors.get(tag, "#34495e")
+                ser.append(dict(name=f"GPU {tag}", color=c_color, points=list(zip((te[m] - c0).tolist(), (y[m] * 100).tolist())), stroke_width=1.8, dash="" if "FCT" in tag else "4,2"))
             ymax = max(p[1] for s in ser for p in s["points"]) * 1.15
             svg = gp.create_svg_line_chart(ser, width=950, height=450,
                                            title=f"BP05 Case {case} gauge {g}: lab data vs GPU (sim time-aligned at g5; g9 after wall reflection not modelled)",

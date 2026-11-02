@@ -37,6 +37,11 @@ namespace Nobnak.WaterSimulation {
             DirectionalSplit = 1
         }
 
+        public enum AdvectionType {
+            FirstOrderUpwind = 0,
+            MinmodTVD = 1
+        }
+
         #region serialized fields
         [Header("Boussinesq Physics")]
         [Tooltip("Dispersion factor alpha (1.0 = standard Peregrine 1/3 Boussinesq dispersion, 0.0 = non-dispersive shallow water).")]
@@ -49,6 +54,9 @@ namespace Nobnak.WaterSimulation {
 
         [Tooltip("High-frequency spatial dissipation filter mode.")]
         [SerializeField] private FilterType filterMode = FilterType.DirectionalSplit;
+
+        [Tooltip("Convective velocity advection mode in momentum equations.")]
+        [SerializeField] private AdvectionType advectionMode = AdvectionType.FirstOrderUpwind;
 
         [Tooltip("Bed friction / bottom drag coefficient.")]
         [Range(0f, 0.1f)]
@@ -135,6 +143,11 @@ namespace Nobnak.WaterSimulation {
         public FilterType Filter {
             get => filterMode;
             set => filterMode = value;
+        }
+
+        public AdvectionType Advection {
+            get => advectionMode;
+            set => advectionMode = value;
         }
 
         public bool SideWallSponge {
@@ -370,6 +383,7 @@ namespace Nobnak.WaterSimulation {
             boussinesqShader.SetFloat(PropWavemakerFreq, wavemakerFrequency);
             boussinesqShader.SetInt(PropWavemakerY, wavemakerY);
             boussinesqShader.SetFloat(PropDisableSlopeDissipation, 0.0f);
+            boussinesqShader.SetInt(PropAdvectionMode, (int)advectionMode);
         }
 
         public void StepSingleSubstep(float subDt) {
@@ -998,6 +1012,7 @@ namespace Nobnak.WaterSimulation {
         private static readonly int PropAccelPing = Shader.PropertyToID("_AccelPing");
         private static readonly int PropAccelPong = Shader.PropertyToID("_AccelPong");
         private static readonly int PropDisableSlopeDissipation = Shader.PropertyToID("_DisableSlopeDissipation");
+        private static readonly int PropAdvectionMode = Shader.PropertyToID("_AdvectionMode");
         #endregion
     }
 }

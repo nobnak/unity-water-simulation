@@ -55,6 +55,7 @@ namespace Nobnak.WaterSimulation.Editor {
         private static readonly int PropNormalTex = Shader.PropertyToID("_NormalTex");
         private static readonly int PropDissipationMetricsBuffer = Shader.PropertyToID("_DissipationMetricsBuffer");
         private static readonly int PropEffectiveDepthOut = Shader.PropertyToID("_EffectiveDepthOut");
+        private static readonly int PropAdvectionMode = Shader.PropertyToID("_AdvectionMode");
         #endregion
 
         #region Unity lifecycle / initialization
@@ -200,6 +201,8 @@ namespace Nobnak.WaterSimulation.Editor {
             public BufferPrecision bufferPrecision;
             public BathymetryCase bathymetryCase;
             public DissipationMode dissipationMode;
+            public int advectionMode; // 0 = FirstOrderUpwind, 1 = MinmodTVD
+            public string advectionModeName;
             public bool disableSlopeDissipationUniform;
             public int resolutionN;
             public float domainLength;
@@ -396,7 +399,19 @@ namespace Nobnak.WaterSimulation.Editor {
             report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Isolated_FilterOff_N256",
                 BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
                 N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
-                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 0));
+
+            Debug.Log("--- Case 3b: Shelf FP32 Candidate (Minmod TVD + Current FCT, N=256, subDt=0.004s, rate=12.0) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Candidate_MinmodTVD_CurrentFCT_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
+
+            Debug.Log("--- Case 3c: Shelf FP32 Candidate (Minmod TVD + Filter OFF, N=256, subDt=0.004s, rate=0.0) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Candidate_MinmodTVD_FilterOff_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
 
             Debug.Log("--- Case 4: Shelf FP32 Comparison (Legacy 2D Biharmonic Filter, N=256, subDt=0.004s) ---");
             report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_Comparison_LegacyFilter_N256",
@@ -477,6 +492,30 @@ namespace Nobnak.WaterSimulation.Editor {
                 N: 512, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
                 friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
 
+            Debug.Log("--- Case 15b: Grid Convergence MinmodTVD CurrentFCT N=128 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_GridConverge_MinmodTVD_CurrentFCT_N128",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 128, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
+
+            Debug.Log("--- Case 15c: Grid Convergence MinmodTVD CurrentFCT N=512 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_GridConverge_MinmodTVD_CurrentFCT_N512",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.CurrentFCT_Full,
+                N: 512, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
+
+            Debug.Log("--- Case 15d: Grid Convergence MinmodTVD FilterOff N=128 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_GridConverge_MinmodTVD_FilterOff_N128",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
+                N: 128, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
+
+            Debug.Log("--- Case 15e: Grid Convergence MinmodTVD FilterOff N=512 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "Shelf_FP32_GridConverge_MinmodTVD_FilterOff_N512",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ShelfSlopeExploration, DissipationMode.FilterOff_RawMacCormack,
+                N: 512, L: 50f, h1: 0.60f, h2: 0.20f, a0: 0.12f, slope: 0.05f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
+
             // =========================================================================
             // GROUP 4: Flat Bed Control in FP32 (h1=h2=0.60m constant, no slope, a0=0.12m, L=50m)
             // =========================================================================
@@ -497,6 +536,24 @@ namespace Nobnak.WaterSimulation.Editor {
                 BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, DissipationMode.FilterOff_RawMacCormack,
                 N: 512, L: 50f, h1: 0.60f, h2: 0.60f, a0: 0.12f, slope: 0.0f, slopeStart: 10.0f,
                 friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f));
+
+            Debug.Log("--- Case 18b: Flat Bed Control MinmodTVD CurrentFCT N=256 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "FlatBed_FP32_Control_MinmodTVD_CurrentFCT_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, DissipationMode.CurrentFCT_Full,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.60f, a0: 0.12f, slope: 0.0f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
+
+            Debug.Log("--- Case 18c: Flat Bed Control MinmodTVD FilterOff N=256 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "FlatBed_FP32_Control_MinmodTVD_FilterOff_N256",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, DissipationMode.FilterOff_RawMacCormack,
+                N: 256, L: 50f, h1: 0.60f, h2: 0.60f, a0: 0.12f, slope: 0.0f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
+
+            Debug.Log("--- Case 18d: Flat Bed Control MinmodTVD FilterOff N=512 (FP32) ---");
+            report.results.Add(RunSolitonTestCase(shader, "FlatBed_FP32_Control_MinmodTVD_FilterOff_N512",
+                BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, DissipationMode.FilterOff_RawMacCormack,
+                N: 512, L: 50f, h1: 0.60f, h2: 0.60f, a0: 0.12f, slope: 0.0f, slopeStart: 10.0f,
+                friction: 0.0f, dtStep: 0.008f, duration: 22.0f, evalTargetTime: 14.0f, advectionMode: 1));
 
             // =========================================================================
             // GROUP 5: FP16 Precision Comparison (Legacy Benchmark Mode)
@@ -592,13 +649,21 @@ namespace Nobnak.WaterSimulation.Editor {
             var shader = AssetDatabase.LoadAssetAtPath<ComputeShader>(ShaderPath);
             if (shader == null) throw new FileNotFoundException($"Cannot load compute shader at {ShaderPath}");
 
-            var rep = new ReferenceRunsReport {
-                timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'"),
-                gitCommit = GetGitCommitHash(out bool dirty) + (dirty ? "-dirty" : ""),
-                computeShaderHash = ComputeFileHash(ShaderPath),
-                gpuRenderer = SystemInfo.graphicsDeviceName + " (" + SystemInfo.graphicsDeviceType + ")",
-                notes = "FP32 runtime-matching buffers. Shader coefficients unchanged."
-            };
+            ReferenceRunsReport rep = null;
+            if (File.Exists(ReferenceRunsJsonPath)) {
+                try {
+                    rep = JsonUtility.FromJson<ReferenceRunsReport>(File.ReadAllText(ReferenceRunsJsonPath, Encoding.UTF8));
+                } catch { }
+            }
+            if (rep == null) {
+                rep = new ReferenceRunsReport();
+            }
+
+            rep.timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
+            rep.gitCommit = GetGitCommitHash(out bool dirty) + (dirty ? "-dirty" : "");
+            rep.computeShaderHash = ComputeFileHash(ShaderPath);
+            rep.gpuRenderer = SystemInfo.graphicsDeviceName + " (" + SystemInfo.graphicsDeviceType + ")";
+            rep.notes = "FP32 runtime-matching buffers. Shader coefficients unchanged.";
 
             const float lambda = 2f;       // Froude scale so that every represented depth >= 0.2 m (SampleDepth floor)
             const float xShift = 7.0f;     // lab x mapped to z = 0
@@ -608,11 +673,14 @@ namespace Nobnak.WaterSimulation.Editor {
             string[] gaugeName = { "g5", "g6", "g7", "g8", "g9" };
             float zOf(float xLab) => lambda * (xLab - xShift);
 
-            var modes = new (DissipationMode mode, int N, string tag)[] {
-                (DissipationMode.CurrentFCT_Full, 256, "FCT_N256"),
-                (DissipationMode.CurrentFCT_Full, 512, "FCT_N512"),
-                (DissipationMode.FilterOff_RawMacCormack, 512, "FilterOff_N512"),
-                (DissipationMode.LegacyUnsplit2D, 512, "Legacy2D_N512"),
+            var modes = new (DissipationMode mode, int N, string tag, int advMode)[] {
+                (DissipationMode.CurrentFCT_Full, 256, "FCT_N256", 0),
+                (DissipationMode.CurrentFCT_Full, 512, "FCT_N512", 0),
+                (DissipationMode.FilterOff_RawMacCormack, 512, "FilterOff_N512", 0),
+                (DissipationMode.CurrentFCT_Full, 256, "MinmodTVD_FCT_N256", 1),
+                (DissipationMode.CurrentFCT_Full, 512, "MinmodTVD_FCT_N512", 1),
+                (DissipationMode.FilterOff_RawMacCormack, 512, "MinmodTVD_FilterOff_N512", 1),
+                (DissipationMode.LegacyUnsplit2D, 512, "Legacy2D_N512", 0),
             };
 
             foreach (var cs in new[] { ("A", "gA.txt"), ("B", "gB.txt") }) {
@@ -620,32 +688,59 @@ namespace Nobnak.WaterSimulation.Editor {
                 float a0Sim = a0Lab * lambda;
                 foreach (var m in modes) {
                     string label = $"BP05_{cs.Item1}_{m.tag}";
-                    Debug.Log($"[ReferenceValidation] {label}: a0Lab={a0Lab:F4}m a0Sim={a0Sim:F4}m");
+                    var existing = rep.runs.Find(x => x.label == label);
+                    if (existing != null && existing.result != null && existing.result.leadWaveHeight > 0f) {
+                        Debug.Log($"[ReferenceValidation] {label}: already computed (leadH={existing.result.leadWaveHeight:F4}m), skipping.");
+                        continue;
+                    }
+
+                    Debug.Log($"[ReferenceValidation] {label}: a0Lab={a0Lab:F4}m a0Sim={a0Sim:F4}m, advMode={m.advMode}");
                     var stationZs = new float[gaugeX.Length];
                     for (int i = 0; i < gaugeX.Length; i++) stationZs[i] = zOf(gaugeX[i]);
                     float dEnd = lambda * Bp05DepthLab(22.33f);
                     var r = RunSolitonTestCase(shader, label, BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ReferenceCustomBathymetry, m.mode,
                         N: m.N, L: L, h1: lambda * 0.218f, h2: dEnd, a0: a0Sim, slope: 0f, slopeStart: zOf(22.33f),
                         friction: 0f, dtStep: 0.008f, duration: 18f, evalTargetTime: 14f,
-                        depthOfZ: z => lambda * Bp05DepthLab(z / lambda + xShift), stationZsOverride: stationZs, z0Override: zOf(xPulse));
+                        depthOfZ: z => lambda * Bp05DepthLab(z / lambda + xShift), stationZsOverride: stationZs, z0Override: zOf(xPulse),
+                        advectionMode: m.advMode);
                     r.snapshots.Clear();
-                    var run = new ReferenceRun { label = label, kind = "BP05_" + cs.Item1, lengthScale = lambda, xShiftLab = xShift, a0Sim = a0Sim, result = r };
-                    run.gaugeXLab.AddRange(gaugeX);
-                    run.gaugeNames.AddRange(gaugeName);
-                    rep.runs.Add(run);
+                    if (existing != null) {
+                        existing.result = r;
+                    } else {
+                        var run = new ReferenceRun { label = label, kind = "BP05_" + cs.Item1, lengthScale = lambda, xShiftLab = xShift, a0Sim = a0Sim, result = r };
+                        run.gaugeXLab.AddRange(gaugeX);
+                        run.gaugeNames.AddRange(gaugeName);
+                        rep.runs.Add(run);
+                    }
+                    File.WriteAllText(ReferenceRunsJsonPath, EditorJsonUtility.ToJson(rep, false), Encoding.UTF8);
+                    System.GC.Collect();
                 }
 
                 // Flat-bed analytic soliton at the same (scaled) depth and amplitude
-                foreach (var m in new[] { modes[1], modes[2] }) {
+                foreach (var m in new[] { modes[1], modes[2], modes[4], modes[5] }) {
                     string label = $"FlatBed_{cs.Item1}_{m.tag}";
+                    var existing = rep.runs.Find(x => x.label == label);
+                    if (existing != null && existing.result != null && existing.result.leadWaveHeight > 0f) {
+                        Debug.Log($"[ReferenceValidation] {label}: already computed (leadH={existing.result.leadWaveHeight:F4}m), skipping.");
+                        continue;
+                    }
+
+                    Debug.Log($"[ReferenceValidation] {label}: a0Sim={a0Sim:F4}m, advMode={m.advMode}");
                     float h = lambda * 0.218f;
                     var r = RunSolitonTestCase(shader, label, BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, m.mode,
                         N: m.N, L: L, h1: h, h2: h, a0: a0Sim, slope: 0f, slopeStart: 10f,
-                        friction: 0f, dtStep: 0.008f, duration: 22f, evalTargetTime: 14f);
+                        friction: 0f, dtStep: 0.008f, duration: 22f, evalTargetTime: 14f,
+                        advectionMode: m.advMode);
                     r.snapshots.Clear();
-                    var run = new ReferenceRun { label = label, kind = "FlatBed_" + cs.Item1, lengthScale = lambda, xShiftLab = 0f, a0Sim = a0Sim, result = r };
-                    foreach (var st in r.stationSeries) { run.gaugeXLab.Add(st.stationZ); run.gaugeNames.Add(st.stationName); }
-                    rep.runs.Add(run);
+                    if (existing != null) {
+                        existing.result = r;
+                    } else {
+                        var run = new ReferenceRun { label = label, kind = "FlatBed_" + cs.Item1, lengthScale = lambda, xShiftLab = 0f, a0Sim = a0Sim, result = r };
+                        foreach (var st in r.stationSeries) { run.gaugeXLab.Add(st.stationZ); run.gaugeNames.Add(st.stationName); }
+                        rep.runs.Add(run);
+                    }
+                    File.WriteAllText(ReferenceRunsJsonPath, EditorJsonUtility.ToJson(rep, false), Encoding.UTF8);
+                    System.GC.Collect();
                 }
             }
 
@@ -672,13 +767,16 @@ namespace Nobnak.WaterSimulation.Editor {
             BufferPrecision bufferPrec, BathymetryCase bathyCase, DissipationMode dissMode,
             int N, float L, float h1, float h2, float a0, float slope, float slopeStart,
             float friction, float dtStep, float duration, float evalTargetTime,
-            Func<float, float> depthOfZ = null, float[] stationZsOverride = null, float z0Override = -1f) {
+            Func<float, float> depthOfZ = null, float[] stationZsOverride = null, float z0Override = -1f,
+            int advectionMode = 0) {
 
             var res = new CaseResult {
                 caseName = caseName,
                 bufferPrecision = bufferPrec,
                 bathymetryCase = bathyCase,
                 dissipationMode = dissMode,
+                advectionMode = advectionMode,
+                advectionModeName = (advectionMode == 1) ? "MinmodTVD" : "FirstOrderUpwind",
                 disableSlopeDissipationUniform = (dissMode == DissipationMode.CurrentFCT_NoSlope2nd),
                 resolutionN = N,
                 domainLength = L,
@@ -822,7 +920,7 @@ namespace Nobnak.WaterSimulation.Editor {
 
             for (int step = 0; step < totalSteps; step++) {
                 for (int sub = 0; sub < subStepsPerStep; sub++) {
-                    BindShaderUniforms(shader, N, dx, dz, subDt, g, alpha, friction, parity, disableSlopeDissipation);
+                    BindShaderUniforms(shader, N, dx, dz, subDt, g, alpha, friction, parity, disableSlopeDissipation, advectionMode);
 
                     // 1. Predictor
                     shader.SetTexture(kPredict, PropStateIn, rts.stateA);
@@ -889,7 +987,9 @@ namespace Nobnak.WaterSimulation.Editor {
                     Dispatch2D(shader, kMeasureX, N);
 
                     if (dissMode == DissipationMode.FilterOff_RawMacCormack) {
-                        Graphics.CopyTexture(rts.pred, rts.stateA);
+                        var tmp = rts.stateA;
+                        rts.stateA = rts.pred;
+                        rts.pred = tmp;
                     } else if (dissMode == DissipationMode.CurrentFCT_Full || dissMode == DissipationMode.CurrentFCT_NoSlope2nd) {
                         // Pass 1: X filter
                         shader.SetTexture(kFilterX, PropStateIn, rts.pred);
@@ -1069,6 +1169,10 @@ namespace Nobnak.WaterSimulation.Editor {
             AssignObjectiveVerdict(res, bathyCase, dissMode, dz, a0, slopeEnd, currentEta, N);
 
             ReleaseTextures(rts);
+            if (metricsBuffer != null) {
+                metricsBuffer.Release();
+                metricsBuffer = null;
+            }
             return res;
         }
 
@@ -1140,6 +1244,7 @@ namespace Nobnak.WaterSimulation.Editor {
             data.maxShelfClampChange = maxClamp;
             data.shelfPointsSampled = pointsSampled;
             effRT.Release();
+            UnityEngine.Object.DestroyImmediate(effRT);
 
             data.verificationMethod = $"GPU Readback of ARGBHalf texture & CSEvaluateSampleDepth (SampleDepth execution) readback to RFloat across {pointsSampled} shelf points";
         }
@@ -1767,7 +1872,7 @@ namespace Nobnak.WaterSimulation.Editor {
         #endregion
 
         #region helpers
-        private static void BindShaderUniforms(ComputeShader shader, int N, float dx, float dz, float subDt, float g, float alpha, float friction, int parity, bool disableSlopeDissipation) {
+        private static void BindShaderUniforms(ComputeShader shader, int N, float dx, float dz, float subDt, float g, float alpha, float friction, int parity, bool disableSlopeDissipation, int advectionMode = 0) {
             shader.SetInt(PropWidth, N);
             shader.SetInt(PropHeight, N);
             shader.SetFloat(PropDeltaTime, subDt);
@@ -1781,6 +1886,7 @@ namespace Nobnak.WaterSimulation.Editor {
             shader.SetInt(PropStepParity, parity);
             shader.SetInt(PropSideWallSponge, 0); // Flume mode
             shader.SetFloat(PropDisableSlopeDissipation, disableSlopeDissipation ? 1.0f : 0.0f);
+            shader.SetInt(PropAdvectionMode, advectionMode);
         }
 
         private static void Dispatch2D(ComputeShader shader, int kernel, int N) {

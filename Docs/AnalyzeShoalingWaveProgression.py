@@ -4,16 +4,16 @@
 Detailed progression analysis of solitary wave transformation across the shelf benchmark.
 Tracks wave height, peak position, profile error, water volume conservation, and roughness
 at 3 physical stages:
-  - Stage 1 (Pre-shelf flat bed): t = 3.0 s (z ≈ 13m)
-  - Stage 2 (On slope climbing):   t = 6.0 s (10m <= z <= 18m)
-  - Stage 3 (On shelf propagation): t = 10.0 s and t = 14.0 s (shallow shelf z >= 18m)
+  - Stage 1 (Climbing slope):           t = 3.0 s (z ≈ 13m, within slope 10m <= z <= 18m)
+  - Stage 2 (Initial shelf entry):      t = 6.0 s (z ≈ 20m, shallow shelf z >= 18m)
+  - Stage 3 (Shelf propagation/fission): t = 10.0 s and t = 14.0 s (shallow shelf z >= 18m)
 
 Compares:
-  1. FP64 High-Order Reference (N=2048, 4th-order advection, exact dispersion, no filter)
+  1. FP64 High-Order Reference (N=1024, Directional 2nd-order advection, exact dispersion, no filter)
   2. FP64 Matched Grid GPU-Equivalent (N=256, 1st-order upwind advection, FilterOff)
   3. FP64 Refined Grid GPU-Equivalent (N=512, 1st-order upwind advection, FilterOff)
-  4. FP64 Directional One-Sided Advection (N=256 & N=512, alternating directional difference)
-  5. Actual GPU Readback Benchmark Data (CurrentFCT and FilterOff at N=256 and N=512)
+  4. FP64 Candidate Minmod TVD (N=256 & N=512, Minmod slope limiter, FilterOff)
+  5. Actual GPU Readback Benchmark Data (Baseline Upwind and Candidate Minmod TVD)
 
 Addresses NTHMP BP05 Case B (H/d ≈ 0.264) Gauge 7 height error (-27.5% FAIL).
 """
@@ -213,9 +213,9 @@ def main():
     print("SHOALING WAVE PROGRESSION & FACTOR ISOLATION ANALYSIS")
     print("================================================================================")
     print("Tracking Solitary Wave (a0=0.12m, h1=0.60m -> slope 1:20 -> h2=0.20m):")
-    print("  - Stage 1: Pre-shelf Flat Bed (t = 3.0s, z ~ 13m)")
-    print("  - Stage 2: On-Slope Climbing  (t = 6.0s, 10m <= z <= 18m)")
-    print("  - Stage 3: On-Shelf Shoaled   (t = 10.0s & t = 14.0s, z >= 18m)")
+    print("  - Stage 1: Climbing Slope      (t = 3.0s, z ~ 13m, within slope 10m <= z <= 18m)")
+    print("  - Stage 2: Initial Shelf Entry (t = 6.0s, z ~ 20m, shallow shelf z >= 18m)")
+    print("  - Stage 3: Shelf Propagation   (t = 10.0s & t = 14.0s, shallow shelf z >= 18m)")
 
     sample_times = (0.0, 3.0, 6.0, 10.0, 14.0)
 

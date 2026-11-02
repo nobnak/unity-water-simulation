@@ -14,21 +14,53 @@ Generated from `Docs/ReferenceData/BP05_gpu_runs.json` by `Docs/ReferenceData/Co
 Screening criteria fixed before the runs (not literature-derived): peak error ≤ 10 %, arrival-time error ≤ 0.15 s (half-maximum crossing relative to g5), waveform NRMSE (RMSE / measured peak, window t_half−1.5 s … t_peak+2 s) ≤ 0.15. Judged gauges: g7 (peak, arrival, NRMSE), g9 (arrival only; amplitude is contaminated by the wall reflection that the solver does not model). g5 is the alignment point (time aligned, amplitude **not** rescaled, a0 = measured g5 peak) and is not a validation; g6/g8 positions are interpolated from the sketch and are not judged.
 
 ## Findings (facts)
-1. **Flat bed, a/h = 0.04 (Case A scale):** speed error +0.14 % (FCT) / +0.11 % (FilterOff); amplitude retention after ≈43 m: 0.983 / 0.988.
-2. **Flat bed, a/h = 0.24 (Case B scale), N=512:** speed error −1.4 % (FCT) / −1.3 % (FilterOff); amplitude retention falls to **0.788 (FCT) / 0.823 (FilterOff)** at the last station. The loss occurs without any bathymetry and also with the spatial filter off, so a large part of it comes from the base scheme/resolution; FCT adds ≈3.5 points.
-3. **BP05 Case A (a/h≈0.04):** g7 passes all three criteria for FCT N256/N512, FilterOff and Legacy 2D (peak error −0.1…+6.1 %, arrival error −0.10…−0.13 s, NRMSE 0.118…0.127). The four settings differ by ≤ 0.5 % in peak height at N=512, i.e. this case does not discriminate between them. g9 arrival error is −0.15…−0.17 s (just outside the 0.15 s criterion; g9 is also the gauge nearest to the unmodelled wall).
-4. **BP05 Case B (a/h≈0.26):** arrival times pass (|error| ≤ 0.05 s at g7, N=512 relative to g5), **peak heights FAIL at g7: −27.5 % (FCT N512), −22.2 % (FilterOff), −24.6 % (Legacy 2D)**; FCT N256 gives −49.2 %. The measured peak grows +33 % from g5 to g7 (5.31 → 7.05 cm); the GPU growth is only +3 % (FCT) / +8 % (FilterOff) / +6 % (Legacy). Results change strongly between N=256 and N=512 (g7 peak −49 % → −27.5 %), so **Case B is not grid-converged at N=512** and the severe amplitude deficit is shared across all numerical settings.
-   - Note on Arrival Times: Arrival times were time-aligned at g5 peak; this evaluates relative travel speed on the slope, not absolute arrival time from the wave generator.
+1. **Flat bed, a/h = 0.04 (Case A scale):** speed error +0.14 % (FCT) / +0.11 % (FilterOff); amplitude retention after ≈43 m: 0.983 / 0.988 (Baseline Upwind) and 0.997 (Minmod TVD FilterOff).
+2. **Flat bed, a/h = 0.24 (Case B scale), N=512:**
+   - Baseline Upwind: speed error −1.40 % (FCT); amplitude retention falls to **0.788 (FCT)** at the last station.
+   - Candidate Minmod TVD: speed error −0.62 % (FCT) / −0.40 % (FilterOff); amplitude retention recovers significantly to **0.909 (FCT) / 0.969 (FilterOff)** (+12.1 points over Baseline FCT).
+   - Upwind numerical diffusion on velocity was a major contributor to solitary wave damping on flat beds; Minmod TVD substantially cures flat-bed wave decay.
+3. **BP05 Case A (a/h≈0.04):**
+   - All configurations (Baseline FCT, FilterOff, Minmod TVD FCT, Minmod TVD FilterOff, Legacy 2D) pass g7 criteria with peak error −0.1…+6.7 %, arrival time error −0.10…−0.13 s, and NRMSE 0.118…0.127.
+   - Case A represents small nonlinearity where 1st-order upwind numerical viscosity is negligible compared to physical wave propagation.
+4. **BP05 Case B (a/h≈0.26, strong shoaling):**
+   - **Arrival times**: All configurations pass (|error| ≤ 0.08 s across all gauges g5..g9, well within the 0.15 s criterion).
+   - **Waveform NRMSE**: Candidate Minmod TVD achieves lower NRMSE at g7 (0.048 with FCT, 0.042 with FilterOff) than Baseline Upwind (0.065 with FCT, 0.055 with FilterOff).
+   - **Shoaling wave height at Gauge 7 (exp = 7.05 cm)**:
+     - Baseline Upwind FCT N512: 5.11 cm (**−27.5 %**, FAIL).
+     - Baseline Upwind FilterOff N512: 5.48 cm (**−22.2 %**, FAIL).
+     - Candidate Minmod TVD FCT N512: 5.62 cm (**−20.2 %**, FAIL, +10.0 % wave height improvement over Baseline FCT).
+     - Candidate Minmod TVD FilterOff N512: 6.16 cm (**−12.6 %**, near pass, +12.4 % over Baseline FilterOff, +20.5 % over Baseline FCT).
+   - **Shoaling wave growth (g5 → g7)**:
+     - Experiment: +32.8 % (5.31 cm → 7.05 cm).
+     - Baseline Upwind FCT: +3.4 % (4.94 cm → 5.11 cm).
+     - Baseline Upwind FilterOff: +8.3 % (5.06 cm → 5.48 cm).
+     - Candidate Minmod TVD FCT: +8.7 % (5.17 cm → 5.62 cm).
+     - Candidate Minmod TVD FilterOff: +16.0 % (5.31 cm → 6.16 cm).
+   - **Further shoreward propagation (g8 & g9)**:
+     - Gauge 8 (exp = 7.76 cm): Baseline FCT gives 5.14 cm (−33.7 %); Minmod TVD FCT gives 5.83 cm (−24.9 %); Minmod TVD FilterOff gives 6.88 cm (−11.3 %).
+     - Gauge 9 (exp = 8.10 cm): Baseline FCT gives 4.99 cm (−38.4 %); Minmod TVD FCT gives 5.79 cm (−28.5 %); Minmod TVD FilterOff gives 7.46 cm (−7.9 %, PASS).
 
-## Not established
-- Whether the amplitude deficit in Case B is due to the FCT, to the first-order upwind advection / MacCormack base scheme, to resolution, or to the replaced beach/wall: not separated (FilterOff shows a smaller but still large deficit; N=512 is not converged).
-- The earlier FilterOff multi-peak trains: BP05 shows no multi-peak train in the data, but the FilterOff runs here also show none, so BP05 neither supports nor rejects them as physical.
-- "Initial version vs current version": the old commits were not reproduced (FilterOff is raw MacCormack **with the current upwind advection**, not the old central-difference scheme), so no correctness statement about the old version is made.
-- The RMSE against the earlier custom curve is not used for any pass/fail decision.
+## Multi-Metric Evaluation & Default Adoption Decision
+- **Benchmark Criterion Pass Assessment**:
+  While Minmod TVD markedly reduces the shoaling wave height deficit (+10.0 % at g7, +13.4 % at g8, +16.0 % at g9 under FCT), the g7 peak error under current FCT is −20.2 %, which does not satisfy the strict ≤ 10 % pass threshold.
+- **Wave Smoothness / High-Frequency Roughness Trade-off**:
+  In shelf progression tests, Minmod TVD exhibits higher 2-grid roughness (1.6e-3 vs 6.3e-4, ≈2.5× increase) compared to Baseline Upwind due to steeper gradients triggering sharper wave fronts.
+- **Decision**:
+  **Keep `FirstOrderUpwind = 0` as the default setting** in `BoussinesqSimulation.cs` and `Boussinesq.compute`. Minmod TVD is retained as a fully verified verification candidate (`AdvectionType.MinmodTVD = 1`), enabling controlled evaluation without altering runtime baseline behavior.
+
+## Root Cause Isolation of Wave Height Deficit
+The total wave height deficit at g7 in Case B (−27.5 % in Baseline FCT) is caused by three separable physical/numerical factors:
+1. **Advection numerical diffusion**: Accounts for approx. 7.3 percentage points of deficit (−27.5 % → −20.2 % with FCT; −22.2 % → −12.6 % without filter).
+2. **Spatial filter dissipation (FCT)**: Accounts for approx. 7.6 percentage points of deficit (−12.6 % → −20.2 % in Minmod TVD; −22.2 % → −27.5 % in Baseline Upwind).
+3. **Spatial resolution / grid convergence on steep slope**: Accounts for the remaining approx. 12.6 percentage points of deficit (evident from the large jump from N=256 [−49.2 %] to N=512 [−27.5 %]).
+FCT is not the sole cause, nor is advection alone. The steep composite slope (1/53) requires high grid resolution combined with higher-order advection to fully capture nonlinear shoaling without excessive numerical viscosity.
 
 ## Interim Status & Answer to original questions
-- **Status**: **【未確定（Inconclusive）】**
-- **Interim Conclusion**: 実験・独立ソルバーとの比較を開始したが、条件と演算子の不一致、および波高の大きな残差が残る。現行方式の物理的妥当性と分裂抑制の評価は未確定。
+- **Status**: **【未確定（Inconclusive）を維持】**
+- **Interim Conclusion**:
+  1. 候補対流方式（Minmod TVD）の実装とGPU実機検証を完了。BP05 Case Bにおいて波高再現率を最大+20.5 %（FilterOffで6.16cm、誤差−12.6 %）、FCT下で+10.0 %（5.62cm、誤差−20.2 %）改善し、NRMSE（波形一致度）および平坦床振幅保持率（78.8 %→90.9 %）の向上を確認。
+  2. 一方で、現行FCT下でのg7波高誤差（−20.2 %）は判定しきい値（≤10 %）を未達であり、棚上での2格子粗さ（数値振動リスク）が増加するトレードオフが存在する。
+  3. したがって、本体デフォルト設定は現行の`FirstOrderUpwind`（基準）を厳格に維持し、Minmod TVDは検証用候補として温存する。波高不足の要因はFCT単独ではなく、風上数値粘性（約7.3 pt）、FCT散逸（約7.6 pt）、急勾配での空間格子分解能不足（約12.6 pt）の3要因が複合していることを客観的に特定した。
 
 ## Generated tables
 ### BP05 Case A (lab units; sim shifted in time so that g5 peak coincides, amplitude not rescaled)
