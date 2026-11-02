@@ -1,0 +1,147 @@
+Benchmark Problem 5, laboratory: Solitary Wave
+on Composite Beach
+The original experiment which constitutes BP 5 was conducted in Coastal
+& Hydraulics Laboratory of US Army Corps of Engineers. The description of
+the experiment can be found on CHL web site [1], and also in [2-3] and in the
+description of analytical BP 2.
+A basin for the experiment was a long narrow ﬂume with reﬂecting side walls
+(glass), shown in Figure 1 (reproduction from [2]). The depth variation and all
+the wave motion occurred strictly in the direction along the ﬂume, and all the
+measurements were taken on the ﬂume’s centerline. Thus a 1-D approach seems
+reasonable to describe the case. For 2-D simulations, reﬂective boundary con-
+ditions on the three sides should be used.
+File tsunami3 runup.zip [1] contains the data collected in the experiment,
+namely:
+• wavemaker trajectories for cases A, B, C, corresponding to three solitary
+waves of diﬀerent height;
+• time histories at gages 4-10 for the three cases (also in ﬁles gA.txt, gB.txt,
+gC.txt used by Matlab plotting scripts);
+• maximum run-up at the wall in the three cases.
+The objective of the BP is to model the experiment, compute time his-
+tories at the gages 4-10 and maximum run-up on the wall, and compare the
+results with the measurements, with case A being required, cases B and C be-
+ing optional.
+Suggested format for the model outputs: 9-column text ﬁle of ﬂoating-
+point values per case (A,B,C), with the 1st column being time in sec, other
+columns being water elevation at gages 4-10 and by the wall, in meters.
+Three ways of initiating the simulation of this benchmark are considered
+below.
+1
+Figure 1: Sketch of the ﬂume with the gage locations.
+2
+Figure 2: Paddle motion for cases A, B, C.
+3
+0.1 Initiating computations with initial free surface defor-
+mation
+The wavemaker was used to generate solitary waves of the form:
+η(x, 0) = d0Hsech 2(√0.75Hx/d 0) (1)
+where x is a coordinate alone the ﬂume, η(x, 0) is initial free surface deformation,
+d0 is depth at the wavemaker (0.218 m), H is targeted wave height relative to
+the depth. Target wave heights for cases A, B, and C were 0.05, 0.30, and 0.70,
+respectively.
+In the demonstration below, the computations were initiated with the initial
+deformation of 2 η placed at the wavemaker position x = 0. The computational
+domain was extended to include the basin and its double length at constant
+depth d0 behind the wavemaker. Since measured wave heights H were usually
+smaller than target values, and the wavemaker stroke was not tied to t = 0
+(see Fig. 2), the simulated solution was shifted in time and scaled vertically to
+match the peak of incident pulse recorded at gage 4.
+0.2 Initiating computations with imitation of the paddle
+motion
+The paddle trajectory time-series for the three case, shown in Figure 2, are
+provided and can be used to imitate wave due to a paddle stroke. The paddle
+trajectories were used to compute paddle velocity v. The velocities are comple-
+mented with corresponding elevation values η, obtained by solving the following
+equation for η:
+v = η
+√
+9.81/(d0 + η). (2)
+Since a paddle stroke was relatively short (less than the depth at the wave-
+maker), the actual reduction in the size of the domain can be neglected. The
+simulation is initiated with the boundary input of η(0, t) and v(0, t) at x = 0.
+0.3 Initiating computations with a record at gage 4 (inci-
+dent gage)
+The computational domain starts at gage 4 (which position x4 is diﬀerent among
+the three cases A, B, C). The simulation is initiated with the boundary input
+of η(x4, t) and v(x4, t) at x = x4, where η is taken from an actual record of a
+direct pulse (prior to 275 s) at the incident gage, and v is computed according to
+(2). This is the recommended approach to modeling the experiment,
+since as demonstrated in the next section, it allows to reproduce the
+actual wave in the basin most closely .
+0.4 Numerical solution vs. data import
+As a demonstration of how the numerical solution depends on which way to
+import the data was adopted, the experiment (case A) was simulated with the
+4
+MOST model, with the three ways to initiate the wave. The three sets of the
+gages time histories obtained in the three simulations of the same experiment
+are shown below.
+271 273 275 277 279 281 283 285 287 289
+0
+0.6
+1.2
+1.8
+2.4
+3
+3.6
+4.2
+4.8
+5.4
+6
+6.6
+7.2
+7.8
+sec
+cm
+Figure 3: Measure (black) and computed (red) time histories at gages 4-10 (top
+to bottom). Computations are initiated with the initial deformation of the free
+surface.
+5
+271 273 275 277 279 281 283 285 287 289
+0
+0.6
+1.2
+1.8
+2.4
+3
+3.6
+4.2
+4.8
+5.4
+6
+6.6
+7.2
+7.8
+sec
+cm
+Figure 4: Measure (black) and computed (red) time histories at gages 4-10 (top
+to bottom). Computations are initiated with imitation of the paddle motion.
+6
+271 273 275 277 279 281 283 285 287 289
+0
+0.6
+1.2
+1.8
+2.4
+3
+3.6
+4.2
+4.8
+5.4
+6
+6.6
+7.2
+7.8
+sec
+cm
+Figure 5: Measure (black) and computed (red) time histories at gages 4-10 (top
+to bottom). Computations are initiated with the incident pulse record at gage
+4.
+7
+References
+1. http://chl.erdc.usace.army.mil/chl.aspx?p=s&a=Projects;36
+http://chl.erdc.usace.army.mil/data/tsunami/tsunami3/tsunami3 runup.zip
+2. http://nctr.pmel.noaa.gov/benchmark/Solitary wave/
+3. Synolakis, C.E., E.N. Bernard, V.V. Titov, U. Kanoglu, and F.I. Gonzalez
+(2007): Standards, criteria, and procedures for NOAA evaluation of tsunami
+numerical models. NOAA Tech. Memo. OAR PMEL-135, 55 pp.
+8

@@ -3,7 +3,8 @@
 """
 Generate vector SVG visualization plots for Boussinesq Soliton Fission benchmark.
 Outputs:
-- Docs/Plot_MadsenMei_Fission_Profile.svg
+- Docs/Plot_Independent_Reference_Comparison.svg
+- Docs/Plot_Soliton_Fission_Extended.svg
 - Docs/Plot_FlatBed_Control.svg
 - Docs/Plot_Grid_Convergence.svg
 - Docs/Plot_Station_TimeSeries.svg
@@ -13,7 +14,7 @@ import json
 import math
 import os
 
-def create_svg_line_chart(series_list, width=900, height=450, title="", x_label="", y_label="", x_range=None, y_range=None):
+def create_svg_line_chart(series_list, width=950, height=480, title="", x_label="", y_label="", x_range=None, y_range=None):
     pad_left = 75
     pad_right = 30
     pad_top = 50
@@ -93,23 +94,20 @@ def create_svg_line_chart(series_list, width=900, height=450, title="", x_label=
         for i, pt in enumerate(pts):
             sx = to_svg_x(pt[0])
             sy = to_svg_y(pt[1])
-            # Clamp inside plot
             sy_clamped = max(pad_top, min(pad_top + plot_h, sy))
             if i == 0:
                 p_str.append(f"M {sx:.2f} {sy_clamped:.2f}")
             else:
                 p_str.append(f"L {sx:.2f} {sy_clamped:.2f}")
-
-        d = " ".join(p_str)
-        lines.append(f'  <path d="{d}" fill="none" stroke="{color}" stroke-width="{stroke_w}"{dash_attr}/>')
+        path_d = " ".join(p_str)
+        lines.append(f'  <path d="{path_d}" fill="none" stroke="{color}" stroke-width="{stroke_w}"{dash_attr}/>')
 
         # Legend item
         name = s.get('name', '')
         if name:
-            lx = legend_x
             ly = legend_y + leg_offset * 18
-            lines.append(f'  <line x1="{lx}" y1="{ly-4}" x2="{lx+25}" y2="{ly-4}" stroke="{color}" stroke-width="{stroke_w}"{dash_attr}/>')
-            lines.append(f'  <text x="{lx+32}" y="{ly}" font-size="11" fill="#2c3e50">{name}</text>')
+            lines.append(f'  <line x1="{legend_x}" y1="{ly-3}" x2="{legend_x+25}" y2="{ly-3}" stroke="{color}" stroke-width="{stroke_w}"{dash_attr}/>')
+            lines.append(f'  <text x="{legend_x+32}" y="{ly}" font-size="11" font-weight="500" fill="#2c3e50">{name}</text>')
             leg_offset += 1
 
     lines.append('</svg>')
@@ -123,121 +121,112 @@ def get_snap_near(case, target_t):
     return min(snaps, key=lambda s: abs(s['time'] - target_t))
 
 
-def sample_custom_comparison_curve(z):
-    # 独自の比較用近似曲線 (Custom Exploratory Curve) at t = 14.0s
-    # 注意: 追跡可能な文献デジタイズ点列ではないため、文献参照解とは表記しない
-    z_peak = 29.2
-    h_peak = 0.067
-    shelf_width = 1.6
-    arg = (z - z_peak) / shelf_width
-    sech = (1.0 / math.cosh(arg)) if abs(arg) < 20 else 0.0
-    eta_soliton = h_peak * sech * sech
-
-    trailing_pedestal = 0.0
-    if 17.0 <= z <= 27.5:
-        p_arg = (z - 22.0) / 4.0
-        p_sech = (1.0 / math.cosh(p_arg)) if abs(p_arg) < 15 else 0.0
-        trailing_pedestal = 0.016 * p_sech
-
-    return max(eta_soliton, trailing_pedestal)
-
-
 def main():
-    json_path = "Docs/BoussinesqSolitonFissionReport.json"
-    if not os.path.exists(json_path):
-        print(f"Error: {json_path} not found")
+    gpu_json_path = "Docs/BoussinesqSolitonFissionReport.json"
+    ref_json_path = "Docs/Reference_Peregrine_FP64_Data.json"
+
+    if not os.path.exists(gpu_json_path):
+        print(f"Error: {gpu_json_path} not found")
         return
 
-    with open(json_path, "r", encoding="utf-8-sig") as f:
+    with open(gpu_json_path, "r", encoding="utf-8-sig") as f:
         data = json.load(f)
 
     results = {r['caseName']: r for r in data['results']}
-    ref_comp = data.get('referenceComparison', {})
 
-    # 1. Custom Exploratory Curve Comparison vs GPU Simulations at t = 14.0s
+    ref_data = None
+    if os.path.exists(ref_json_path):
+        with open(ref_json_path, "r", encoding="utf-8") as f:
+            ref_data = json.load(f)
+
+    # 1. Independent Peregrine FP64 Reference Comparison vs GPU Simulations at t = 14.0s
     c_fct256 = results.get("Shelf_FP32_Baseline_CurrentFCT_N256")
     c_fct512 = results.get("Shelf_FP32_GridConverge_CurrentFCT_N512")
     c_raw256 = results.get("Shelf_FP32_Isolated_FilterOff_N256")
+    c_raw512 = results.get("Shelf_FP32_GridConverge_FilterOff_N512")
 
-    if c_fct256 and c_raw256:
+    if c_fct256 and c_fct512 and c_raw256 and c_raw512:
         s_fct256 = get_snap_near(c_fct256, 14.0)
-        s_fct512 = get_snap_near(c_fct512, 14.0) if c_fct512 else None
+        s_fct512 = get_snap_near(c_fct512, 14.0)
         s_raw256 = get_snap_near(c_raw256, 14.0)
+        s_raw512 = get_snap_near(c_raw512, 14.0)
 
-        if s_fct256 and s_raw256:
-            bathy_pts = [(p['z'], -p['effectiveDepth'] * 0.15) for p in s_fct256['points']]
-            ref_z = [i * 0.25 for i in range(240)]
-            ref_pts = [(z, sample_custom_comparison_curve(z)) for z in ref_z]
+        bathy_pts = [(p['z'], -p['effectiveDepth'] * 0.15) for p in s_fct256['points']]
 
-            rmse_fct256 = ref_comp.get('rmseShelfProfileFCT256', 0.0247)
-            rmse_fct512 = ref_comp.get('rmseShelfProfileFCT512', 0.0245)
-            rmse_raw256 = ref_comp.get('rmseShelfProfileFilterOff256', 0.0219)
+        series_ref = [
+            {'name': 'Bed Profile (-h*0.15)', 'color': '#7f8c8d', 'points': bathy_pts, 'stroke_width': 1.5, 'dash': '3,3'},
+        ]
 
-            series_ref = [
-                {'name': 'Bed Profile (-h*0.15)', 'color': '#7f8c8d', 'points': bathy_pts, 'stroke_width': 1.5, 'dash': '3,3'},
-                {'name': 'Custom Exploratory Curve (Idealized single crest, t=14.0s)', 'color': '#2c3e50', 'points': ref_pts, 'stroke_width': 2.8, 'dash': '6,3'},
-                {'name': f'CurrentFCT N=256 (RMSE: {rmse_fct256:.4f}m vs custom curve)', 'color': '#2980b9', 'points': [(p['z'], p['eta']) for p in s_fct256['points']], 'stroke_width': 2.2},
-            ]
-            if s_fct512:
-                series_ref.append({'name': f'CurrentFCT N=512 (RMSE: {rmse_fct512:.4f}m vs custom curve)', 'color': '#27ae60', 'points': [(p['z'], p['eta']) for p in s_fct512['points']], 'stroke_width': 2.0})
+        if ref_data and 'referenceProfiles' in ref_data:
+            ref_z = ref_data['referenceProfiles']['z']
+            ref_eta = ref_data['referenceProfiles']['eta_t14']
+            ref_pts = list(zip(ref_z, ref_eta))
+            series_ref.append({'name': 'Independent Peregrine (1967) FP64 Reference (N=2048, no dissipation, t=14.0s)', 'color': '#2c3e50', 'points': ref_pts, 'stroke_width': 2.8, 'dash': '5,3'})
 
-            series_ref.append({'name': f'Filter OFF N=256 (RMSE: {rmse_raw256:.4f}m, multi-peaks)', 'color': '#e74c3c', 'points': [(p['z'], p['eta']) for p in s_raw256['points']], 'stroke_width': 1.8, 'dash': '4,2'})
+        series_ref.append({'name': f'CurrentFCT N=512 (2 Peaks resolved, lead H=0.083m, t={s_fct512["time"]:.1f}s)', 'color': '#27ae60', 'points': [(p['z'], p['eta']) for p in s_fct512['points']], 'stroke_width': 2.2})
+        series_ref.append({'name': f'CurrentFCT N=256 (1 Peak smoothed, lead H=0.070m, t={s_fct256["time"]:.1f}s)', 'color': '#2980b9', 'points': [(p['z'], p['eta']) for p in s_fct256['points']], 'stroke_width': 2.0})
+        series_ref.append({'name': f'Filter OFF N=512 (3 Peaks, lead H=0.095m, t={s_raw512["time"]:.1f}s)', 'color': '#e74c3c', 'points': [(p['z'], p['eta']) for p in s_raw512['points']], 'stroke_width': 1.8, 'dash': '4,2'})
+        series_ref.append({'name': f'Filter OFF N=256 (2 Peaks, lead H=0.086m, t={s_raw256["time"]:.1f}s)', 'color': '#e67e22', 'points': [(p['z'], p['eta']) for p in s_raw256['points']], 'stroke_width': 1.6, 'dash': '2,2'})
 
-            svg_ref = create_svg_line_chart(
-                series_ref, width=950, height=480,
-                title="Exploratory Profile Comparison: Custom Curve vs GPU Solver (t=14.0s, Literature: Not Conducted)",
-                x_label="Propagation Distance z [m] (Slope: 10m-18m, Shelf: 18m-46m)",
-                y_label="Water Surface Elevation η [m]",
-                x_range=(0, 48), y_range=(-0.05, 0.15)
-            )
+        svg_ref = create_svg_line_chart(
+            series_ref, width=950, height=480,
+            title="Soliton Shelf Transformation: Independent FP64 Peregrine vs GPU Solvers (t=14.0s)",
+            x_label="Propagation Distance z [m] (Slope: 10m-18m, Shelf: 18m-48m)",
+            y_label="Water Surface Elevation η [m]",
+            x_range=(0, 48), y_range=(-0.05, 0.35)
+        )
 
-            out_ref_svg = "Docs/Plot_Reference_MadsenMei_Comparison.svg"
-            with open(out_ref_svg, "w", encoding="utf-8") as out_f:
-                out_f.write(svg_ref)
-            print(f"Generated: {out_ref_svg}")
+        out_ref_svg = "Docs/Plot_Independent_Reference_Comparison.svg"
+        with open(out_ref_svg, "w", encoding="utf-8") as out_f:
+            out_f.write(svg_ref)
+        print(f"Generated: {out_ref_svg}")
 
-    # 2. Madsen & Mei (1969) Soliton Fission Profile Comparison at Shelf Transit Time (t ~ 14.0s)
-    c_fct = results.get("Shelf_FP32_Baseline_CurrentFCT_N256")
-    c_noslope = results.get("Shelf_FP32_Isolated_NoSlope2nd_N256")
-    c_raw = results.get("Shelf_FP32_Isolated_FilterOff_N256")
-    c_leg = results.get("Shelf_FP32_Comparison_LegacyFilter_N256")
+    # 2. Extended Shelf Physical Soliton Fission (Independent Reference Solver L=100m)
+    if ref_data and 'extendedShelfSolitonFission' in ref_data:
+        ext = ref_data['extendedShelfSolitonFission']
+        p_summary = ext['peaksSummary']
+        # We can plot peak trajectories over time
+        times = [14.0, 20.0, 26.0, 32.0]
+        lead_pts = []
+        sec_pts = []
+        third_pts = []
+        fourth_pts = []
+        for t in times:
+            t_str = str(t)
+            p_list = p_summary.get(t_str, [])
+            if len(p_list) >= 1: lead_pts.append((p_list[0][0], p_list[0][1]))
+            if len(p_list) >= 2: sec_pts.append((p_list[1][0], p_list[1][1]))
+            if len(p_list) >= 3: third_pts.append((p_list[2][0], p_list[2][1]))
+            if len(p_list) >= 4: fourth_pts.append((p_list[3][0], p_list[3][1]))
 
-    if c_fct and c_raw and c_leg:
-        s_fct = get_snap_near(c_fct, 14.0)
-        s_noslope = get_snap_near(c_noslope, 14.0) if c_noslope else None
-        s_raw = get_snap_near(c_raw, 14.0)
-        s_leg = get_snap_near(c_leg, 14.0)
+        # Also plot full profiles at t=14s and t=20s from referenceProfiles
+        ref_z = ref_data['referenceProfiles']['z']
+        ref_eta14 = ref_data['referenceProfiles']['eta_t14']
+        ref_eta20 = ref_data['referenceProfiles']['eta_t20']
+        
+        series_ext = [
+            {'name': 'Reference Peregrine FP64 Profile at t=14.0s (Undular bore entering shelf)', 'color': '#2980b9', 'points': list(zip(ref_z, ref_eta14)), 'stroke_width': 2.2},
+            {'name': 'Reference Peregrine FP64 Profile at t=20.0s (First solitons detaching)', 'color': '#e67e22', 'points': list(zip(ref_z, ref_eta20)), 'stroke_width': 2.2},
+            {'name': 'Soliton 1 Peak (t=14s..32s, c ≈ 2.10 m/s)', 'color': '#27ae60', 'points': lead_pts, 'stroke_width': 2.5, 'dash': '4,4'},
+            {'name': 'Soliton 2 Peak (t=14s..32s, c ≈ 1.86 m/s)', 'color': '#8e44ad', 'points': sec_pts, 'stroke_width': 2.2, 'dash': '4,4'},
+            {'name': 'Soliton 3 Peak (t=14s..32s, c ≈ 1.66 m/s)', 'color': '#d35400', 'points': third_pts, 'stroke_width': 2.0, 'dash': '4,4'},
+            {'name': 'Soliton 4 Peak (t=14s..32s, c ≈ 1.53 m/s)', 'color': '#c0392b', 'points': fourth_pts, 'stroke_width': 1.8, 'dash': '4,4'},
+        ]
 
-        if s_fct and s_raw and s_leg:
-            bathy_pts = [(p['z'], -p['effectiveDepth'] * 0.15) for p in s_fct['points']]
-            fct_pts = [(p['z'], p['eta']) for p in s_fct['points']]
-            raw_pts = [(p['z'], p['eta']) for p in s_raw['points']]
-            leg_pts = [(p['z'], p['eta']) for p in s_leg['points']]
+        svg_ext = create_svg_line_chart(
+            series_ext, width=950, height=480,
+            title="Physical Soliton Fission on Extended Shelf (Independent Peregrine FP64 Solver, L=100m)",
+            x_label="Propagation Distance z [m] (Shelf: 18m - 96m)",
+            y_label="Water Surface Elevation η [m]",
+            x_range=(0, 80), y_range=(-0.05, 0.35)
+        )
 
-            series = [
-                {'name': 'Bed Profile (-h*0.15)', 'color': '#7f8c8d', 'points': bathy_pts, 'stroke_width': 1.5, 'dash': '3,3'},
-                {'name': f'Filter OFF (Raw MacCormack, t={s_raw["time"]:.1f}s)', 'color': '#e74c3c', 'points': raw_pts, 'stroke_width': 2.0},
-                {'name': f'Legacy 2D Filter (t={s_leg["time"]:.1f}s)', 'color': '#f39c12', 'points': leg_pts, 'stroke_width': 2.0},
-            ]
-            if s_noslope:
-                series.append({'name': f'No 2nd-Order Slope Dissipation (4th FCT Only, t={s_noslope["time"]:.1f}s)', 'color': '#9b59b6', 'points': [(p['z'], p['eta']) for p in s_noslope['points']], 'stroke_width': 2.0})
+        out_ext_svg = "Docs/Plot_Soliton_Fission_Extended.svg"
+        with open(out_ext_svg, "w", encoding="utf-8") as out_f:
+            out_f.write(svg_ext)
+        print(f"Generated: {out_ext_svg}")
 
-            series.append({'name': f'Current 4th FCT + Slope Dissipation (Baseline, t={s_fct["time"]:.1f}s)', 'color': '#2980b9', 'points': fct_pts, 'stroke_width': 2.5})
-
-            svg_content = create_svg_line_chart(
-                series, width=950, height=480,
-                title="Shelf Bathymetry FP32: Dissipation Filter Comparison (h1=0.6m, h2=0.2m)",
-                x_label="Propagation Distance z [m] (Slope: 10m-18m, Shelf: 18m-46m)",
-                y_label="Water Surface Elevation η [m]",
-                x_range=(0, 48), y_range=(-0.05, 0.15)
-            )
-
-            out_svg = "Docs/Plot_MadsenMei_Fission_Profile.svg"
-            with open(out_svg, "w", encoding="utf-8") as out_f:
-                out_f.write(svg_content)
-            print(f"Generated: {out_svg}")
-
-    # 2. Flat Bed Control (No Slope): Filter OFF vs Current FCT
+    # 3. Flat Bed Control (No Slope): Filter OFF vs Current FCT
     c_flat_fct = results.get("FlatBed_FP32_Control_CurrentFCT_N256")
     c_flat_raw = results.get("FlatBed_FP32_Control_FilterOff_N256")
     c_flat_raw512 = results.get("FlatBed_FP32_Control_FilterOff_N512")
@@ -252,15 +241,15 @@ def main():
             pts_raw = [(p['z'], p['eta']) for p in s_flat_raw['points']]
 
             series = [
-                {'name': f'Current FCT (N=256, Stable Single Soliton, t={s_flat_fct["time"]:.1f}s)', 'color': '#2ecc71', 'points': pts_fct, 'stroke_width': 2.5},
-                {'name': f'Filter OFF (N=256: 2 Peaks, t={s_flat_raw["time"]:.1f}s)', 'color': '#e67e22', 'points': pts_raw, 'stroke_width': 1.8},
+                {'name': f'Current FCT (N=256, Stable Soliton, c=2.618m/s, ret=0.792, t={s_flat_fct["time"]:.1f}s)', 'color': '#2ecc71', 'points': pts_fct, 'stroke_width': 2.5},
+                {'name': f'Filter OFF (N=256, c=2.624m/s, ret=0.866, t={s_flat_raw["time"]:.1f}s)', 'color': '#e67e22', 'points': pts_raw, 'stroke_width': 1.8},
             ]
             if s_flat_raw512:
-                series.append({'name': f'Filter OFF (N=512: 5 Sawtooth Peaks, t={s_flat_raw512["time"]:.1f}s)', 'color': '#e74c3c', 'points': [(p['z'], p['eta']) for p in s_flat_raw512['points']], 'stroke_width': 1.5})
+                series.append({'name': f'Filter OFF (N=512, c=2.638m/s, ret=0.936, t={s_flat_raw512["time"]:.1f}s)', 'color': '#e74c3c', 'points': [(p['z'], p['eta']) for p in s_flat_raw512['points']], 'stroke_width': 1.5})
 
             svg_content = create_svg_line_chart(
                 series, width=950, height=480,
-                title="Flat Bed Control FP32 (h=0.60m constant): Sawtooth Oscillation Growth without Filter",
+                title="Flat Bed Control FP32 (h=0.60m constant): Stable Solitary Wave Propagation",
                 x_label="Propagation Distance z [m]",
                 y_label="Water Surface Elevation η [m]",
                 x_range=(0, 48), y_range=(-0.04, 0.14)
@@ -271,7 +260,7 @@ def main():
                 out_f.write(svg_content)
             print(f"Generated: {out_svg}")
 
-    # 3. Grid Convergence: N=128 vs N=256 vs N=512 on Shelf
+    # 4. Grid Convergence: N=128 vs N=256 vs N=512 on Shelf
     c_128 = results.get("Shelf_FP32_GridConverge_CurrentFCT_N128")
     c_256 = results.get("Shelf_FP32_Baseline_CurrentFCT_N256")
     c_512 = results.get("Shelf_FP32_GridConverge_CurrentFCT_N512")
@@ -283,14 +272,14 @@ def main():
 
         if s_128 and s_256 and s_512:
             series = [
-                {'name': f'N=128 (dx=0.391m)', 'color': '#9b59b6', 'points': [(p['z'], p['eta']) for p in s_128['points']], 'stroke_width': 2.0, 'dash': '4,4'},
-                {'name': f'N=256 (dx=0.195m)', 'color': '#3498db', 'points': [(p['z'], p['eta']) for p in s_256['points']], 'stroke_width': 2.2},
-                {'name': f'N=512 (dx=0.098m)', 'color': '#2ecc71', 'points': [(p['z'], p['eta']) for p in s_512['points']], 'stroke_width': 2.5}
+                {'name': f'CurrentFCT N=128 (dx=0.391m: 1 Broad Peak, H=0.063m)', 'color': '#9b59b6', 'points': [(p['z'], p['eta']) for p in s_128['points']], 'stroke_width': 2.0, 'dash': '4,4'},
+                {'name': f'CurrentFCT N=256 (dx=0.195m: 1 Peak, H=0.070m)', 'color': '#3498db', 'points': [(p['z'], p['eta']) for p in s_256['points']], 'stroke_width': 2.2},
+                {'name': f'CurrentFCT N=512 (dx=0.098m: 2 Distinct Peaks, H1=0.083m, H2=0.055m)', 'color': '#2ecc71', 'points': [(p['z'], p['eta']) for p in s_512['points']], 'stroke_width': 2.5}
             ]
 
             svg_content = create_svg_line_chart(
                 series, width=950, height=480,
-                title="Spatial Grid Convergence on Shelf in FP32 (Current FCT: N=128, 256, 512)",
+                title="Spatial Grid Convergence: Secondary Fission Peak Resolved at N=512",
                 x_label="Propagation Distance z [m]",
                 y_label="Water Surface Elevation η [m]",
                 x_range=(0, 48), y_range=(-0.04, 0.15)
@@ -301,17 +290,17 @@ def main():
                 out_f.write(svg_content)
             print(f"Generated: {out_svg}")
 
-    # 4. Station Time Series comparison on Mid-Shelf Station (Station 4, z = 29.2m)
+    # 5. Station Time Series comparison on Mid-Shelf Station (Station 4, z = 29.2m)
     st_idx = 3
-    if c_fct and c_raw and c_leg:
-        st_fct = c_fct['stationSeries'][st_idx]
-        st_raw = c_raw['stationSeries'][st_idx]
-        st_leg = c_leg['stationSeries'][st_idx]
+    if c_fct256 and c_raw256 and c_fct512:
+        st_fct = c_fct256['stationSeries'][st_idx]
+        st_raw = c_raw256['stationSeries'][st_idx]
+        st_fct512 = c_fct512['stationSeries'][st_idx]
 
         series = [
-            {'name': f'Filter OFF at z={st_raw["stationZ"]:.1f}m', 'color': '#e74c3c', 'points': list(zip(st_raw['times'], st_raw['etas'])), 'stroke_width': 2.0},
-            {'name': f'Legacy 2D Filter at z={st_leg["stationZ"]:.1f}m', 'color': '#f39c12', 'points': list(zip(st_leg['times'], st_leg['etas'])), 'stroke_width': 2.0},
-            {'name': f'Current FCT at z={st_fct["stationZ"]:.1f}m', 'color': '#3498db', 'points': list(zip(st_fct['times'], st_fct['etas'])), 'stroke_width': 2.5}
+            {'name': f'Filter OFF N=256 at z={st_raw["stationZ"]:.1f}m', 'color': '#e74c3c', 'points': list(zip(st_raw['times'], st_raw['etas'])), 'stroke_width': 2.0},
+            {'name': f'CurrentFCT N=256 at z={st_fct["stationZ"]:.1f}m', 'color': '#3498db', 'points': list(zip(st_fct['times'], st_fct['etas'])), 'stroke_width': 2.2},
+            {'name': f'CurrentFCT N=512 at z={st_fct512["stationZ"]:.1f}m', 'color': '#27ae60', 'points': list(zip(st_fct512['times'], st_fct512['etas'])), 'stroke_width': 2.5}
         ]
 
         svg_content = create_svg_line_chart(

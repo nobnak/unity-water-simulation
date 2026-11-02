@@ -86,7 +86,8 @@ namespace Nobnak.WaterSimulation.Editor {
         public enum BathymetryCase {
             ShelfSlopeExploration, // Deep h1 -> Slope 1:20 -> Shallow Shelf h2 (Scaled for h2 >= 0.2m)
             FlatBedControl,        // Constant depth h1 (Control: no fission expected)
-            Scene02ScaleShelf      // Physical scale matching Scene 02 parameters (h1=3.5m, h2=0.8m)
+            Scene02ScaleShelf,     // Physical scale matching Scene 02 parameters (h1=3.5m, h2=0.8m)
+            ReferenceCustomBathymetry // Depth supplied by caller (e.g. NTHMP BP05 composite beach, Froude-scaled)
         }
 
         public enum DissipationMode {
@@ -177,6 +178,7 @@ namespace Nobnak.WaterSimulation.Editor {
             public float h2ClampChange;
             public float maxShelfRoundingDiff;
             public float maxShelfClampChange;
+            public float maxDomainEffectiveMinusSpecified; // whole domain (GPU readback of SampleDepth vs specified depth)
             public int shelfPointsSampled;
             public string verificationMethod;
         }
@@ -533,6 +535,135 @@ namespace Nobnak.WaterSimulation.Editor {
             SaveReports(report);
             return report;
         }
+
+        #region reference validation (NTHMP BP05 lab data + flat-bed analytic soliton)
+        public const string ReferenceRunsJsonPath = "Docs/ReferenceData/BP05_gpu_runs.json";
+        private const string Bp05DataDir = "Docs/ReferenceData/NTHMP_BP05/";
+
+        [Serializable]
+        public class ReferenceRun {
+            public string label;
+            public string kind;          // "BP05_A", "BP05_B", "FlatBed_A", "FlatBed_B"
+            public float lengthScale;    // Froude scale lambda (lengths x lambda, time x sqrt(lambda), eta x lambda)
+            public float xShiftLab;      // lab x [m] mapped to sim z = 0
+            public float a0Sim;          // initial soliton amplitude in sim units
+            public List<float> gaugeXLab = new List<float>();
+            public List<string> gaugeNames = new List<string>();
+            public CaseResult result;
+        }
+
+        [Serializable]
+        public class ReferenceRunsReport {
+            public string timestamp;
+            public string gitCommit;
+            public string computeShaderHash;
+            public string gpuRenderer;
+            public string notes;
+            public List<ReferenceRun> runs = new List<ReferenceRun>();
+        }
+
+        // Still-water depth of the CHL/USACE composite-beach flume (lab units). Segment lengths are the dimension lines of
+        // Fig. 1 in BP5_description.pdf; slopes 1/53 and 1/150 are labelled in the same figure. Beyond the 1/150 segment the
+        // real bed continues as 1/13 up to a vertical wall; this solver cannot represent it (depth floor 0.2 m in SampleDepth,
+        // sponge boundary), so the bed is continued flat there and the comparison is restricted to times before wall reflection.
+        public static float Bp05DepthLab(float x) {
+            const float d0 = 0.218f, toe = 15.04f, x7 = 15.04f + 4.36f, x9 = 15.04f + 4.36f + 2.93f;
+            if (x <= toe) return d0;
+            if (x <= x7) return d0 - (x - toe) / 53f;
+            float d7 = d0 - (x7 - toe) / 53f;
+            if (x <= x9) return d7 - (x - x7) / 150f;
+            return d7 - (x9 - x7) / 150f;
+        }
+
+        private static float Bp05IncidentPeakAtGauge5(string fileName) {
+            float best = float.MinValue;
+            foreach (var line in File.ReadAllLines(Bp05DataDir + fileName)) {
+                var tok = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+                if (tok.Length < 8) continue;
+                if (!float.TryParse(tok[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float t)) continue;
+                if (t < 265f || t > 280f) continue;
+                float g5 = float.Parse(tok[2], System.Globalization.CultureInfo.InvariantCulture);
+                if (g5 > best) best = g5;
+            }
+            return best;
+        }
+
+        public static ReferenceRunsReport RunReferenceValidation() {
+            var shader = AssetDatabase.LoadAssetAtPath<ComputeShader>(ShaderPath);
+            if (shader == null) throw new FileNotFoundException($"Cannot load compute shader at {ShaderPath}");
+
+            var rep = new ReferenceRunsReport {
+                timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'"),
+                gitCommit = GetGitCommitHash(out bool dirty) + (dirty ? "-dirty" : ""),
+                computeShaderHash = ComputeFileHash(ShaderPath),
+                gpuRenderer = SystemInfo.graphicsDeviceName + " (" + SystemInfo.graphicsDeviceType + ")",
+                notes = "FP32 runtime-matching buffers. Shader coefficients unchanged."
+            };
+
+            const float lambda = 2f;       // Froude scale so that every represented depth >= 0.2 m (SampleDepth floor)
+            const float xShift = 7.0f;     // lab x mapped to z = 0
+            const float xPulse = 10.0f;    // initial hump centre (lab x)
+            const float L = 53f;
+            float[] gaugeX = { 15.04f, 17.33f, 19.40f, 20.86f, 22.33f }; // g5..g9; g5/g7/g9 from dimension lines, g6/g8 interpolated from sketch
+            string[] gaugeName = { "g5", "g6", "g7", "g8", "g9" };
+            float zOf(float xLab) => lambda * (xLab - xShift);
+
+            var modes = new (DissipationMode mode, int N, string tag)[] {
+                (DissipationMode.CurrentFCT_Full, 256, "FCT_N256"),
+                (DissipationMode.CurrentFCT_Full, 512, "FCT_N512"),
+                (DissipationMode.FilterOff_RawMacCormack, 512, "FilterOff_N512"),
+                (DissipationMode.LegacyUnsplit2D, 512, "Legacy2D_N512"),
+            };
+
+            foreach (var cs in new[] { ("A", "gA.txt"), ("B", "gB.txt") }) {
+                float a0Lab = Bp05IncidentPeakAtGauge5(cs.Item2);
+                float a0Sim = a0Lab * lambda;
+                foreach (var m in modes) {
+                    string label = $"BP05_{cs.Item1}_{m.tag}";
+                    Debug.Log($"[ReferenceValidation] {label}: a0Lab={a0Lab:F4}m a0Sim={a0Sim:F4}m");
+                    var stationZs = new float[gaugeX.Length];
+                    for (int i = 0; i < gaugeX.Length; i++) stationZs[i] = zOf(gaugeX[i]);
+                    float dEnd = lambda * Bp05DepthLab(22.33f);
+                    var r = RunSolitonTestCase(shader, label, BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ReferenceCustomBathymetry, m.mode,
+                        N: m.N, L: L, h1: lambda * 0.218f, h2: dEnd, a0: a0Sim, slope: 0f, slopeStart: zOf(22.33f),
+                        friction: 0f, dtStep: 0.008f, duration: 18f, evalTargetTime: 14f,
+                        depthOfZ: z => lambda * Bp05DepthLab(z / lambda + xShift), stationZsOverride: stationZs, z0Override: zOf(xPulse));
+                    r.snapshots.Clear();
+                    var run = new ReferenceRun { label = label, kind = "BP05_" + cs.Item1, lengthScale = lambda, xShiftLab = xShift, a0Sim = a0Sim, result = r };
+                    run.gaugeXLab.AddRange(gaugeX);
+                    run.gaugeNames.AddRange(gaugeName);
+                    rep.runs.Add(run);
+                }
+
+                // Flat-bed analytic soliton at the same (scaled) depth and amplitude
+                foreach (var m in new[] { modes[1], modes[2] }) {
+                    string label = $"FlatBed_{cs.Item1}_{m.tag}";
+                    float h = lambda * 0.218f;
+                    var r = RunSolitonTestCase(shader, label, BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, m.mode,
+                        N: m.N, L: L, h1: h, h2: h, a0: a0Sim, slope: 0f, slopeStart: 10f,
+                        friction: 0f, dtStep: 0.008f, duration: 22f, evalTargetTime: 14f);
+                    r.snapshots.Clear();
+                    var run = new ReferenceRun { label = label, kind = "FlatBed_" + cs.Item1, lengthScale = lambda, xShiftLab = 0f, a0Sim = a0Sim, result = r };
+                    foreach (var st in r.stationSeries) { run.gaugeXLab.Add(st.stationZ); run.gaugeNames.Add(st.stationName); }
+                    rep.runs.Add(run);
+                }
+            }
+
+            File.WriteAllText(ReferenceRunsJsonPath, EditorJsonUtility.ToJson(rep, false), Encoding.UTF8);
+            Debug.Log($"[ReferenceValidation] Saved {rep.runs.Count} runs to {ReferenceRunsJsonPath}");
+            return rep;
+        }
+
+        public static void RunReferenceValidationCommandLine() {
+            try {
+                RunReferenceValidation();
+                EditorApplication.Exit(0);
+            } catch (Exception ex) {
+                Debug.LogError($"[ReferenceValidation] Fatal error: {ex}");
+                EditorApplication.Exit(1);
+            }
+        }
+        #endregion
         #endregion
 
         #region benchmark execution
@@ -540,7 +671,8 @@ namespace Nobnak.WaterSimulation.Editor {
             ComputeShader shader, string caseName,
             BufferPrecision bufferPrec, BathymetryCase bathyCase, DissipationMode dissMode,
             int N, float L, float h1, float h2, float a0, float slope, float slopeStart,
-            float friction, float dtStep, float duration, float evalTargetTime) {
+            float friction, float dtStep, float duration, float evalTargetTime,
+            Func<float, float> depthOfZ = null, float[] stationZsOverride = null, float z0Override = -1f) {
 
             var res = new CaseResult {
                 caseName = caseName,
@@ -572,7 +704,9 @@ namespace Nobnak.WaterSimulation.Editor {
             for (int y = 0; y < N; y++) {
                 float zPhys = (y + 0.5f) * dz;
                 float d;
-                if (bathyCase == BathymetryCase.FlatBedControl) {
+                if (depthOfZ != null) {
+                    d = depthOfZ(zPhys);
+                } else if (bathyCase == BathymetryCase.FlatBedControl) {
                     d = h1;
                 } else {
                     if (zPhys <= slopeStart) d = h1;
@@ -585,7 +719,7 @@ namespace Nobnak.WaterSimulation.Editor {
             }
 
             // Solitary wave initial condition
-            float z0 = math.min(slopeStart * 0.5f, 5.0f);
+            float z0 = (z0Override > 0f) ? z0Override : math.min(slopeStart * 0.5f, 5.0f);
             float kappa = math.sqrt(3f * a0 / (4f * h1 * h1 * h1));
             float c0 = math.sqrt(g * (h1 + a0));
 
@@ -611,6 +745,9 @@ namespace Nobnak.WaterSimulation.Editor {
 
             // Fixed stations for time-series extraction
             var stations = new List<float>();
+            if (stationZsOverride != null) {
+                stations.AddRange(stationZsOverride);
+            } else {
             stations.Add(z0);
             if (bathyCase != BathymetryCase.FlatBedControl) {
                 stations.Add(slopeStart + (slopeEnd - slopeStart) * 0.5f); // Mid-slope
@@ -622,6 +759,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 stations.Add(L * 0.50f);
                 stations.Add(L * 0.75f);
                 stations.Add(L * 0.90f);
+            }
             }
 
             foreach (var stZ in stations) {
@@ -696,15 +834,17 @@ namespace Nobnak.WaterSimulation.Editor {
                     Dispatch2D(shader, kPredict, N);
 
                     // 1b. Predictor Dispersion solve
-                    shader.SetTexture(kTridiagZ, PropForceTex, rts.force);
-                    shader.SetTexture(kTridiagZ, PropAccelPing, rts.accelA);
-                    shader.SetTexture(kTridiagZ, PropBathymetryTex, rts.bathy);
-                    Dispatch1D(shader, kTridiagZ, N);
-
-                    shader.SetTexture(kTridiagX, PropForceTex, rts.force);
-                    shader.SetTexture(kTridiagX, PropAccelPing, rts.accelA);
+                    // Pass 1: CSTridiagonalX along rows (solves (I - beta_x d_x^2) a* = f)
                     shader.SetTexture(kTridiagX, PropBathymetryTex, rts.bathy);
+                    shader.SetTexture(kTridiagX, PropForceTex, rts.force);
+                    shader.SetTexture(kTridiagX, PropAccelPong, rts.accelB);
                     Dispatch1D(shader, kTridiagX, N);
+
+                    // Pass 2: CSTridiagonalZ along columns (solves (I - beta_z d_z^2) a = a*)
+                    shader.SetTexture(kTridiagZ, PropBathymetryTex, rts.bathy);
+                    shader.SetTexture(kTridiagZ, PropAccelPong, rts.accelB);
+                    shader.SetTexture(kTridiagZ, PropAccelPing, rts.accelA);
+                    Dispatch1D(shader, kTridiagZ, N);
 
                     shader.SetTexture(kApplyPredDisp, PropStatePred, rts.pred);
                     shader.SetTexture(kApplyPredDisp, PropAccelPing, rts.accelA);
@@ -723,15 +863,17 @@ namespace Nobnak.WaterSimulation.Editor {
                     Dispatch2D(shader, kCorrect, N);
 
                     // 2b. Corrector Dispersion solve
-                    shader.SetTexture(kTridiagZ, PropForceTex, rts.force);
-                    shader.SetTexture(kTridiagZ, PropAccelPing, rts.accelA);
-                    shader.SetTexture(kTridiagZ, PropBathymetryTex, rts.bathy);
-                    Dispatch1D(shader, kTridiagZ, N);
-
-                    shader.SetTexture(kTridiagX, PropForceTex, rts.force);
-                    shader.SetTexture(kTridiagX, PropAccelPing, rts.accelA);
+                    // Pass 1: CSTridiagonalX along rows (solves (I - beta_x d_x^2) a* = f)
                     shader.SetTexture(kTridiagX, PropBathymetryTex, rts.bathy);
+                    shader.SetTexture(kTridiagX, PropForceTex, rts.force);
+                    shader.SetTexture(kTridiagX, PropAccelPong, rts.accelB);
                     Dispatch1D(shader, kTridiagX, N);
+
+                    // Pass 2: CSTridiagonalZ along columns (solves (I - beta_z d_z^2) a = a*)
+                    shader.SetTexture(kTridiagZ, PropBathymetryTex, rts.bathy);
+                    shader.SetTexture(kTridiagZ, PropAccelPong, rts.accelB);
+                    shader.SetTexture(kTridiagZ, PropAccelPing, rts.accelA);
+                    Dispatch1D(shader, kTridiagZ, N);
 
                     shader.SetTexture(kApplyDisp, PropStateIn, rts.stateB);
                     shader.SetTexture(kApplyDisp, PropStateOut, rts.pred);
@@ -977,6 +1119,9 @@ namespace Nobnak.WaterSimulation.Editor {
             int shelfStartIdx = math.clamp((int)math.floor(shelfStartPhys / dz), 0, N - 1);
             float maxRounding = 0f;
             float maxClamp = 0f;
+            float maxDomainEffMinusSpec = 0f;
+            for (int i = 0; i < N * N; i++) maxDomainEffMinusSpec = math.max(maxDomainEffMinusSpec, math.abs(effFloats[i] - specifiedDepth[i]));
+            data.maxDomainEffectiveMinusSpecified = maxDomainEffMinusSpec;
             int pointsSampled = 0;
 
             for (int y = shelfStartIdx; y < N; y++) {
@@ -1656,6 +1801,7 @@ namespace Nobnak.WaterSimulation.Editor {
             public RenderTexture force;
             public RenderTexture forcePred;
             public RenderTexture accelA;
+            public RenderTexture accelB;
         }
 
         private static BenchmarkTextures AllocateTextures(int N, BufferPrecision prec) {
@@ -1673,6 +1819,7 @@ namespace Nobnak.WaterSimulation.Editor {
             b.force = CreateRT(N, forceFormat);
             b.forcePred = CreateRT(N, forceFormat);
             b.accelA = CreateRT(N, forceFormat);
+            b.accelB = CreateRT(N, forceFormat);
             return b;
         }
 
@@ -1694,6 +1841,7 @@ namespace Nobnak.WaterSimulation.Editor {
             ReleaseRT(b.force);
             ReleaseRT(b.forcePred);
             ReleaseRT(b.accelA);
+            ReleaseRT(b.accelB);
         }
 
         private static void ReleaseRT(RenderTexture rt) {
