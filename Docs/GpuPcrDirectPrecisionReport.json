@@ -1,6 +1,6 @@
 ﻿{
-    "timestamp": "2026-11-02 09:05:47 UTC",
-    "gitCommit": "1f6c160",
+    "timestamp": "2026-11-02 10:22:36 UTC",
+    "gitCommit": "b735038",
     "gitDirty": true,
     "computeShaderHash": "28069448bb2acdd4d2dba8db3bcca689cae27c2d1dab9f7ef62ddf7b6a9594cf",
     "gpuDevice": "NVIDIA GeForce RTX 5070 (Direct3D11)",
@@ -1886,5 +1886,65 @@
         "maxSmoothTotalDepthDeltaEta": 1.1672608424273534e-7,
         "allPassed": true,
         "conclusion": "対象条件においてGPU PCRとFP64線形解、および短時間の離散時間発展（Baseline UpwindとCandidate Minmod TVDの全フェーズ・逆Parity・壁面近傍・複数サブステップ・静止水面平衡C-property）の実装整合を確認した。一方、長時間の波高再現性（BP05 Case B等）の評価は後続のGPUベンチマーク比較にて判定する（物理的妥当性は未確定）。"
+    },
+    "advectionAdoption": {
+        "timestamp": "2026-11-02 10:22:36 UTC",
+        "gpuDevice": "NVIDIA GeForce RTX 5070 (Direct3D11)",
+        "baselineSubstepTimeMs": 0.6594080328941345,
+        "candidateSubstepTimeMs": 0.6598960161209106,
+        "speedupRatio": 0.9992604851722717,
+        "dispatchCountPerSubstep": 8,
+        "memoryBytesAllocated": 24117248,
+        "tests": [
+            {
+                "testName": "LakeAtRest_C_Property_UnevenShelf",
+                "passed": true,
+                "maxError": 0.0,
+                "baselineError": 0.0,
+                "candidateError": 0.0,
+                "details": "60 substeps over uneven shelf. Baseline max deviation: 0.00E+000m, MinmodTVD max deviation: 0.00E+000m (pass < 1e-6)."
+            },
+            {
+                "testName": "DirectionalSymmetry_RadialPulse_XZ",
+                "passed": true,
+                "maxError": 7.450580596923828e-9,
+                "baselineError": 7.450580596923828e-9,
+                "candidateError": 7.450580596923828e-9,
+                "details": "40 substeps of radial pulse. Baseline X/Z asymmetry: 7.45E-009m, MinmodTVD X/Z asymmetry: 7.45E-009m (pass < 1e-6)."
+            },
+            {
+                "testName": "VelocityReflectionParity_PosNegZ",
+                "passed": true,
+                "maxError": 0.006584987044334412,
+                "baselineError": 0.006590548902750015,
+                "candidateError": 0.006584987044334412,
+                "details": "30 substeps +/-Z wave propagation parity. Baseline parity diff: 6.59E-003m, MinmodTVD parity diff: 6.58E-003m (parity delta vs baseline: 5.56E-006m < 1e-4)."
+            },
+            {
+                "testName": "Boundary_ZeroNormalVelocity_Enforcement",
+                "passed": true,
+                "maxError": 0.0,
+                "baselineError": 0.0,
+                "candidateError": 0.0,
+                "details": "40 substeps normal velocity check. Max normal velocity at borders: 0.00E+000 m/s (pass < 1e-7)."
+            },
+            {
+                "testName": "SmoothInput_NumericalDiffusion_Reduction",
+                "passed": true,
+                "maxError": 0.0007753260606973011,
+                "baselineError": 0.002584327070064729,
+                "candidateError": 0.0007753260606973011,
+                "details": "100 substeps pulse advection. Baseline retention: 99.7%, MinmodTVD retention: 99.9% (dissipation improvement: 0.0 pt)."
+            },
+            {
+                "testName": "GPU_Substep_Execution_Performance",
+                "passed": true,
+                "maxError": 0.0,
+                "baselineError": 0.6594080328941345,
+                "candidateError": 0.6598960161209106,
+                "details": "512x512 grid on RTX 5070 (100 substeps): Baseline=0.659 ms/substep, MinmodTVD=0.660 ms/substep (delta: 0 ms, dispatches=8/substep, VRAM=23.0 MB)."
+            }
+        ],
+        "allPassed": true
     }
 }

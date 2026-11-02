@@ -89,9 +89,14 @@ def main():
             prev = exp_an[g]
         out["bp05"][case] = dict(exp=exp_an, runs={})
         for r in [x for x in runs["runs"] if x["kind"] == f"BP05_{case}"]:
+            res_obj = r.get("result", {})
+            exec_status = r.get("executionStatus") or res_obj.get("executionStatus", "VALID")
+            sts = res_obj.get("stationSeries", [])
+            if exec_status != "VALID" or len(sts) == 0 or len(sts[0].get("times", [])) == 0:
+                continue
+
             lam = r["lengthScale"]
-            st = {s["stationName"]: s for s in r["result"]["stationSeries"]}
-            sts = r["result"]["stationSeries"]
+            st = {s["stationName"]: s for s in sts}
             names = r["gaugeNames"]
             sim = {}
             for k, g in enumerate(names):
@@ -134,19 +139,63 @@ def main():
     # ------- flat bed analytic -------
     for case in "AB":
         for r in [x for x in runs["runs"] if x["kind"] == f"FlatBed_{case}"]:
+            res_obj = r.get("result", {})
+            exec_status = r.get("executionStatus") or res_obj.get("executionStatus", "VALID")
+            a0_sim = r["a0Sim"]
             lam = r["lengthScale"]
-            sts = r["result"]["stationSeries"]
+            h = 0.218 * lam
+            c_th = math.sqrt(G * (h + a0_sim))
+
+            if exec_status != "VALID":
+                out["flat"][r["label"]] = dict(
+                    status="COMPUTATION_INVALID",
+                    reason=r.get("statusReason") or res_obj.get("statusReason", "execution error"),
+                    a0=a0_sim, h=h, speed_gpu=None, speed_theory=c_th, speed_rel_err=None,
+                    amp_retention=[], station_z=[], mode=res_obj.get("dissipationMode", -1), N=res_obj.get("resolutionN", 0),
+                    mass_err_eval=res_obj.get("massConservationRelErrAtEvalTime", 0.0),
+                    mass_err_final=res_obj.get("massConservationRelErr", 0.0),
+                    two_grid_osc=res_obj.get("twoGridOscillationMetric", 0.0)
+                )
+                continue
+
+            sts = res_obj.get("stationSeries", [])
             zs, tp, hp = [], [], []
+            amp_ret = []
             for s in sts[1:]:  # stations[0] is the initial position
-                t = np.array(s["times"]); y = np.array(s["etas"])
-                i = int(np.argmax(y)); t_, h_ = parab(t, y, i)
-                zs.append(s["stationZ"]); tp.append(t_); hp.append(h_)
-            zs, tp, hp = map(np.array, (zs, tp, hp))
-            h = r["result"]["a0"] and 0.218 * lam
-            speed = float(np.polyfit(tp, zs, 1)[0])
-            c_th = math.sqrt(G * (h + r["a0Sim"]))
-            out["flat"][r["label"]] = dict(a0=r["a0Sim"], h=h, speed_gpu=speed, speed_theory=c_th, speed_rel_err=(speed - c_th) / c_th,
-                                          amp_retention=(hp / r["a0Sim"]).tolist(), station_z=zs.tolist(), mode=r["result"]["dissipationMode"], N=r["result"]["resolutionN"])
+                t = np.array(s["times"])
+                y = np.array(s["etas"])
+                max_eta = float(np.max(y))
+                amp_ret.append(float(max_eta / a0_sim) if a0_sim > 0 else 0.0)
+
+                # Detection threshold: wave must have reached station with significant amplitude (>= 0.15 * a0Sim)
+                if max_eta >= 0.15 * a0_sim:
+                    i = int(np.argmax(y))
+                    t_, h_ = parab(t, y, i)
+                    zs.append(s["stationZ"])
+                    tp.append(t_)
+                    hp.append(h_)
+
+            if len(tp) >= 2:
+                speed = float(np.polyfit(tp, zs, 1)[0])
+                rel_err = (speed - c_th) / c_th
+                if speed > 0 and abs(rel_err) <= 0.05:
+                    status = "PASS"
+                else:
+                    status = "PHYSICAL_FAIL"
+            else:
+                speed = None
+                rel_err = None
+                status = "WAVE_UNREACHED"
+
+            out["flat"][r["label"]] = dict(
+                status=status,
+                a0=a0_sim, h=h, speed_gpu=speed, speed_theory=c_th, speed_rel_err=rel_err,
+                amp_retention=amp_ret, station_z=[s["stationZ"] for s in sts[1:]],
+                mode=res_obj["dissipationMode"], N=res_obj["resolutionN"],
+                mass_err_eval=res_obj.get("massConservationRelErrAtEvalTime", 0.0),
+                mass_err_final=res_obj.get("massConservationRelErr", 0.0),
+                two_grid_osc=res_obj.get("twoGridOscillationMetric", 0.0)
+            )
 
     json.dump(out, open(os.path.join(D, "BP05_comparison.json"), "w", encoding="utf-8"), indent=1, default=float)
 
@@ -161,10 +210,16 @@ def main():
                 ps = "-" if g in ("g5", "g6", "g8") else ("/".join(f"{k}:{'OK' if b else 'NG'}" for k, b in v["pass"].items()))
                 P(f"| {lab} | {g} | {v['peak_exp_cm']:.2f} | {v['peak_sim_cm']:.2f} | {v['peak_rel_err']*100:+.1f}% | {v['dt_exp_s']:.2f} | {v['dt_sim_s']:.2f} | {v['dt_err_s']:+.2f} | {v['nrmse']:.3f} | {v['trail_max_exp']:.3f}/{v['trail_max_sim']:.3f} | {ps} |")
     P("\n### Flat bed vs exact solitary-wave speed")
-    P("| run | N | a0 sim [m] | speed GPU [m/s] | c_theory [m/s] | err | amplitude retention at stations |")
-    P("|---|---|---|---|---|---|---|")
+    P("| run | N | a0 sim [m] | speed GPU [m/s] | c_theory [m/s] | err | mass err (eval/final) | 2-grid osc | status | amplitude retention at stations |")
+    P("|---|---|---|---|---|---|---|---|---|---|")
     for lab, v in out["flat"].items():
-        P(f"| {lab} | {v['N']} | {v['a0']:.4f} | {v['speed_gpu']:.4f} | {v['speed_theory']:.4f} | {v['speed_rel_err']*100:+.2f}% | {', '.join(f'{x:.3f}' for x in v['amp_retention'])} |")
+        if v["status"] == "COMPUTATION_INVALID":
+            P(f"| {lab} | {v['N']} | {v['a0']:.4f} | INVALID | {v['speed_theory']:.4f} | - | - | - | COMPUTATION_INVALID ({v.get('reason','')}) | - |")
+        elif v["status"] == "WAVE_UNREACHED":
+            P(f"| {lab} | {v['N']} | {v['a0']:.4f} | UNREACHED | {v['speed_theory']:.4f} | - | {v['mass_err_eval']*100:.2f}%/{v['mass_err_final']*100:.2f}% | {v['two_grid_osc']:.2e} | WAVE_UNREACHED | {', '.join(f'{x:.3f}' for x in v['amp_retention'])} |")
+        else:
+            P(f"| {lab} | {v['N']} | {v['a0']:.4f} | {v['speed_gpu']:.4f} | {v['speed_theory']:.4f} | {v['speed_rel_err']*100:+.2f}% | {v['mass_err_eval']*100:.2f}%/{v['mass_err_final']*100:.2f}% | {v['two_grid_osc']:.2e} | {v['status']} | {', '.join(f'{x:.3f}' for x in v['amp_retention'])} |")
+
     txt = "\n".join(lines)
     open(os.path.join(D, "BP05_comparison_tables.md"), "w", encoding="utf-8").write(txt)
     print(txt)

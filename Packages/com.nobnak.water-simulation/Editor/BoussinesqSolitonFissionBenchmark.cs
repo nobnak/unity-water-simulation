@@ -217,6 +217,12 @@ namespace Nobnak.WaterSimulation.Editor {
             public float duration;
             public float finalTime;
             public float massConservationRelErr;
+            public float massConservationRelErrAtEvalTime;
+            public string executionStatus; // "VALID", "COMPUTATION_INVALID", "DEVICE_LOST", "READBACK_ERROR", "TIME_SERIES_FROZEN"
+            public string statusReason;
+            public float failureSimTime;
+            public int failureStep;
+            public float twoGridOscillationMetric;
 
             // Depth verification
             public DepthVerificationData depthVerification = new DepthVerificationData();
@@ -606,6 +612,17 @@ namespace Nobnak.WaterSimulation.Editor {
             public float a0Sim;          // initial soliton amplitude in sim units
             public List<float> gaugeXLab = new List<float>();
             public List<string> gaugeNames = new List<string>();
+
+            // Provenance & Validity fields
+            public string configHash;
+            public string computeShaderHash;
+            public string benchmarkCodeHash;
+            public string gpuRenderer;
+            public string unityVersion;
+            public string executionTimestamp;
+            public string executionStatus; // "VALID", "COMPUTATION_INVALID", "DEVICE_LOST", "READBACK_ERROR", "TIME_SERIES_FROZEN"
+            public string statusReason;
+
             public CaseResult result;
         }
 
@@ -645,6 +662,36 @@ namespace Nobnak.WaterSimulation.Editor {
             return best;
         }
 
+        private static string BenchmarkCodeHash {
+            get {
+                const string selfPath = "Packages/com.nobnak.water-simulation/Editor/BoussinesqSolitonFissionBenchmark.cs";
+                return File.Exists(selfPath) ? ComputeFileHash(selfPath) : "unknown";
+            }
+        }
+
+        private static string ComputeConfigHash(string label, string kind, BufferPrecision prec, BathymetryCase bathyCase, DissipationMode dissMode, int advMode, int N, float L, float h1, float h2, float a0, float dtStep, float duration, float evalTime, float z0) {
+            string raw = $"{label}_{kind}_{prec}_{bathyCase}_{dissMode}_{advMode}_{N}_{L:F2}_{h1:F4}_{h2:F4}_{a0:F4}_{dtStep:F5}_{duration:F2}_{evalTime:F2}_{z0:F2}";
+            using (var sha = SHA256.Create()) {
+                byte[] b = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
+                var sb = new StringBuilder(16);
+                for (int i = 0; i < 8; i++) sb.Append(b[i].ToString("x2"));
+                return sb.ToString();
+            }
+        }
+
+        private static bool CanReuseRun(ReferenceRun run, string configHash, string shaderHash, string benchCodeHash, string gpu) {
+            if (run == null) return false;
+            if (run.executionStatus != "VALID") return false;
+            if (run.configHash != configHash) return false;
+            if (run.computeShaderHash != shaderHash) return false;
+            if (run.benchmarkCodeHash != benchCodeHash) return false;
+            if (run.gpuRenderer != gpu) return false;
+            if (run.result == null) return false;
+            if (run.result.executionStatus != "VALID") return false;
+            if (run.result.leadWaveHeight <= 0f) return false;
+            return true;
+        }
+
         public static ReferenceRunsReport RunReferenceValidation() {
             var shader = AssetDatabase.LoadAssetAtPath<ComputeShader>(ShaderPath);
             if (shader == null) throw new FileNotFoundException($"Cannot load compute shader at {ShaderPath}");
@@ -659,10 +706,15 @@ namespace Nobnak.WaterSimulation.Editor {
                 rep = new ReferenceRunsReport();
             }
 
+            string shaderHash = ComputeFileHash(ShaderPath);
+            string benchCodeHash = BenchmarkCodeHash;
+            string unityVer = Application.unityVersion;
+            string gpu = SystemInfo.graphicsDeviceName + " (" + SystemInfo.graphicsDeviceType + ")";
+
             rep.timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
             rep.gitCommit = GetGitCommitHash(out bool dirty) + (dirty ? "-dirty" : "");
-            rep.computeShaderHash = ComputeFileHash(ShaderPath);
-            rep.gpuRenderer = SystemInfo.graphicsDeviceName + " (" + SystemInfo.graphicsDeviceType + ")";
+            rep.computeShaderHash = shaderHash;
+            rep.gpuRenderer = gpu;
             rep.notes = "FP32 runtime-matching buffers. Shader coefficients unchanged.";
 
             const float lambda = 2f;       // Froude scale so that every represented depth >= 0.2 m (SampleDepth floor)
@@ -688,30 +740,49 @@ namespace Nobnak.WaterSimulation.Editor {
                 float a0Sim = a0Lab * lambda;
                 foreach (var m in modes) {
                     string label = $"BP05_{cs.Item1}_{m.tag}";
+                    float dEnd = lambda * Bp05DepthLab(22.33f);
+                    string confHash = ComputeConfigHash(label, "BP05_" + cs.Item1, BufferPrecision.FP32_RuntimeMatching,
+                        BathymetryCase.ReferenceCustomBathymetry, m.mode, m.advMode, m.N, L, lambda * 0.218f, dEnd, a0Sim, 0.008f, 18f, 14f, zOf(xPulse));
+
                     var existing = rep.runs.Find(x => x.label == label);
-                    if (existing != null && existing.result != null && existing.result.leadWaveHeight > 0f) {
-                        Debug.Log($"[ReferenceValidation] {label}: already computed (leadH={existing.result.leadWaveHeight:F4}m), skipping.");
+                    if (CanReuseRun(existing, confHash, shaderHash, benchCodeHash, gpu)) {
+                        Debug.Log($"[ReferenceValidation] {label}: exact provenance & valid status match ({existing.executionTimestamp}), reusing.");
                         continue;
                     }
 
                     Debug.Log($"[ReferenceValidation] {label}: a0Lab={a0Lab:F4}m a0Sim={a0Sim:F4}m, advMode={m.advMode}");
                     var stationZs = new float[gaugeX.Length];
                     for (int i = 0; i < gaugeX.Length; i++) stationZs[i] = zOf(gaugeX[i]);
-                    float dEnd = lambda * Bp05DepthLab(22.33f);
                     var r = RunSolitonTestCase(shader, label, BufferPrecision.FP32_RuntimeMatching, BathymetryCase.ReferenceCustomBathymetry, m.mode,
                         N: m.N, L: L, h1: lambda * 0.218f, h2: dEnd, a0: a0Sim, slope: 0f, slopeStart: zOf(22.33f),
                         friction: 0f, dtStep: 0.008f, duration: 18f, evalTargetTime: 14f,
                         depthOfZ: z => lambda * Bp05DepthLab(z / lambda + xShift), stationZsOverride: stationZs, z0Override: zOf(xPulse),
                         advectionMode: m.advMode);
                     r.snapshots.Clear();
-                    if (existing != null) {
-                        existing.result = r;
-                    } else {
-                        var run = new ReferenceRun { label = label, kind = "BP05_" + cs.Item1, lengthScale = lambda, xShiftLab = xShift, a0Sim = a0Sim, result = r };
-                        run.gaugeXLab.AddRange(gaugeX);
-                        run.gaugeNames.AddRange(gaugeName);
-                        rep.runs.Add(run);
-                    }
+
+                    var run = new ReferenceRun {
+                        label = label,
+                        kind = "BP05_" + cs.Item1,
+                        lengthScale = lambda,
+                        xShiftLab = xShift,
+                        a0Sim = a0Sim,
+                        configHash = confHash,
+                        computeShaderHash = shaderHash,
+                        benchmarkCodeHash = benchCodeHash,
+                        gpuRenderer = gpu,
+                        unityVersion = unityVer,
+                        executionTimestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'"),
+                        executionStatus = r.executionStatus,
+                        statusReason = r.statusReason,
+                        result = r
+                    };
+                    run.gaugeXLab.AddRange(gaugeX);
+                    run.gaugeNames.AddRange(gaugeName);
+
+                    int existIdx = rep.runs.FindIndex(x => x.label == label);
+                    if (existIdx >= 0) rep.runs[existIdx] = run;
+                    else rep.runs.Add(run);
+
                     File.WriteAllText(ReferenceRunsJsonPath, EditorJsonUtility.ToJson(rep, false), Encoding.UTF8);
                     System.GC.Collect();
                 }
@@ -719,26 +790,48 @@ namespace Nobnak.WaterSimulation.Editor {
                 // Flat-bed analytic soliton at the same (scaled) depth and amplitude
                 foreach (var m in new[] { modes[1], modes[2], modes[4], modes[5] }) {
                     string label = $"FlatBed_{cs.Item1}_{m.tag}";
+                    float h = lambda * 0.218f;
+                    string confHash = ComputeConfigHash(label, "FlatBed_" + cs.Item1, BufferPrecision.FP32_RuntimeMatching,
+                        BathymetryCase.FlatBedControl, m.mode, m.advMode, m.N, L, h, h, a0Sim, 0.008f, 22f, 14f, 5.0f);
+
                     var existing = rep.runs.Find(x => x.label == label);
-                    if (existing != null && existing.result != null && existing.result.leadWaveHeight > 0f) {
-                        Debug.Log($"[ReferenceValidation] {label}: already computed (leadH={existing.result.leadWaveHeight:F4}m), skipping.");
+                    if (CanReuseRun(existing, confHash, shaderHash, benchCodeHash, gpu)) {
+                        Debug.Log($"[ReferenceValidation] {label}: exact provenance & valid status match ({existing.executionTimestamp}), reusing.");
                         continue;
                     }
 
                     Debug.Log($"[ReferenceValidation] {label}: a0Sim={a0Sim:F4}m, advMode={m.advMode}");
-                    float h = lambda * 0.218f;
                     var r = RunSolitonTestCase(shader, label, BufferPrecision.FP32_RuntimeMatching, BathymetryCase.FlatBedControl, m.mode,
                         N: m.N, L: L, h1: h, h2: h, a0: a0Sim, slope: 0f, slopeStart: 10f,
                         friction: 0f, dtStep: 0.008f, duration: 22f, evalTargetTime: 14f,
                         advectionMode: m.advMode);
                     r.snapshots.Clear();
-                    if (existing != null) {
-                        existing.result = r;
-                    } else {
-                        var run = new ReferenceRun { label = label, kind = "FlatBed_" + cs.Item1, lengthScale = lambda, xShiftLab = 0f, a0Sim = a0Sim, result = r };
-                        foreach (var st in r.stationSeries) { run.gaugeXLab.Add(st.stationZ); run.gaugeNames.Add(st.stationName); }
-                        rep.runs.Add(run);
+
+                    var run = new ReferenceRun {
+                        label = label,
+                        kind = "FlatBed_" + cs.Item1,
+                        lengthScale = lambda,
+                        xShiftLab = 0f,
+                        a0Sim = a0Sim,
+                        configHash = confHash,
+                        computeShaderHash = shaderHash,
+                        benchmarkCodeHash = benchCodeHash,
+                        gpuRenderer = gpu,
+                        unityVersion = unityVer,
+                        executionTimestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'"),
+                        executionStatus = r.executionStatus,
+                        statusReason = r.statusReason,
+                        result = r
+                    };
+                    foreach (var st in r.stationSeries) {
+                        run.gaugeXLab.Add(st.stationZ);
+                        run.gaugeNames.Add(st.stationName);
                     }
+
+                    int existIdx = rep.runs.FindIndex(x => x.label == label);
+                    if (existIdx >= 0) rep.runs[existIdx] = run;
+                    else rep.runs.Add(run);
+
                     File.WriteAllText(ReferenceRunsJsonPath, EditorJsonUtility.ToJson(rep, false), Encoding.UTF8);
                     System.GC.Collect();
                 }
@@ -869,28 +962,30 @@ namespace Nobnak.WaterSimulation.Editor {
 
             // Allocate GPU textures matching bufferPrecision
             var rts = AllocateTextures(N, bufferPrec);
-            UploadBathymetry(rts, N, depth);
-            UploadInitialState(rts, N, initEta, initW);
+            ComputeBuffer metricsBuffer = null;
+            try {
+                UploadBathymetry(rts, N, depth);
+                UploadInitialState(rts, N, initEta, initW);
 
-            // 2. Exact GPU Readback & Verification of Bathymetry and SampleDepth across entire shelf
-            VerifyEffectiveDepthGPU(shader, rts, N, dz, slopeEnd, bathyCase, h1, h2, depth, res.depthVerification);
+                // 2. Exact GPU Readback & Verification of Bathymetry and SampleDepth across entire shelf
+                VerifyEffectiveDepthGPU(shader, rts, N, dz, slopeEnd, bathyCase, h1, h2, depth, res.depthVerification);
 
-            // Find compute kernels
-            int kPredict = shader.FindKernel("CSPredict");
-            int kCorrect = shader.FindKernel("CSCorrect");
-            int kTridiagX = (N == 128) ? shader.FindKernel("CSTridiagonalX_128") : ((N == 256) ? shader.FindKernel("CSTridiagonalX_256") : shader.FindKernel("CSTridiagonalX"));
-            int kTridiagZ = (N == 128) ? shader.FindKernel("CSTridiagonalZ_128") : ((N == 256) ? shader.FindKernel("CSTridiagonalZ_256") : shader.FindKernel("CSTridiagonalZ"));
-            int kApplyPredDisp = shader.FindKernel("CSApplyPredictedDispersion");
-            int kApplyDisp = shader.FindKernel("CSApplyDispersion");
-            int kFilterX = shader.FindKernel("CSFilterX");
-            int kFilterZ = shader.FindKernel("CSFilterZ");
-            int kFilterLegacy = shader.FindKernel("CSFilterHighFrequency");
-            int kMeasureX = shader.FindKernel("CSMeasurePreFilterMetricsX");
-            int kMeasureZ = shader.FindKernel("CSMeasurePreFilterMetricsZ");
+                // Find compute kernels
+                int kPredict = shader.FindKernel("CSPredict");
+                int kCorrect = shader.FindKernel("CSCorrect");
+                int kTridiagX = (N == 128) ? shader.FindKernel("CSTridiagonalX_128") : ((N == 256) ? shader.FindKernel("CSTridiagonalX_256") : shader.FindKernel("CSTridiagonalX"));
+                int kTridiagZ = (N == 128) ? shader.FindKernel("CSTridiagonalZ_128") : ((N == 256) ? shader.FindKernel("CSTridiagonalZ_256") : shader.FindKernel("CSTridiagonalZ"));
+                int kApplyPredDisp = shader.FindKernel("CSApplyPredictedDispersion");
+                int kApplyDisp = shader.FindKernel("CSApplyDispersion");
+                int kFilterX = shader.FindKernel("CSFilterX");
+                int kFilterZ = shader.FindKernel("CSFilterZ");
+                int kFilterLegacy = shader.FindKernel("CSFilterHighFrequency");
+                int kMeasureX = shader.FindKernel("CSMeasurePreFilterMetricsX");
+                int kMeasureZ = shader.FindKernel("CSMeasurePreFilterMetricsZ");
 
-            // Allocate GPU metrics accumulation buffer (16 uints)
-            var metricsBuffer = new ComputeBuffer(16, sizeof(uint));
-            metricsBuffer.SetData(new uint[16]);
+                // Allocate GPU metrics accumulation buffer (16 uints)
+                metricsBuffer = new ComputeBuffer(16, sizeof(uint));
+                metricsBuffer.SetData(new uint[16]);
 
             // Time stepping setup
             float maxC = math.sqrt(g * (h1 + a0 * 1.5f)) + c0 * (a0 / math.max(0.1f, h2));
@@ -914,6 +1009,8 @@ namespace Nobnak.WaterSimulation.Editor {
 
             float[] currentEta = new float[N];
             float[] currentW = new float[N];
+            float[] prevEta = null;
+            int consecutiveFrozenCount = 0;
             float snapInterval = (L > 60f) ? 3.0f : 2.0f;
 
             bool disableSlopeDissipation = (dissMode == DissipationMode.CurrentFCT_NoSlope2nd);
@@ -1017,7 +1114,38 @@ namespace Nobnak.WaterSimulation.Editor {
 
                 // Station recording (every 5 steps)
                 if (step % 5 == 0 || step == totalSteps - 1) {
-                    ReadCenterColumnElevation(rts, rts.stateA, N, currentEta);
+                    if (!ReadCenterColumnElevation(rts, rts.stateA, N, currentEta)) {
+                        res.executionStatus = "READBACK_ERROR";
+                        res.statusReason = $"Readback error or non-finite values at step {step}/{totalSteps}, t={simTime:F4}s";
+                        res.failureStep = step;
+                        res.failureSimTime = simTime;
+                        Debug.LogError($"[RunSolitonTestCase] {caseName}: {res.statusReason}");
+                        break;
+                    }
+
+                    // Check for frozen time series across recording intervals
+                    if (step > 0 && prevEta != null) {
+                        float maxDiff = 0f;
+                        for (int y = 0; y < N; y++) {
+                            maxDiff = math.max(maxDiff, math.abs(currentEta[y] - prevEta[y]));
+                        }
+                        if (maxDiff < 1e-10f) {
+                            consecutiveFrozenCount++;
+                            if (consecutiveFrozenCount >= 10) { // 50 consecutive steps with zero evolution
+                                res.executionStatus = "TIME_SERIES_FROZEN";
+                                res.statusReason = $"Station time series frozen identically across 50 steps at step {step}/{totalSteps}, t={simTime:F4}s (maxDiff={maxDiff:E2})";
+                                res.failureStep = step;
+                                res.failureSimTime = simTime;
+                                Debug.LogError($"[RunSolitonTestCase] {caseName}: {res.statusReason}");
+                                break;
+                            }
+                        } else {
+                            consecutiveFrozenCount = 0;
+                        }
+                    }
+                    if (prevEta == null) prevEta = new float[N];
+                    Array.Copy(currentEta, prevEta, N);
+
                     for (int s = 0; s < res.stationSeries.Count; s++) {
                         int yIdx = math.clamp((int)math.floor(res.stationSeries[s].stationZ / dz), 0, N - 1);
                         res.stationSeries[s].times.Add(simTime);
@@ -1027,8 +1155,14 @@ namespace Nobnak.WaterSimulation.Editor {
 
                 // Snapshot recording
                 if ((step > 0 && math.abs((simTime % snapInterval) - subDt) < subDt * 1.5f) || step == totalSteps - 1) {
-                    ReadCenterColumnElevation(rts, rts.stateA, N, currentEta);
-                    ReadCenterColumnVelocityW(rts, rts.stateA, N, currentW);
+                    if (!ReadCenterColumnElevation(rts, rts.stateA, N, currentEta) || !ReadCenterColumnVelocityW(rts, rts.stateA, N, currentW)) {
+                        res.executionStatus = "READBACK_ERROR";
+                        res.statusReason = $"Readback error or non-finite values at snapshot step {step}/{totalSteps}, t={simTime:F4}s";
+                        res.failureStep = step;
+                        res.failureSimTime = simTime;
+                        Debug.LogError($"[RunSolitonTestCase] {caseName}: {res.statusReason}");
+                        break;
+                    }
 
                     var snap = new SnapshotProfile { time = simTime };
                     float maxSlopeInSnap = 0f;
@@ -1062,10 +1196,18 @@ namespace Nobnak.WaterSimulation.Editor {
 
             res.finalTime = simTime;
 
+            if (string.IsNullOrEmpty(res.executionStatus)) {
+                res.executionStatus = "VALID";
+                res.statusReason = "Simulation and all readbacks completed successfully with finite values.";
+            }
+
             // Read back accumulated GPU pre-filter dissipation metrics
             uint[] rawMetrics = new uint[16];
-            metricsBuffer.GetData(rawMetrics);
-            metricsBuffer.Release();
+            if (metricsBuffer != null && metricsBuffer.IsValid()) {
+                metricsBuffer.GetData(rawMetrics);
+                metricsBuffer.Release();
+                metricsBuffer = null;
+            }
 
             res.dissipationMetrics = new DissipationMetricsDetailed {
                 passX_Full_ExceededSlopeFaces = rawMetrics[0],
@@ -1090,10 +1232,12 @@ namespace Nobnak.WaterSimulation.Editor {
             };
 
             // Mass conservation error
-            ReadCenterColumnElevation(rts, rts.stateA, N, currentEta);
-            double finalMass = 0.0;
-            for (int y = 0; y < N; y++) finalMass += (double)currentEta[y] * dz;
-            res.massConservationRelErr = (float)(math.abs(finalMass - initialMass) / math.max(1e-5, math.abs(initialMass)));
+            if (res.executionStatus == "VALID") {
+                ReadCenterColumnElevation(rts, rts.stateA, N, currentEta);
+                double finalMass = 0.0;
+                for (int y = 0; y < N; y++) finalMass += (double)currentEta[y] * dz;
+                res.massConservationRelErr = (float)(math.abs(finalMass - initialMass) / math.max(1e-5, math.abs(initialMass)));
+            }
 
             // Extract target evaluation snapshot
             SnapshotProfile evalSnap = null;
@@ -1116,6 +1260,11 @@ namespace Nobnak.WaterSimulation.Editor {
                 res.leadWaveHeight = (lead != null) ? lead.height : 0f;
                 res.secondaryWaveHeight = (secondary != null) ? secondary.height : 0f;
                 res.peakSeparationZ = (lead != null && secondary != null) ? math.abs(lead.z - secondary.z) : 0f;
+
+                // Mass conservation at evalTargetTime before sponge absorption
+                double evalMass = 0.0;
+                for (int y = 0; y < evalSnap.points.Count; y++) evalMass += (double)evalSnap.points[y].eta * dz;
+                res.massConservationRelErrAtEvalTime = (float)(math.abs(evalMass - initialMass) / math.max(1e-5, math.abs(initialMass)));
 
                 // Speed tracking from prior snapshot
                 SnapshotProfile prevSnap = null;
@@ -1147,6 +1296,19 @@ namespace Nobnak.WaterSimulation.Editor {
                 }
                 res.curvatureRmsMetric = (countCurv > 0) ? math.sqrt(sumCurv2 / countCurv) : 0f;
 
+                // 2-grid oscillation metric on shelf
+                float sumTwoGrid = 0f;
+                int countTwoGrid = 0;
+                for (int y = 1; y < N - 1; y++) {
+                    float zPhys = (y + 0.5f) * dz;
+                    if (zPhys >= slopeEnd) {
+                        float osc = math.abs(0.25f * (currentEta[y + 1] - 2f * currentEta[y] + currentEta[y - 1]));
+                        sumTwoGrid += osc;
+                        countTwoGrid++;
+                    }
+                }
+                res.twoGridOscillationMetric = (countTwoGrid > 0) ? (sumTwoGrid / countTwoGrid) : 0f;
+
                 // Boundary reflection confirmation (Right beach + Left offshore boundary + Precursor check)
                 float shelfEndSpongeZ = L - spongeWidth;
                 float leadZ = (lead != null) ? lead.z : 0f;
@@ -1168,10 +1330,14 @@ namespace Nobnak.WaterSimulation.Editor {
             // Assign objective verdict with clear distinctions
             AssignObjectiveVerdict(res, bathyCase, dissMode, dz, a0, slopeEnd, currentEta, N);
 
-            ReleaseTextures(rts);
-            if (metricsBuffer != null) {
-                metricsBuffer.Release();
-                metricsBuffer = null;
+            } finally {
+                ReleaseTextures(rts);
+                if (metricsBuffer != null) {
+                    metricsBuffer.Release();
+                    metricsBuffer = null;
+                }
+                EditorUtility.UnloadUnusedAssetsImmediate();
+                System.GC.Collect();
             }
             return res;
         }
@@ -1428,11 +1594,22 @@ namespace Nobnak.WaterSimulation.Editor {
             CaseResult res, BathymetryCase bathyCase, DissipationMode dissMode,
             float dz, float a0, float slopeEnd, float[] currentEta, int N) {
 
+            if (res.executionStatus != "VALID") {
+                res.verdict = res.executionStatus;
+                res.statusCategory = "COMPUTATION_INVALID";
+                res.details = res.statusReason;
+                return;
+            }
+
             if (bathyCase == BathymetryCase.FlatBedControl) {
-                if (res.significantPeakCountOnShelf == 1) {
+                if (res.significantPeakCountOnShelf == 1 && res.leadWaveHeight >= 0.2f * a0) {
                     res.verdict = "平坦床単一波保持";
                     res.statusCategory = "単一孤立波維持";
                     res.details = $"平坦床で単一孤立波を安定保持。振幅保持率={res.amplitudeRetentionRatio * 100f:F1}%。";
+                } else if (res.significantPeakCountOnShelf == 1) {
+                    res.verdict = "平坦床波高減衰/未到達";
+                    res.statusCategory = "減衰";
+                    res.details = $"平坦床で波高減衰または未到達（振幅={res.leadWaveHeight:F4}m < 0.2*a0）。";
                 } else {
                     res.verdict = "平坦床擬似分裂 (数値振動)";
                     res.statusCategory = "数値振動確認";
@@ -1984,46 +2161,74 @@ namespace Nobnak.WaterSimulation.Editor {
             UnityEngine.Object.DestroyImmediate(tState);
         }
 
-        private static void ReadCenterColumnElevation(BenchmarkTextures rts, RenderTexture rt, int N, float[] outEta) {
+        private static bool ReadCenterColumnElevation(BenchmarkTextures rts, RenderTexture rt, int N, float[] outEta) {
             var req = AsyncGPUReadback.Request(rt);
             req.WaitForCompletion();
-            if (req.hasError) return;
+            if (req.hasError) {
+                Debug.LogError($"[ReadCenterColumnElevation] AsyncGPUReadback req.hasError=true for texture {rt.name} ({rt.width}x{rt.height})");
+                return false;
+            }
 
             int xCenter = N / 2;
             if (rts.precision == BufferPrecision.FP32_RuntimeMatching) {
                 var rawFloats = req.GetData<float>();
                 for (int y = 0; y < N; y++) {
                     int idx = (y * N + xCenter) * 4;
-                    outEta[y] = rawFloats[idx];
+                    float val = rawFloats[idx];
+                    if (float.IsNaN(val) || float.IsInfinity(val)) {
+                        Debug.LogError($"[ReadCenterColumnElevation] Non-finite value detected: {val} at y={y}, idx={idx}");
+                        return false;
+                    }
+                    outEta[y] = val;
                 }
             } else {
                 var rawHalf = req.GetData<ushort>();
                 for (int y = 0; y < N; y++) {
                     int idx = (y * N + xCenter) * 4;
-                    outEta[y] = Mathf.HalfToFloat(rawHalf[idx]);
+                    float val = Mathf.HalfToFloat(rawHalf[idx]);
+                    if (float.IsNaN(val) || float.IsInfinity(val)) {
+                        Debug.LogError($"[ReadCenterColumnElevation] Non-finite half value detected: {val} at y={y}, idx={idx}");
+                        return false;
+                    }
+                    outEta[y] = val;
                 }
             }
+            return true;
         }
 
-        private static void ReadCenterColumnVelocityW(BenchmarkTextures rts, RenderTexture rt, int N, float[] outW) {
+        private static bool ReadCenterColumnVelocityW(BenchmarkTextures rts, RenderTexture rt, int N, float[] outW) {
             var req = AsyncGPUReadback.Request(rt);
             req.WaitForCompletion();
-            if (req.hasError) return;
+            if (req.hasError) {
+                Debug.LogError($"[ReadCenterColumnVelocityW] AsyncGPUReadback req.hasError=true for texture {rt.name} ({rt.width}x{rt.height})");
+                return false;
+            }
 
             int xCenter = N / 2;
             if (rts.precision == BufferPrecision.FP32_RuntimeMatching) {
                 var rawFloats = req.GetData<float>();
                 for (int y = 0; y < N; y++) {
                     int idx = (y * N + xCenter) * 4 + 2; // Blue channel is w
-                    outW[y] = rawFloats[idx];
+                    float val = rawFloats[idx];
+                    if (float.IsNaN(val) || float.IsInfinity(val)) {
+                        Debug.LogError($"[ReadCenterColumnVelocityW] Non-finite value detected: {val} at y={y}, idx={idx}");
+                        return false;
+                    }
+                    outW[y] = val;
                 }
             } else {
                 var rawHalf = req.GetData<ushort>();
                 for (int y = 0; y < N; y++) {
                     int idx = (y * N + xCenter) * 4 + 2;
-                    outW[y] = Mathf.HalfToFloat(rawHalf[idx]);
+                    float val = Mathf.HalfToFloat(rawHalf[idx]);
+                    if (float.IsNaN(val) || float.IsInfinity(val)) {
+                        Debug.LogError($"[ReadCenterColumnVelocityW] Non-finite half value detected: {val} at y={y}, idx={idx}");
+                        return false;
+                    }
+                    outW[y] = val;
                 }
             }
+            return true;
         }
 
         private static string GetGitCommitHash(out bool dirty) {
