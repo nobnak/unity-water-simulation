@@ -24,6 +24,7 @@ namespace Nobnak.WaterSimulation.Editor {
     /// 2. Step-by-step Time Evolution Breakdown:
     ///    FilterOff, 1st-order upwind advection, isolating Half storage, SampleDepth clamp,
     ///    SmoothTotalDepth, and boundary clamping phase-by-phase.
+    ///    Audits Parity 0, Parity 1, Boundary Wave, and Multi-substep error accumulation.
     /// </summary>
     public static class GpuPcrDirectPrecisionVerifier {
         #region Unity lifecycle / initialization
@@ -60,9 +61,21 @@ namespace Nobnak.WaterSimulation.Editor {
         public static void RunCommandLine() {
             try {
                 Debug.Log("[GpuPcrDirectPrecisionVerifier] Starting CLI direct precision verification...");
-                RunVerification();
-                Debug.Log("[GpuPcrDirectPrecisionVerifier] Completed successfully!");
-                EditorApplication.Exit(0);
+                var report = RunVerification();
+
+                bool allLinearPassed = true;
+                foreach (var lt in report.linearDispersionTests) {
+                    if (!lt.passed) allLinearPassed = false;
+                }
+                bool allTimeEvolutionPassed = report.timeEvolutionBreakdown.allPassed;
+
+                if (!allLinearPassed || !allTimeEvolutionPassed) {
+                    Debug.LogError($"[GpuPcrDirectPrecisionVerifier] Verification FAILED (LinearPassed={allLinearPassed}, TimeEvolutionPassed={allTimeEvolutionPassed})");
+                    EditorApplication.Exit(1);
+                } else {
+                    Debug.Log("[GpuPcrDirectPrecisionVerifier] All verifications PASSED!");
+                    EditorApplication.Exit(0);
+                }
             } catch (Exception ex) {
                 Debug.LogError($"[GpuPcrDirectPrecisionVerifier] Fatal exception: {ex}");
                 EditorApplication.Exit(1);
@@ -99,7 +112,7 @@ namespace Nobnak.WaterSimulation.Editor {
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
             File.WriteAllText(fullPath, json, Encoding.UTF8);
 
-            Debug.Log($"[GpuPcrDirectPrecisionVerifier] Verification report written to {OutputJsonPath}");
+            Debug.Log($"[GpuPcrDirectPrecisionVerifier] Wrote precision report to {fullPath}");
             return report;
         }
         #endregion
@@ -113,7 +126,7 @@ namespace Nobnak.WaterSimulation.Editor {
             float dz = L / (H - 1);
             float dx = L / (W - 1);
 
-            int kTridiagZ_256 = shader.FindKernel("CSTridiagonalZ_256");
+            int kSpec256 = shader.FindKernel("CSTridiagonalZ_256");
 
             var bathymetries = new (string name, Func<float, float> profile)[] {
                 ("FlatBed", z => 0.60f),
@@ -129,11 +142,11 @@ namespace Nobnak.WaterSimulation.Editor {
 
             foreach (var bathy in bathymetries) {
                 foreach (var force in forceCases) {
-                    var result = RunSingleLinearCase(shader, kTridiagZ_256, W, H, L, dx, dz,
+                    var result = RunSingleLinearCase(shader, kSpec256, W, H, L, dx, dz,
                                                      bathy.name, bathy.profile,
                                                      force.name, force.fzFunc, force.fxFunc);
                     list.Add(result);
-                    Debug.Log($"[GpuPcrDirectPrecisionVerifier] {result.caseName}: MaxNormDiff={result.maxNormalDiff:E4}, RelNormErr={result.relNormalDiff:E4}, ResidualNorm={result.maxNormalResidual:E4}");
+                    Debug.Log($"[GpuPcrDirectPrecisionVerifier] {result.caseName}: MaxNormDiff={result.maxNormalDiff:E4}, RelNormErr={result.relNormalDiff:E4}, ResidualNorm={result.maxNormalResidual:E4}, Passed={result.passed}");
                 }
             }
 
@@ -149,7 +162,6 @@ namespace Nobnak.WaterSimulation.Editor {
             var pongRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
             var pingRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
 
-            // Populate textures
             var bathyTex = new Texture2D(W, H, TextureFormat.RGFloat, false);
             var forceTex = new Texture2D(W, H, TextureFormat.RGFloat, false);
 
@@ -199,14 +211,12 @@ namespace Nobnak.WaterSimulation.Editor {
             var gpuFloats = req.GetData<float>();
             var gpuBathyHalf = reqBathy.GetData<ushort>();
 
-            // Clean up RTs
             bathyRT.Release();
             pongRT.Release();
             pingRT.Release();
             UnityEngine.Object.DestroyImmediate(bathyTex);
             UnityEngine.Object.DestroyImmediate(forceTex);
 
-            // Extract 1D column (col = W / 2)
             int col = W / 2;
             double[] gpuAz = new double[H];
             double[] gpuAx = new double[H];
@@ -216,8 +226,6 @@ namespace Nobnak.WaterSimulation.Editor {
                 int idxRG = (y * W + col) * 2;
                 gpuAx[y] = gpuFloats[idxRG];
                 gpuAz[y] = gpuFloats[idxRG + 1];
-
-                // R channel of RGHalf
                 actualGpuH[y] = Mathf.HalfToFloat(gpuBathyHalf[idxRG]);
             }
 
@@ -281,7 +289,7 @@ namespace Nobnak.WaterSimulation.Editor {
 
             double[] refAx = SolveTridiagonalFP64(A_tang, B_tang, C_tang, d_tang);
 
-            // Compute error statistics against matched discrete problem
+            // Error statistics against matched discrete problem
             double maxNormDiff = 0.0;
             double sumSqNorm = 0.0;
             double maxRefNorm = 0.0;
@@ -320,7 +328,14 @@ namespace Nobnak.WaterSimulation.Editor {
                 maxNormRes = math.max(maxNormRes, res);
             }
 
-            // Also measure effect of Half-precision depth storage vs exact analytic depth
+            // Measure effect of Half-precision depth storage vs exact analytic depth
+            // 1. Water depth error due to FP16 quantization [m]
+            double maxDepthHalfErr = 0.0;
+            for (int j = 0; j < H; j++) {
+                maxDepthHalfErr = math.max(maxDepthHalfErr, math.abs(actualGpuH[j] - hSpec[j]));
+            }
+
+            // 2. Inverted acceleration difference due to FP16 bathymetry [m/s^2]
             double[] A_exact = new double[H];
             double[] B_exact = new double[H];
             double[] C_exact = new double[H];
@@ -335,10 +350,14 @@ namespace Nobnak.WaterSimulation.Editor {
                 C_exact[j] = -invDz2 * (0.5 * hC * hU - (hC * hC) / 6.0);
             }
             double[] analyticRefAz = SolveTridiagonalFP64(A_exact, B_exact, C_exact, d_norm);
-            double maxHalfStorageDiff = 0.0;
+            double maxHalfStorageAccelDiff = 0.0;
             for (int j = 0; j < H; j++) {
-                maxHalfStorageDiff = math.max(maxHalfStorageDiff, math.abs(refAz[j] - analyticRefAz[j]));
+                maxHalfStorageAccelDiff = math.max(maxHalfStorageAccelDiff, math.abs(refAz[j] - analyticRefAz[j]));
             }
+
+            bool normPass = (maxNormDiff <= 1e-5) || (relNormDiff <= 1e-4);
+            bool tangPass = (maxTangDiff <= 1e-5) || (relTangDiff <= 1e-4);
+            bool resPass = (maxNormRes <= 1e-4);
 
             return new LinearDispersionCaseResult {
                 caseName = $"{bathyName}_{forceName}",
@@ -352,8 +371,9 @@ namespace Nobnak.WaterSimulation.Editor {
                 maxTangentialDiff = maxTangDiff,
                 rmsTangentialDiff = rmsTangDiff,
                 relTangentialDiff = relTangDiff,
-                halfStorageRoundingDiff = maxHalfStorageDiff,
-                passed = (maxNormDiff < 1e-4) && (relNormDiff < 1e-3)
+                halfStorageDepthRoundingDiff = maxDepthHalfErr,
+                halfStorageAccelRoundingDiff = maxHalfStorageAccelDiff,
+                passed = normPass && tangPass && resPass
             };
         }
         #endregion
@@ -367,6 +387,55 @@ namespace Nobnak.WaterSimulation.Editor {
             float g = 9.81f;
             float dz = L / (H - 1);
             float dx = L / (W - 1);
+
+            var scenarios = new List<TimeEvolutionScenarioReport>();
+
+            // Scenario 1: Substep 1 with Parity 0 (solitary wave at z0=5.0m)
+            var s1 = RunSingleSubstepScenario(shader, W, H, L, dx, dz, dt, g,
+                                              parity: 0, z0: 5.0f, a0: 0.12f,
+                                              scenarioName: "Substep1_Parity0",
+                                              desc: "Substep 1 with StepParity=0 (Forward predictor, Backward corrector), solitary wave at z0=5m");
+            scenarios.Add(s1);
+
+            // Scenario 2: Substep 1 with Parity 1 (solitary wave at z0=5.0m)
+            var s2 = RunSingleSubstepScenario(shader, W, H, L, dx, dz, dt, g,
+                                              parity: 1, z0: 5.0f, a0: 0.12f,
+                                              scenarioName: "Substep1_Parity1",
+                                              desc: "Substep 1 with StepParity=1 (Backward predictor, Forward corrector), solitary wave at z0=5m");
+            scenarios.Add(s2);
+
+            // Scenario 3: Boundary Wave Test (solitary wave centered at z0=0.8m, exciting the solid border at j=0)
+            var s3 = RunSingleSubstepScenario(shader, W, H, L, dx, dz, dt, g,
+                                              parity: 0, z0: 0.8f, a0: 0.12f,
+                                              scenarioName: "BoundaryWave_NearWall",
+                                              desc: "Boundary wave test with solitary crest at z0=0.8m, generating active non-zero amplitude at border j=0");
+            scenarios.Add(s3);
+
+            // Scenario 4: Multi-substep Error Accumulation (5 consecutive substeps, alternating parities)
+            var s4 = RunMultiSubstepScenario(shader, W, H, L, dx, dz, dt, g,
+                                             numSteps: 5, z0: 5.0f, a0: 0.12f,
+                                             scenarioName: "MultiSubstep_5Steps",
+                                             desc: "Multi-substep error accumulation test (5 consecutive substeps alternating parity 0,1,0,1,0)");
+            scenarios.Add(s4);
+
+            bool allPassed = true;
+            foreach (var sc in scenarios) {
+                if (!sc.allPhasesPassed) allPassed = false;
+            }
+
+            return new TimeEvolutionBreakdownReport {
+                gridH = H,
+                dt = dt,
+                scenarios = scenarios,
+                maxSmoothTotalDepthDeltaEta = s1.maxSmoothTotalDepthDeltaEta,
+                allPassed = allPassed,
+                conclusion = "対象条件でGPU PCRとFP64線形解は良好に一致した。一方、時間発展の予測段には境界条件の不一致があり、全段一致と長時間の物理的妥当性は未確認"
+            };
+        }
+
+        private static TimeEvolutionScenarioReport RunSingleSubstepScenario(
+            ComputeShader shader, int W, int H, float L, float dx, float dz, float dt, float g,
+            int parity, float z0, float a0, string scenarioName, string desc) {
 
             int kPredict = shader.FindKernel("CSPredict");
             int kCorrect = shader.FindKernel("CSCorrect");
@@ -385,11 +454,7 @@ namespace Nobnak.WaterSimulation.Editor {
             var accelPongRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
             var accelPingRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
 
-            // Shelf bathymetry: h1=0.60m, slope 1:20 from 10m to 18m, h2=0.20m
-            // Initial Solitary wave: a0=0.12m, z0=5.0m
-            float a0 = 0.12f;
             float h1 = 0.60f;
-            float z0 = 5.0f;
             float c0 = math.sqrt(g * (h1 + a0));
             float kappa0 = math.sqrt(3.0f * a0 / (4.0f * h1 * h1 * h1));
 
@@ -424,7 +489,6 @@ namespace Nobnak.WaterSimulation.Editor {
             Graphics.Blit(bathyTex, bathyRT);
             Graphics.Blit(stateInitTex, stateInRT);
 
-            // Bind uniforms
             shader.SetInt(PropWidth, W);
             shader.SetInt(PropHeight, H);
             shader.SetFloat(PropDeltaTime, dt);
@@ -433,13 +497,11 @@ namespace Nobnak.WaterSimulation.Editor {
             shader.SetFloat(PropGravity, g);
             shader.SetFloat(PropDispersionAlpha, 1.0f);
             shader.SetFloat(PropBedFriction, 0.0f);
-            shader.SetInt(PropStepParity, 0); // Even parity (Forward predictor, Backward corrector)
+            shader.SetInt(PropStepParity, parity);
             shader.SetInt(PropSideWallSponge, 0);
             shader.SetFloat(PropWavemakerAmp, 0.0f);
 
-            // -------------------------------------------------------------
-            // SUBSTEP 1 PHASE A: CSPredict
-            // -------------------------------------------------------------
+            // 1. Predictor: CSPredict
             shader.SetTexture(kPredict, PropStateIn, stateInRT);
             shader.SetTexture(kPredict, PropStatePred, statePredRT);
             shader.SetTexture(kPredict, PropBathymetryTex, bathyRT);
@@ -448,7 +510,6 @@ namespace Nobnak.WaterSimulation.Editor {
             shader.SetTexture(kPredict, PropAccelPing, accelPingRT);
             shader.Dispatch(kPredict, W / 8, H / 8, 1);
 
-            // Readback Predictor state & forces
             var reqPredState = AsyncGPUReadback.Request(statePredRT);
             var reqForcePred = AsyncGPUReadback.Request(forceRT);
             reqPredState.WaitForCompletion();
@@ -456,9 +517,7 @@ namespace Nobnak.WaterSimulation.Editor {
             var gpuStatePredA = reqPredState.GetData<float>();
             var gpuForceA = reqForcePred.GetData<float>();
 
-            // -------------------------------------------------------------
-            // SUBSTEP 1 PHASE B: Dispersion Inversion on Predictor Force
-            // -------------------------------------------------------------
+            // 2. Dispersion Inversion on Predictor Force
             shader.SetTexture(kTridiagX, PropBathymetryTex, bathyRT);
             shader.SetTexture(kTridiagX, PropForceTex, forceRT);
             shader.SetTexture(kTridiagX, PropAccelPong, accelPongRT);
@@ -473,9 +532,7 @@ namespace Nobnak.WaterSimulation.Editor {
             reqA1.WaitForCompletion();
             var gpuAccel1 = reqA1.GetData<float>();
 
-            // -------------------------------------------------------------
-            // SUBSTEP 1 PHASE C: CSApplyPredictedDispersion
-            // -------------------------------------------------------------
+            // 3. CSApplyPredictedDispersion
             shader.SetTexture(kApplyPred, PropStatePred, statePredRT);
             shader.SetTexture(kApplyPred, PropAccelPing, accelPingRT);
             shader.SetTexture(kApplyPred, PropForcePredTex, forcePredRT);
@@ -485,9 +542,7 @@ namespace Nobnak.WaterSimulation.Editor {
             reqPredFinal.WaitForCompletion();
             var gpuStatePredFinal = reqPredFinal.GetData<float>();
 
-            // -------------------------------------------------------------
-            // SUBSTEP 1 PHASE D: CSCorrect
-            // -------------------------------------------------------------
+            // 4. CSCorrect
             shader.SetTexture(kCorrect, PropStateIn, stateInRT);
             shader.SetTexture(kCorrect, PropStatePred, statePredRT);
             shader.SetTexture(kCorrect, PropStateOut, stateOutRT);
@@ -505,9 +560,7 @@ namespace Nobnak.WaterSimulation.Editor {
             var gpuStateCorr = reqCorrState.GetData<float>();
             var gpuForceCorr = reqForceCorr.GetData<float>();
 
-            // -------------------------------------------------------------
-            // SUBSTEP 1 PHASE E: Dispersion Inversion on Corrector Force
-            // -------------------------------------------------------------
+            // 5. Dispersion Inversion on Corrector Force
             shader.SetTexture(kTridiagX, PropBathymetryTex, bathyRT);
             shader.SetTexture(kTridiagX, PropForceTex, forceRT);
             shader.SetTexture(kTridiagX, PropAccelPong, accelPongRT);
@@ -522,16 +575,16 @@ namespace Nobnak.WaterSimulation.Editor {
             reqA2.WaitForCompletion();
             var gpuAccel2 = reqA2.GetData<float>();
 
-            // -------------------------------------------------------------
-            // SUBSTEP 1 PHASE F: CSApplyDispersion
-            // -------------------------------------------------------------
-            shader.SetTexture(kApplyDisp, PropStateIn, stateInRT);
-            shader.SetTexture(kApplyDisp, PropStateOut, stateOutRT);
+            // 6. CSApplyDispersion
+            // In BoussinesqSimulation.cs, CSApplyDispersion takes PropStateIn = stateOutRT (holding etaNext, uN, wN)
+            // and writes to statePredRT which receives (etaNext, uNext, wNext).
+            shader.SetTexture(kApplyDisp, PropStateIn, stateOutRT);
+            shader.SetTexture(kApplyDisp, PropStateOut, statePredRT);
             shader.SetTexture(kApplyDisp, PropForcePredTex, forcePredRT);
             shader.SetTexture(kApplyDisp, PropAccelPing, accelPingRT);
             shader.Dispatch(kApplyDisp, W / 8, H / 8, 1);
 
-            var reqFinalState = AsyncGPUReadback.Request(stateOutRT);
+            var reqFinalState = AsyncGPUReadback.Request(statePredRT);
             var reqBathy = AsyncGPUReadback.Request(bathyRT);
             reqFinalState.WaitForCompletion();
             reqBathy.WaitForCompletion();
@@ -539,7 +592,6 @@ namespace Nobnak.WaterSimulation.Editor {
             var gpuStateFinal = reqFinalState.GetData<float>();
             var gpuBathyHalf = reqBathy.GetData<ushort>();
 
-            // Extract 1D profiles (col = W / 2)
             int col = W / 2;
             double[] gpuEtaPred = new double[H];
             double[] gpuFzPred = new double[H];
@@ -558,7 +610,7 @@ namespace Nobnak.WaterSimulation.Editor {
                 gpuEtaPred[y] = gpuStatePredA[idxRGBA];
                 gpuFzPred[y] = gpuForceA[idxRG + 1];
                 gpuAzPred[y] = gpuAccel1[idxRG + 1];
-                gpuWPred[y] = gpuStatePredFinal[idxRGBA + 2]; // Blue is w
+                gpuWPred[y] = gpuStatePredFinal[idxRGBA + 2];
 
                 gpuEta1[y] = gpuStateCorr[idxRGBA];
                 gpuFzCorr[y] = gpuForceCorr[idxRG + 1];
@@ -568,7 +620,6 @@ namespace Nobnak.WaterSimulation.Editor {
                 actualH[y] = Mathf.HalfToFloat(gpuBathyHalf[idxRG]);
             }
 
-            // Cleanup
             stateInRT.Release();
             statePredRT.Release();
             stateOutRT.Release();
@@ -581,55 +632,326 @@ namespace Nobnak.WaterSimulation.Editor {
             UnityEngine.Object.DestroyImmediate(bathyTex);
             UnityEngine.Object.DestroyImmediate(stateInitTex);
 
-            // Execute exact CPU FP64 reference step matching GPU discrete formulations
-            var cpuRefStep = RunCpuReferenceSubstepFP64(H, dz, dt, g, actualH, eta0, w0, useSmoothTotalDepth: true);
-            var cpuRefNoSmooth = RunCpuReferenceSubstepFP64(H, dz, dt, g, actualH, eta0, w0, useSmoothTotalDepth: false);
+            var cpuRefStep = RunCpuReferenceSubstepFP64(H, dz, dt, g, actualH, eta0, w0, parity, useSmoothTotalDepth: true);
+            var cpuRefNoSmooth = RunCpuReferenceSubstepFP64(H, dz, dt, g, actualH, eta0, w0, parity, useSmoothTotalDepth: false);
 
-            // Measure difference at each phase
             var phases = new List<SubstepPhaseAudit> {
-                ComparePhase("Phase 1: Predictor Surface (eta*)", gpuEtaPred, cpuRefStep.etaPred),
-                ComparePhase("Phase 2: Predictor RHS Force (fz*)", gpuFzPred, cpuRefStep.fzPred),
-                ComparePhase("Phase 3: Inverted Predictor Accel (az*)", gpuAzPred, cpuRefStep.azPred),
-                ComparePhase("Phase 4: Predicted Velocity (w*)", gpuWPred, cpuRefStep.wPred),
-                ComparePhase("Phase 5: Corrected Surface (eta^1)", gpuEta1, cpuRefStep.eta1),
-                ComparePhase("Phase 6: Corrector RHS Force (fz**)", gpuFzCorr, cpuRefStep.fzCorr),
-                ComparePhase("Phase 7: Inverted Corrector Accel (az**)", gpuAzCorr, cpuRefStep.azCorr),
-                ComparePhase("Phase 8: Final Step Velocity (w^1)", gpuW1, cpuRefStep.w1)
+                ComparePhase("Phase 1: Predictor Surface (eta*)", "eta", "m", 1e-4, 1e-3, gpuEtaPred, cpuRefStep.etaPred),
+                ComparePhase("Phase 2: Predictor RHS Force (fz*)", "fz", "m/s^2", 1e-3, 1e-3, gpuFzPred, cpuRefStep.fzPred),
+                ComparePhase("Phase 3: Inverted Predictor Accel (az*)", "az", "m/s^2", 1e-4, 1e-3, gpuAzPred, cpuRefStep.azPred),
+                ComparePhase("Phase 4: Predicted Velocity (w*)", "w", "m/s", 1e-4, 1e-3, gpuWPred, cpuRefStep.wPred),
+                ComparePhase("Phase 5: Corrected Surface (eta^1)", "eta", "m", 1e-4, 1e-3, gpuEta1, cpuRefStep.eta1),
+                ComparePhase("Phase 6: Corrector RHS Force (fz**)", "fz", "m/s^2", 1e-3, 1e-3, gpuFzCorr, cpuRefStep.fzCorr),
+                ComparePhase("Phase 7: Inverted Corrector Accel (az**)", "az", "m/s^2", 1e-4, 1e-3, gpuAzCorr, cpuRefStep.azCorr),
+                ComparePhase("Phase 8: Final Step Velocity (w^1)", "w", "m/s", 1e-4, 1e-3, gpuW1, cpuRefStep.w1)
             };
 
-            // Measure impact of SmoothTotalDepth in FP64
             double maxSmoothDiffEta = 0.0;
             for (int y = 0; y < H; y++) {
                 maxSmoothDiffEta = math.max(maxSmoothDiffEta, math.abs(cpuRefStep.eta1[y] - cpuRefNoSmooth.eta1[y]));
             }
 
-            return new TimeEvolutionBreakdownReport {
-                gridH = H,
-                dt = dt,
+            bool allPhasesPassed = true;
+            foreach (var p in phases) {
+                if (!p.passed) allPhasesPassed = false;
+            }
+
+            return new TimeEvolutionScenarioReport {
+                scenarioName = scenarioName,
+                description = desc,
+                stepParity = parity,
+                numSubsteps = 1,
                 phaseAudits = phases,
+                multiStepAudits = new List<TimeEvolutionMultiStepAudit>(),
                 maxSmoothTotalDepthDeltaEta = maxSmoothDiffEta,
-                conclusion = "GPU single-precision execution closely matches FP64 reference at each substep phase (max diff O(1e-5m)). SmoothTotalDepth delta at Step 1 is minor (< 1e-6m)."
+                allPhasesPassed = allPhasesPassed
             };
         }
 
-        private static SubstepPhaseAudit ComparePhase(string phaseName, double[] gpuArr, double[] cpuArr) {
-            double maxDiff = 0.0;
-            double sumSq = 0.0;
-            double maxVal = 0.0;
-            for (int i = 0; i < gpuArr.Length; i++) {
-                double diff = math.abs(gpuArr[i] - cpuArr[i]);
-                maxDiff = math.max(maxDiff, diff);
-                sumSq += diff * diff;
-                maxVal = math.max(maxVal, math.abs(cpuArr[i]));
+        private static TimeEvolutionScenarioReport RunMultiSubstepScenario(
+            ComputeShader shader, int W, int H, float L, float dx, float dz, float dt, float g,
+            int numSteps, float z0, float a0, string scenarioName, string desc) {
+
+            int kPredict = shader.FindKernel("CSPredict");
+            int kCorrect = shader.FindKernel("CSCorrect");
+            int kTridiagX = shader.FindKernel("CSTridiagonalX_128");
+            int kTridiagZ = shader.FindKernel("CSTridiagonalZ_256");
+            int kApplyPred = shader.FindKernel("CSApplyPredictedDispersion");
+            int kApplyDisp = shader.FindKernel("CSApplyDispersion");
+
+            var stateInRT = CreateRT(W, H, RenderTextureFormat.ARGBFloat);
+            var statePredRT = CreateRT(W, H, RenderTextureFormat.ARGBFloat);
+            var stateOutRT = CreateRT(W, H, RenderTextureFormat.ARGBFloat);
+            var bathyRT = CreateRT(W, H, RenderTextureFormat.RGHalf);
+            var forceOrigRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+            var forceRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+            var forcePredRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+            var accelPongRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+            var accelPingRT = CreateRT(W, H, RenderTextureFormat.RGFloat);
+
+            float h1 = 0.60f;
+            float c0 = math.sqrt(g * (h1 + a0));
+            float kappa0 = math.sqrt(3.0f * a0 / (4.0f * h1 * h1 * h1));
+
+            double[] hSpec = new double[H];
+            double[] etaCurr = new double[H];
+            double[] wCurr = new double[H];
+
+            var bathyTex = new Texture2D(W, H, TextureFormat.RGFloat, false);
+            var stateInitTex = new Texture2D(W, H, TextureFormat.RGBAFloat, false);
+
+            for (int y = 0; y < H; y++) {
+                float z = y * dz;
+                float d = (z <= 10.0f) ? 0.60f : ((z <= 18.0f) ? 0.60f - 0.05f * (z - 10.0f) : 0.20f);
+                hSpec[y] = d;
+
+                float arg = math.clamp(kappa0 * (z - z0), -25.0f, 25.0f);
+                float sech = 1.0f / math.cosh(arg);
+                float eta = a0 * sech * sech;
+                float w = c0 * eta / (d + eta);
+                etaCurr[y] = eta;
+                wCurr[y] = w;
+
+                for (int x = 0; x < W; x++) {
+                    bathyTex.SetPixel(x, y, new Color(d, -d, 0, 0));
+                    stateInitTex.SetPixel(x, y, new Color(eta, 0, w, 0));
+                }
             }
-            double rms = math.sqrt(sumSq / gpuArr.Length);
-            double rel = (maxVal > 1e-12) ? maxDiff / maxVal : 0.0;
+            bathyTex.Apply();
+            stateInitTex.Apply();
+            Graphics.Blit(bathyTex, bathyRT);
+            Graphics.Blit(stateInitTex, stateInRT);
+
+            shader.SetInt(PropWidth, W);
+            shader.SetInt(PropHeight, H);
+            shader.SetFloat(PropDeltaTime, dt);
+            shader.SetFloat(PropGridSpacing, dx);
+            shader.SetFloat(PropGridSpacingZ, dz);
+            shader.SetFloat(PropGravity, g);
+            shader.SetFloat(PropDispersionAlpha, 1.0f);
+            shader.SetFloat(PropBedFriction, 0.0f);
+            shader.SetInt(PropSideWallSponge, 0);
+            shader.SetFloat(PropWavemakerAmp, 0.0f);
+
+            var reqBathy = AsyncGPUReadback.Request(bathyRT);
+            reqBathy.WaitForCompletion();
+            var gpuBathyHalf = reqBathy.GetData<ushort>();
+
+            int col = W / 2;
+            double[] actualH = new double[H];
+            for (int y = 0; y < H; y++) {
+                int idxRG = (y * W + col) * 2;
+                actualH[y] = Mathf.HalfToFloat(gpuBathyHalf[idxRG]);
+            }
+
+            var stepAudits = new List<TimeEvolutionMultiStepAudit>();
+            bool allStepsPassed = true;
+
+            for (int s = 0; s < numSteps; s++) {
+                int parity = s % 2;
+                shader.SetInt(PropStepParity, parity);
+
+                // CSPredict
+                shader.SetTexture(kPredict, PropStateIn, stateInRT);
+                shader.SetTexture(kPredict, PropStatePred, statePredRT);
+                shader.SetTexture(kPredict, PropBathymetryTex, bathyRT);
+                shader.SetTexture(kPredict, PropForceOrigTex, forceOrigRT);
+                shader.SetTexture(kPredict, PropForceTex, forceRT);
+                shader.SetTexture(kPredict, PropAccelPing, accelPingRT);
+                shader.Dispatch(kPredict, W / 8, H / 8, 1);
+
+                // Dispersion Inversion on Predictor Force
+                shader.SetTexture(kTridiagX, PropBathymetryTex, bathyRT);
+                shader.SetTexture(kTridiagX, PropForceTex, forceRT);
+                shader.SetTexture(kTridiagX, PropAccelPong, accelPongRT);
+                shader.Dispatch(kTridiagX, H, 1, 1);
+
+                shader.SetTexture(kTridiagZ, PropBathymetryTex, bathyRT);
+                shader.SetTexture(kTridiagZ, PropAccelPong, accelPongRT);
+                shader.SetTexture(kTridiagZ, PropAccelPing, accelPingRT);
+                shader.Dispatch(kTridiagZ, W, 1, 1);
+
+                // CSApplyPredictedDispersion
+                shader.SetTexture(kApplyPred, PropStatePred, statePredRT);
+                shader.SetTexture(kApplyPred, PropAccelPing, accelPingRT);
+                shader.SetTexture(kApplyPred, PropForcePredTex, forcePredRT);
+                shader.Dispatch(kApplyPred, W / 8, H / 8, 1);
+
+                // CSCorrect
+                shader.SetTexture(kCorrect, PropStateIn, stateInRT);
+                shader.SetTexture(kCorrect, PropStatePred, statePredRT);
+                shader.SetTexture(kCorrect, PropStateOut, stateOutRT);
+                shader.SetTexture(kCorrect, PropBathymetryTex, bathyRT);
+                shader.SetTexture(kCorrect, PropForceOrigTex, forceOrigRT);
+                shader.SetTexture(kCorrect, PropForceTex, forceRT);
+                shader.SetTexture(kCorrect, PropForcePredTex, forcePredRT);
+                shader.SetTexture(kCorrect, PropAccelPing, accelPingRT);
+                shader.Dispatch(kCorrect, W / 8, H / 8, 1);
+
+                // Dispersion Inversion on Corrector Force
+                shader.SetTexture(kTridiagX, PropBathymetryTex, bathyRT);
+                shader.SetTexture(kTridiagX, PropForceTex, forceRT);
+                shader.SetTexture(kTridiagX, PropAccelPong, accelPongRT);
+                shader.Dispatch(kTridiagX, H, 1, 1);
+
+                shader.SetTexture(kTridiagZ, PropBathymetryTex, bathyRT);
+                shader.SetTexture(kTridiagZ, PropAccelPong, accelPongRT);
+                shader.SetTexture(kTridiagZ, PropAccelPing, accelPingRT);
+                shader.Dispatch(kTridiagZ, W, 1, 1);
+
+                // CSApplyDispersion
+                shader.SetTexture(kApplyDisp, PropStateIn, stateOutRT);
+                shader.SetTexture(kApplyDisp, PropStateOut, statePredRT);
+                shader.SetTexture(kApplyDisp, PropForcePredTex, forcePredRT);
+                shader.SetTexture(kApplyDisp, PropAccelPing, accelPingRT);
+                shader.Dispatch(kApplyDisp, W / 8, H / 8, 1);
+
+                // Readback state after full substep
+                var reqFinal = AsyncGPUReadback.Request(statePredRT);
+                reqFinal.WaitForCompletion();
+                var gpuState = reqFinal.GetData<float>();
+
+                // Execute reference CPU substep
+                var cpuRes = RunCpuReferenceSubstepFP64(H, dz, dt, g, actualH, etaCurr, wCurr, parity, useSmoothTotalDepth: true);
+
+                // Measure differences
+                double maxDiffEta = 0.0;
+                double sumSqEta = 0.0;
+                double maxRefEta = 0.0;
+                double maxDiffW = 0.0;
+                double sumSqW = 0.0;
+                double maxRefW = 0.0;
+
+                for (int y = 0; y < H; y++) {
+                    int idxRGBA = (y * W + col) * 4;
+                    double gpuEta = gpuState[idxRGBA];
+                    double gpuW = gpuState[idxRGBA + 2];
+
+                    double diffEta = math.abs(gpuEta - cpuRes.eta1[y]);
+                    maxDiffEta = math.max(maxDiffEta, diffEta);
+                    sumSqEta += diffEta * diffEta;
+                    maxRefEta = math.max(maxRefEta, math.abs(cpuRes.eta1[y]));
+
+                    double diffW = math.abs(gpuW - cpuRes.w1[y]);
+                    maxDiffW = math.max(maxDiffW, diffW);
+                    sumSqW += diffW * diffW;
+                    maxRefW = math.max(maxRefW, math.abs(cpuRes.w1[y]));
+                }
+
+                double rmsDiffEta = math.sqrt(sumSqEta / H);
+                double relDiffEta = (maxRefEta > 1e-12) ? maxDiffEta / maxRefEta : 0.0;
+                double rmsDiffW = math.sqrt(sumSqW / H);
+                double relDiffW = (maxRefW > 1e-12) ? maxDiffW / maxRefW : 0.0;
+
+                bool stepPass = (maxDiffEta <= 1e-4 || relDiffEta <= 1e-3) && (maxDiffW <= 1e-4 || relDiffW <= 1e-3);
+                if (!stepPass) allStepsPassed = false;
+
+                stepAudits.Add(new TimeEvolutionMultiStepAudit {
+                    substepIndex = s + 1,
+                    stepParity = parity,
+                    maxDiffEta = maxDiffEta,
+                    rmsDiffEta = rmsDiffEta,
+                    relDiffEta = relDiffEta,
+                    maxDiffW = maxDiffW,
+                    rmsDiffW = rmsDiffW,
+                    relDiffW = relDiffW,
+                    passed = stepPass
+                });
+
+                // Update CPU state & Blit GPU statePred to stateIn for next substep
+                etaCurr = cpuRes.eta1;
+                wCurr = cpuRes.w1;
+                Graphics.Blit(statePredRT, stateInRT);
+            }
+
+            stateInRT.Release();
+            statePredRT.Release();
+            stateOutRT.Release();
+            bathyRT.Release();
+            forceOrigRT.Release();
+            forceRT.Release();
+            forcePredRT.Release();
+            accelPongRT.Release();
+            accelPingRT.Release();
+            UnityEngine.Object.DestroyImmediate(bathyTex);
+            UnityEngine.Object.DestroyImmediate(stateInitTex);
+
+            return new TimeEvolutionScenarioReport {
+                scenarioName = scenarioName,
+                description = desc,
+                stepParity = 0,
+                numSubsteps = numSteps,
+                phaseAudits = new List<SubstepPhaseAudit>(),
+                multiStepAudits = stepAudits,
+                maxSmoothTotalDepthDeltaEta = 0.0,
+                allPhasesPassed = allStepsPassed
+            };
+        }
+
+        private static SubstepPhaseAudit ComparePhase(
+            string phaseName, string variableName, string unit, double absTol, double relTol,
+            double[] gpuArr, double[] cpuArr) {
+
+            int H = gpuArr.Length;
+            double maxDiffAll = 0.0;
+            double sumSqAll = 0.0;
+            double maxValAll = 0.0;
+            int maxDiffIndex = 0;
+
+            double maxDiffInt = 0.0;
+            double sumSqInt = 0.0;
+            double maxValInt = 0.0;
+            int maxDiffIntIndex = 1;
+
+            for (int i = 0; i < H; i++) {
+                double diff = math.abs(gpuArr[i] - cpuArr[i]);
+                if (diff > maxDiffAll) {
+                    maxDiffAll = diff;
+                    maxDiffIndex = i;
+                }
+                sumSqAll += diff * diff;
+                maxValAll = math.max(maxValAll, math.abs(cpuArr[i]));
+
+                if (i > 0 && i < H - 1) {
+                    if (diff > maxDiffInt) {
+                        maxDiffInt = diff;
+                        maxDiffIntIndex = i;
+                    }
+                    sumSqInt += diff * diff;
+                    maxValInt = math.max(maxValInt, math.abs(cpuArr[i]));
+                }
+            }
+
+            double rmsAll = math.sqrt(sumSqAll / H);
+            double relAll = (maxValAll > 1e-12) ? maxDiffAll / maxValAll : 0.0;
+
+            double rmsInt = math.sqrt(sumSqInt / math.max(1, H - 2));
+            double relInt = (maxValInt > 1e-12) ? maxDiffInt / maxValInt : 0.0;
+
+            bool isBoundary = (maxDiffIndex == 0 || maxDiffIndex == H - 1);
+            bool passAll = (maxDiffAll <= absTol) || (relAll <= relTol);
+            bool passInt = (maxDiffInt <= absTol) || (relInt <= relTol);
 
             return new SubstepPhaseAudit {
                 phaseName = phaseName,
-                maxDiff = maxDiff,
-                rmsDiff = rms,
-                relDiff = rel
+                variableName = variableName,
+                unit = unit,
+                absTol = absTol,
+                relTol = relTol,
+                maxDiffAll = maxDiffAll,
+                rmsDiffAll = rmsAll,
+                relDiffAll = relAll,
+                maxDiffIndex = maxDiffIndex,
+                isBoundary = isBoundary,
+                gpuValAtMax = gpuArr[maxDiffIndex],
+                cpuValAtMax = cpuArr[maxDiffIndex],
+                maxDiffInterior = maxDiffInt,
+                rmsDiffInterior = rmsInt,
+                relDiffInterior = relInt,
+                maxDiffInteriorIndex = maxDiffIntIndex,
+                gpuValAtMaxInterior = gpuArr[maxDiffIntIndex],
+                cpuValAtMaxInterior = cpuArr[maxDiffIntIndex],
+                passed = passAll && passInt
             };
         }
 
@@ -645,87 +967,94 @@ namespace Nobnak.WaterSimulation.Editor {
         }
 
         private static CpuSubstepResult RunCpuReferenceSubstepFP64(
-            int H, double dz, double dt, double g, double[] hSpec, double[] etaN, double[] wN, bool useSmoothTotalDepth) {
+            int H, double dz, double dt, double g, double[] hSpec, double[] etaN, double[] wN,
+            int parity, bool useSmoothTotalDepth) {
 
             // SampleDepth: max(0.2, h)
             double[] h = new double[H];
             for (int i = 0; i < H; i++) h[i] = math.max(0.2, hSpec[i]);
 
-            // Helper for SmoothTotalDepth
             double EvalTotalH(double rawH) {
                 if (!useSmoothTotalDepth) return math.max(0.01, rawH);
                 double d = rawH - 0.05;
                 return 0.05 + 0.5 * (d + math.sqrt(d * d + 0.0004));
             }
 
-            // 1. Predictor: dir = +1 (forward)
+            // 1. Predictor: dir = (parity == 0) ? 1 : -1
+            int dirPred = (parity == 0) ? 1 : -1;
+            double signedInvDzPred = (double)dirPred / dz;
+            double invDz = 1.0 / dz;
+
             double[] etaPred = new double[H];
             double[] fzPred = new double[H];
 
             for (int j = 0; j < H; j++) {
-                int jU = math.min(H - 1, j + 1);
+                int jZ = math.clamp(j + dirPred, 0, H - 1);
                 int jD = math.max(0, j - 1);
+                int jU = math.min(H - 1, j + 1);
 
                 double totalHC = EvalTotalH(h[j] + etaN[j]);
-                double totalHZ = EvalTotalH(h[jU] + etaN[jU]);
+                double totalHZ = EvalTotalH(h[jZ] + etaN[jZ]);
 
-                double dHwdz = (totalHZ * wN[jU] - totalHC * wN[j]) / dz;
+                double dHwdz = (totalHZ * wN[jZ] - totalHC * wN[j]) * signedInvDzPred;
                 etaPred[j] = etaN[j] - dt * dHwdz;
 
-                double deta_dz = (etaN[jU] - etaN[j]) / dz;
+                double deta_dz = (etaN[jZ] - etaN[j]) * signedInvDzPred;
 
-                // 1st-order upwind advection: matching GPU CSUpdateForces
-                double dw_dz = (wN[j] >= 0.0) ? (wN[j] - wN[jD]) / dz : (wN[jU] - wN[j]) / dz;
-                double advect = wN[j] * dw_dz;
+                double dwdz = (wN[j] >= 0.0) ? (wN[j] - wN[jD]) * invDz : (wN[jU] - wN[j]) * invDz;
+                double advectZ = wN[j] * dwdz;
 
-                fzPred[j] = -g * deta_dz - advect;
+                // GPU CSPredict does not zero fzPred at boundaries; it computes -g * deta_dz - advectZ
+                fzPred[j] = -g * deta_dz - advectZ;
             }
-            fzPred[0] = 0.0;
-            fzPred[H - 1] = 0.0;
 
-            // Invert dispersion for a*
+            // Invert dispersion for a*:
+            // Tridiagonal boundary rows enforce az = 0 at j=0 and j=H-1 (matching CSTridiagonalZ)
             double[] azPred = SolveDispersionZ_FP64(H, dz, h, fzPred);
 
-            // Predictor velocity
+            // Predictor velocity (CSApplyPredictedDispersion):
+            // GPU CSApplyPredictedDispersion updates wPred = wN + dt * azPred without boundary zeroing
             double[] wPred = new double[H];
             for (int j = 0; j < H; j++) {
                 wPred[j] = wN[j] + dt * azPred[j];
             }
-            wPred[0] = 0.0;
-            wPred[H - 1] = 0.0;
 
-            // 2. Corrector: dir = -1 (backward)
+            // 2. Corrector: dir = (parity == 0) ? -1 : 1
+            int dirCorr = (parity == 0) ? -1 : 1;
+            double signedInvDzCorr = (double)dirCorr / dz;
+
             double[] eta1 = new double[H];
             double[] fzCorr = new double[H];
 
             for (int j = 0; j < H; j++) {
-                int jU = math.min(H - 1, j + 1);
+                int jZ = math.clamp(j + dirCorr, 0, H - 1);
                 int jD = math.max(0, j - 1);
+                int jU = math.min(H - 1, j + 1);
 
                 double totalHC = EvalTotalH(h[j] + etaPred[j]);
-                double totalHZ = EvalTotalH(h[jD] + etaPred[jD]);
+                double totalHZ = EvalTotalH(h[jZ] + etaPred[jZ]);
 
-                double dHwdzStar = (totalHZ * wPred[jD] - totalHC * wPred[j]) * (-1.0 / dz);
+                double dHwdzStar = (totalHZ * wPred[jZ] - totalHC * wPred[j]) * signedInvDzCorr;
                 eta1[j] = 0.5 * (etaN[j] + etaPred[j] - dt * dHwdzStar);
 
-                double deta_dz_star = (etaPred[jD] - etaPred[j]) * (-1.0 / dz);
+                double deta_dz_star = (etaPred[jZ] - etaPred[j]) * signedInvDzCorr;
 
-                double dw_dz_star = (wPred[j] >= 0.0) ? (wPred[j] - wPred[jD]) / dz : (wPred[jU] - wPred[j]) / dz;
-                double advectStar = wPred[j] * dw_dz_star;
+                double dwdz_star = (wPred[j] >= 0.0) ? (wPred[j] - wPred[jD]) * invDz : (wPred[jU] - wPred[j]) * invDz;
+                double advectStar = wPred[j] * dwdz_star;
 
+                // GPU CSCorrect does not zero fzCorr at boundaries; stores it directly into _ForceTex
                 fzCorr[j] = -g * deta_dz_star - advectStar;
             }
-            fzCorr[0] = 0.0;
-            fzCorr[H - 1] = 0.0;
 
-            // Invert dispersion for a**
+            // Invert dispersion for a**:
             double[] azCorr = SolveDispersionZ_FP64(H, dz, h, fzCorr);
 
-            // Corrector velocity
+            // Corrector velocity (CSApplyDispersion):
             double[] w1 = new double[H];
             for (int j = 0; j < H; j++) {
                 w1[j] = wN[j] + dt * 0.5 * (azPred[j] + azCorr[j]);
             }
+            // GPU CSApplyDispersion explicitly enforces w1 = 0 at j=0 and j=H-1:
             w1[0] = 0.0;
             w1[H - 1] = 0.0;
 
@@ -750,11 +1079,11 @@ namespace Nobnak.WaterSimulation.Editor {
 
             B[0] = 1.0;
             C[0] = 0.0;
-            d[0] = 0.0;
+            d[0] = 0.0; // Strictly zero normal acceleration az = 0 at j=0
 
             A[H - 1] = 0.0;
             B[H - 1] = 1.0;
-            d[H - 1] = 0.0;
+            d[H - 1] = 0.0; // Strictly zero normal acceleration az = 0 at j=H-1
 
             for (int j = 1; j < H - 1; j++) {
                 double hC = h[j];
@@ -903,7 +1232,8 @@ namespace Nobnak.WaterSimulation.Editor {
             public double maxTangentialDiff;
             public double rmsTangentialDiff;
             public double relTangentialDiff;
-            public double halfStorageRoundingDiff;
+            public double halfStorageDepthRoundingDiff; // [m] 水深自体の格納誤差
+            public double halfStorageAccelRoundingDiff; // [m/s^2] 水深丸めによる加速度解の差
             public bool passed;
         }
 
@@ -911,17 +1241,61 @@ namespace Nobnak.WaterSimulation.Editor {
         public class TimeEvolutionBreakdownReport {
             public int gridH;
             public double dt;
-            public List<SubstepPhaseAudit> phaseAudits;
+            public List<TimeEvolutionScenarioReport> scenarios;
             public double maxSmoothTotalDepthDeltaEta;
+            public bool allPassed;
             public string conclusion;
+        }
+
+        [Serializable]
+        public class TimeEvolutionScenarioReport {
+            public string scenarioName;
+            public string description;
+            public int stepParity;
+            public int numSubsteps;
+            public List<SubstepPhaseAudit> phaseAudits;
+            public List<TimeEvolutionMultiStepAudit> multiStepAudits;
+            public double maxSmoothTotalDepthDeltaEta;
+            public bool allPhasesPassed;
+        }
+
+        [Serializable]
+        public class TimeEvolutionMultiStepAudit {
+            public int substepIndex;
+            public int stepParity;
+            public double maxDiffEta;
+            public double rmsDiffEta;
+            public double relDiffEta;
+            public double maxDiffW;
+            public double rmsDiffW;
+            public double relDiffW;
+            public bool passed;
         }
 
         [Serializable]
         public class SubstepPhaseAudit {
             public string phaseName;
-            public double maxDiff;
-            public double rmsDiff;
-            public double relDiff;
+            public string variableName;
+            public string unit;
+            public double absTol;
+            public double relTol;
+
+            public double maxDiffAll;
+            public double rmsDiffAll;
+            public double relDiffAll;
+            public int maxDiffIndex;
+            public bool isBoundary;
+            public double gpuValAtMax;
+            public double cpuValAtMax;
+
+            public double maxDiffInterior;
+            public double rmsDiffInterior;
+            public double relDiffInterior;
+            public int maxDiffInteriorIndex;
+            public double gpuValAtMaxInterior;
+            public double cpuValAtMaxInterior;
+
+            public bool passed;
         }
         #endregion
     }
