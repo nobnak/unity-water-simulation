@@ -25,6 +25,7 @@
 
 # Recordings can get excessive in size
 /[Rr]ecordings/
+/[Cc]aptures/
 
 scratch/
 *.raw

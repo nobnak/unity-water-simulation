@@ -1,0 +1,12 @@
+﻿{
+    "allPassed": true,
+    "baselineInitialVerified": true,
+    "switchResetsSimulationTime": true,
+    "switchMaintainsRunningState": true,
+    "switchUpdatesAdvectionMode": true,
+    "pauseStopsSimulationTime": true,
+    "playResumesSimulationTime": true,
+    "normalResetRetainsSelectedMode": true,
+    "noNaNOrInfDetected": true,
+    "details": "BaselineInitial=True, SwitchResetsTime=True, SwitchMaintainsRun=True, ModeUpdated=True, Pause=True, Play=True, NormalResetRetainsMode=True, FiniteOutputs=True"
+}

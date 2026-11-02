@@ -1,4 +1,4 @@
-﻿{
+{
     "timestamp": "2026-11-02 10:22:36 UTC",
     "gitCommit": "b735038",
     "gitDirty": true,
@@ -1937,12 +1937,12 @@
                 "details": "100 substeps pulse advection. Baseline retention: 99.7%, MinmodTVD retention: 99.9% (dissipation improvement: 0.0 pt)."
             },
             {
-                "testName": "GPU_Substep_Execution_Performance",
+                "testName": "WallClock_Substep_Time_Measurement",
                 "passed": true,
-                "maxError": 0.0,
+                "maxError": 0.0007400352528743126,
                 "baselineError": 0.6594080328941345,
                 "candidateError": 0.6598960161209106,
-                "details": "512x512 grid on RTX 5070 (100 substeps): Baseline=0.659 ms/substep, MinmodTVD=0.660 ms/substep (delta: 0 ms, dispatches=8/substep, VRAM=23.0 MB)."
+                "details": "512x512 grid, CPU Stopwatch wall-clock time (100 substeps): Baseline=0.659 ms/substep, MinmodTVD=0.660 ms/substep (overhead: +0.1%, 8 dispatches/substep, VRAM=23.0 MB). Note: Measured via host Stopwatch (includes API dispatch and driver queue wall-clock time; not isolated GPU-only hardware execution time)."
             }
         ],
         "allPassed": true

@@ -1532,12 +1532,12 @@ namespace Nobnak.WaterSimulation.Editor {
             rep.memoryBytesAllocated = (long)W * H * (16 + 16 + 16 + 4 + 8 + 8 + 8 + 8 + 8);
 
             var perfResult = new AdvectionAdoptionTestResult {
-                testName = "GPU_Substep_Execution_Performance",
-                passed = true,
-                maxError = 0.0,
+                testName = "WallClock_Substep_Time_Measurement",
+                passed = (msCand <= msBase * 1.10f), // Pass if wall-clock overhead is <= 10%
+                maxError = math.max(0.0, (double)(msCand - msBase) / math.max(1e-4, (double)msBase)),
                 baselineError = msBase,
                 candidateError = msCand,
-                details = $"512x512 grid on RTX 5070 (100 substeps): Baseline={msBase:F3} ms/substep, MinmodTVD={msCand:F3} ms/substep (delta: {(msCand - msBase):+0.003;-0.003;0} ms, dispatches=8/substep, VRAM={rep.memoryBytesAllocated / (1024 * 1024):F1} MB)."
+                details = $"512x512 grid, CPU Stopwatch wall-clock time (100 substeps): Baseline={msBase:F3} ms/substep, MinmodTVD={msCand:F3} ms/substep (overhead: {(msCand - msBase) / math.max(1e-4f, msBase) * 100f:+0.1;-0.1;0.0}%, 8 dispatches/substep, VRAM={rep.memoryBytesAllocated / (1024 * 1024):F1} MB). Note: Measured via host Stopwatch (includes API dispatch and driver queue wall-clock time; not isolated GPU-only hardware execution time)."
             };
             rep.tests.Add(perfResult);
         }
