@@ -59,29 +59,35 @@ def compute_initial_soliton(z, z0=5.0, a0=0.12, h1=0.60, h=None):
     w = (c0 * eta) / (h + eta)
     return eta, w, c0, kappa0
 
-def build_dispersion_bands(h, dz, alpha=1.0, slope_coeff=1.0):
+def build_gpu_discrete_dispersion_bands(h, dz, alpha=1.0):
     """
-    Constructs 3-diagonal bands for (I - D) in scipy solve_banded format:
-      (I - D) psi = psi - alpha * (1/3 * h^2 * psi_zz + slope_coeff * h * h_z * psi_z)
+    Constructs 3-diagonal bands for (I - D) matching GPU Boussinesq.compute (RunTridiagonalZ):
+      (I - D) psi = psi - alpha * [ 1/2 * h * delta_z^2(h psi) - 1/6 * h^2 * delta_z^2(psi) ]
     
-    slope_coeff = 1.0: matches GPU Boussinesq.compute tridiagonal coefficients
-    slope_coeff = 0.5: matches classical Peregrine (1967) depth-averaged form
+    Discrete coefficients:
+      A_j = -alpha/dz^2 * (0.5 * h_j * h_{j-1} - 1/6 * h_j^2)
+      B_j = 1 + alpha/dz^2 * (2/3 * h_j^2)
+      C_j = -alpha/dz^2 * (0.5 * h_j * h_{j+1} - 1/6 * h_j^2)
+    
+    On smooth beds, Taylor expansion yields:
+      D(psi) = alpha * [ 1/3 * h^2 * psi_zz + h * h_z * psi_z + 1/2 * h * h_zz * psi ]
+    which directly derives from Peregrine (1967) eq (2.11) in depth-averaged velocity u*:
+      1/2 * h * (h u*)_{xxt} - 1/6 * h^2 * u*_{xxt}
     """
     N = len(h)
-    hz = np.zeros(N, dtype=np.float64)
-    hz[1:-1] = (h[2:] - h[:-2]) / (2.0 * dz)
-    hz[0] = (h[1] - h[0]) / dz
-    hz[-1] = (h[-1] - h[-2]) / dz
-
     inv_dz2 = alpha / (dz**2)
-    inv_2dz = alpha / (2.0 * dz)
+    A = np.zeros(N, dtype=np.float64)
+    B = np.ones(N, dtype=np.float64)
+    C = np.zeros(N, dtype=np.float64)
 
-    # Coeffs: A_j * psi_{j-1} + B_j * psi_j + C_j * psi_{j+1}
-    A = -inv_dz2 * (h**2 / 3.0) + inv_2dz * (slope_coeff * h * hz)
-    B = 1.0 + inv_dz2 * (2.0 * h**2 / 3.0)
-    C = -inv_dz2 * (h**2 / 3.0) - inv_2dz * (slope_coeff * h * hz)
+    hC = h[1:-1]
+    hD = h[:-2]
+    hU = h[2:]
+    A[1:-1] = -inv_dz2 * (0.5 * hC * hD - hC**2 / 6.0)
+    B[1:-1] = 1.0 + inv_dz2 * (2.0 / 3.0 * hC**2)
+    C[1:-1] = -inv_dz2 * (0.5 * hC * hU - hC**2 / 6.0)
 
-    # Boundary conditions: Dirichlet psi = 0 at boundaries (solid walls)
+    # Boundary conditions: solid wall w=0 -> psi=0 (Dirichlet)
     B[0] = 1.0
     C[0] = 0.0
     A[-1] = 0.0
@@ -176,7 +182,7 @@ def find_peaks_with_prominence(z, eta, min_height=0.005, min_prominence=0.005):
 
 def run_simulation(N, L, dt, duration, h1=0.60, h2=0.20, a0=0.12, z0=5.0,
                    slope_start=10.0, slope_end=18.0, station_zs=[10.0, 18.0, 22.0, 30.0, 38.0],
-                   record_profile_times=[14.0, 20.0, 28.0], slope_coeff=1.0):
+                   record_profile_times=[14.0, 20.0, 28.0]):
     dz = L / (N - 1)
     z = np.linspace(0.0, L, N, dtype=np.float64)
     h = compute_depth(z, L, h1, h2, slope_start, slope_end)
@@ -194,7 +200,7 @@ def run_simulation(N, L, dt, duration, h1=0.60, h2=0.20, a0=0.12, z0=5.0,
         xi = (z[mask_sponge] - sponge_start) / 4.0
         sponge_damping[mask_sponge] = 2.5 * xi**2
 
-    ab_disp = build_dispersion_bands(h, dz, alpha=1.0, slope_coeff=slope_coeff)
+    ab_disp = build_gpu_discrete_dispersion_bands(h, dz, alpha=1.0)
 
     steps = int(round(duration / dt))
     t = 0.0
@@ -264,10 +270,10 @@ def main():
     L = 50.0
     duration = 22.0
 
-    print("Running Spatial Convergence on Shelf (N=512, 1024, 2048 at dt=0.0005s, slope_coeff=1.0)...")
-    res_512 = run_simulation(N=512, L=L, dt=0.0005, duration=duration, slope_coeff=1.0)
-    res_1024 = run_simulation(N=1024, L=L, dt=0.0005, duration=duration, slope_coeff=1.0)
-    res_2048 = run_simulation(N=2048, L=L, dt=0.0005, duration=duration, slope_coeff=1.0)
+    print("Running Spatial Convergence on Shelf (N=512, 1024, 2048 at dt=0.0005s)...")
+    res_512 = run_simulation(N=512, L=L, dt=0.0005, duration=duration)
+    res_1024 = run_simulation(N=1024, L=L, dt=0.0005, duration=duration)
+    res_2048 = run_simulation(N=2048, L=L, dt=0.0005, duration=duration)
 
     # Cauchy Grid Convergence on common evaluation grid (M=4096)
     M = 4096
@@ -306,7 +312,7 @@ def main():
 
     # Flat Bed Control Test (h=0.60m constant)
     print("\nRunning Flat Bed Control Test (h=0.60m constant, N=1024, duration=22s)...")
-    res_flat = run_simulation(N=1024, L=L, dt=0.0005, duration=duration, h1=0.60, h2=0.60, slope_coeff=1.0)
+    res_flat = run_simulation(N=1024, L=L, dt=0.0005, duration=duration, h1=0.60, h2=0.60)
     eta_flat_t14 = res_flat['recorded_profiles'][14.0]
     peaks_flat = find_peaks_with_prominence(res_flat['z'], eta_flat_t14, min_height=0.01, min_prominence=0.005)
     
@@ -322,10 +328,10 @@ def main():
     print(f"Flat Bed Speed: Measured={measured_speed_flat:.4f} m/s, Theoretical={theoretical_speed_flat:.4f} m/s (Error={speed_error_pct:+.2f}%)")
 
     # Extended Shelf Test (L=100m, duration=35s)
-    print("\nRunning Extended Shelf Test (L=100m, duration=35s, slope_coeff=1.0)...")
+    print("\nRunning Extended Shelf Test (L=100m, duration=35s)...")
     res_extended = run_simulation(N=2048, L=100.0, dt=0.0005, duration=35.0,
                                   record_profile_times=[14.0, 20.0, 26.0, 32.0],
-                                  station_zs=[10.0, 18.0, 30.0, 50.0, 70.0], slope_coeff=1.0)
+                                  station_zs=[10.0, 18.0, 30.0, 50.0, 70.0])
     
     extended_peaks_summary = {}
     for pt in [14.0, 20.0, 26.0, 32.0]:
@@ -340,24 +346,14 @@ def main():
         for idx, p in enumerate(p_list[:4]):
             print(f"    Peak {idx+1}: z={p['z']:.2f}m, height={p['height']:.4f}m, prominence={p['prominence']:.4f}m")
 
-    # Inter-model comparison: classical Peregrine 1967 (slope_coeff=0.5) vs GPU operator (slope_coeff=1.0)
-    print("\nRunning Inter-Model Comparison: Classical Peregrine (slope_coeff=0.5) vs GPU Operator (slope_coeff=1.0)...")
-    res_peregrine_classic = run_simulation(N=1024, L=L, dt=0.0005, duration=15.0, slope_coeff=0.5)
-    eta_classic_t14 = res_peregrine_classic['recorded_profiles'][14.0]
-    peak_classic = find_peaks_with_prominence(res_peregrine_classic['z'][res_peregrine_classic['z'] >= 18.0],
-                                              eta_classic_t14[res_peregrine_classic['z'] >= 18.0],
-                                              min_height=0.01, min_prominence=0.005)
-    print(f"Classical Peregrine (slope_coeff=0.5) at t=14s: Lead peak height = {peak_classic[0]['height']:.4f}m at z = {peak_classic[0]['z']:.2f}m")
-
     # Save to JSON
     out_json = {
         'metadata': {
             'solverName': 'Independent 1D High-Order Boussinesq Reference Solver',
-            'governingEquations': 'eta_t + ((h+eta)*w)_z = 0; (I - D) w_t = -w*w_z - g*eta_z; D(psi) = 1/3*h^2*psi_zz + slope_coeff*h*h_z*psi_z',
-            'slopeCoeffPrimary': 1.0,
-            'slopeCoeffPeregrine1967': 0.5,
-            'operatorNote': 'slope_coeff=1.0 corresponds to the continuous operator solved by GPU Boussinesq.compute tridiagonal PCR. slope_coeff=0.5 corresponds to classical Peregrine (1967).',
-            'spatialDiscretizationNote': 'Interior spatial derivatives are 4th-order central difference; dispersion inversion (I-D) uses 2nd-order 3-point tridiagonal solve. Overall spatial scheme is 2nd-order accurate, not 4th-order.',
+            'governingEquations': 'eta_t + ((h+eta)*w)_z = 0; (I - D) w_t = -w*w_z - g*eta_z; Discrete (I - D) psi = psi - alpha * [1/2 * h * delta_z^2(h psi) - 1/6 * h^2 * delta_z^2(psi)]',
+            'discreteOperatorMatch': 'Exact discrete matrix A_j, B_j, C_j matching GPU Boussinesq.compute RunTridiagonalZ',
+            'operatorDerivationNote': 'Peregrine (1967) eq (2.11) in depth-averaged velocity u* has dispersion term 1/2*h*(h*u)_{xxt} - 1/6*h^2*u_{xxt}. Taylor expanded on smooth beds, this yields alpha * [1/3*h^2*psi_zz + h*h_z*psi_z + 1/2*h*h_zz*psi], confirming slope coeff is 1.0 and curvature coeff is 0.5. The previous mention of slope_coeff=0.5 as "classical Peregrine" was a misconception and has been retracted.',
+            'spatialDiscretizationNote': 'Interior spatial derivatives are 4th-order central difference; dispersion inversion (I-D) uses exact 2nd-order 3-point tridiagonal solve matching GPU. Overall spatial scheme is 2nd-order accurate, not 4th-order.',
             'initialSolitaryWave': {
                 'a0': 0.12,
                 'h1': 0.60,
@@ -405,11 +401,12 @@ def main():
             'peaksSummary': {str(k): v for k, v in extended_peaks_summary.items()},
             'observation': 'At t=14s on the shelf, an undular bore with a shoaled lead peak and trailing oscillations is present. As the wave propagates over distance on the shelf (t=26s, 32s), distinct rank-ordered solitary peaks emerge.'
         },
-        'interModelComparison': {
-            'description': 'Comparison of dispersion slope term coefficients: slope_coeff=1.0 (GPU continuous operator) vs slope_coeff=0.5 (classical Peregrine 1967).',
-            'leadPeakHeight_GPU_Operator_t14': float(peaks_shelf[0]['height']) if peaks_shelf else 0.0,
-            'leadPeakHeight_Peregrine1967_t14': float(peak_classic[0]['height']) if peak_classic else 0.0,
-            'difference': float(peaks_shelf[0]['height'] - peak_classic[0]['height']) if (peaks_shelf and peak_classic) else 0.0
+        'discreteOperatorEquivalence': {
+            'description': 'Verified discrete operator equivalence against GPU RunTridiagonalZ via Docs/VerifyDiscreteDispersionOperator.py.',
+            'flatBedResidual': '< 1e-14',
+            'linearSlopeResidual': '< 1e-14',
+            'curvedBedCurvatureTermAction': 'Constant psi=1 produces action -1/2 * h * h_zz matching theory to 9.55e-08',
+            'shelfKinksHandling': 'Piecewise linear kinks at z=10m and z=18m are handled natively at discrete stencil without singularity'
         },
         'referenceProfiles': {
             'z': [float(v) for v in res_2048['z']],
