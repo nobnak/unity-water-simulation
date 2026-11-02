@@ -194,10 +194,12 @@ def main():
         for t in times:
             t_str = str(t)
             p_list = p_summary.get(t_str, [])
-            if len(p_list) >= 1: lead_pts.append((p_list[0][0], p_list[0][1]))
-            if len(p_list) >= 2: sec_pts.append((p_list[1][0], p_list[1][1]))
-            if len(p_list) >= 3: third_pts.append((p_list[2][0], p_list[2][1]))
-            if len(p_list) >= 4: fourth_pts.append((p_list[3][0], p_list[3][1]))
+            def get_zh(p):
+                return (p['z'], p['height']) if isinstance(p, dict) else (p[0], p[1])
+            if len(p_list) >= 1: lead_pts.append(get_zh(p_list[0]))
+            if len(p_list) >= 2: sec_pts.append(get_zh(p_list[1]))
+            if len(p_list) >= 3: third_pts.append(get_zh(p_list[2]))
+            if len(p_list) >= 4: fourth_pts.append(get_zh(p_list[3]))
 
         # Also plot full profiles at t=14s and t=20s from referenceProfiles
         ref_z = ref_data['referenceProfiles']['z']

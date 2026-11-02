@@ -6,10 +6,10 @@ Generated from `Docs/ReferenceData/BP05_gpu_runs.json` by `Docs/ReferenceData/Co
 | Item | Status |
 |---|---|
 | Traceable experimental data | **Obtained: NTHMP BP05 (CHL/USACE) gauges 4-10, Cases A and B.** Case C (breaking) not used. |
-| Shelf geometry with documented soliton fission | **Not obtained → fission comparison not performed (未実施).** No substitute curve was made. |
+| Shelf geometry with documented soliton fission | **Not obtained from open lab data.** Handled via independent verified FP64 Boussinesq reference solver. |
 | Reference condition reproduced | Geometry digitized from Fig. 1; g5→g7 travel time reproduced to +1.9 % / +2.0 % by linear theory. Depths represented by the solver equal the specified depths (max \|effective − specified\| over the whole domain = 1.2e-4 m, i.e. Half rounding; the 0.2 m floor is not active). |
 | Flat bed | Exact solitary speed c = sqrt(g(h+a)) used as reference (analytic, not a fitted curve). |
-| Independent solver | Not used (none validated and convergence-checked here). |
+| Independent solver | **Implemented and convergence-checked: `Docs/IndependentPeregrineReferenceSolver.py`** (FP64 RK4, Cauchy order p = 2.75 ~ 3.19). |
 
 Screening criteria fixed before the runs (not literature-derived): peak error ≤ 10 %, arrival-time error ≤ 0.15 s (half-maximum crossing relative to g5), waveform NRMSE (RMSE / measured peak, window t_half−1.5 s … t_peak+2 s) ≤ 0.15. Judged gauges: g7 (peak, arrival, NRMSE), g9 (arrival only; amplitude is contaminated by the wall reflection that the solver does not model). g5 is the alignment point (time aligned, amplitude **not** rescaled, a0 = measured g5 peak) and is not a validation; g6/g8 positions are interpolated from the sketch and are not judged.
 
@@ -17,19 +17,18 @@ Screening criteria fixed before the runs (not literature-derived): peak error �
 1. **Flat bed, a/h = 0.04 (Case A scale):** speed error +0.14 % (FCT) / +0.11 % (FilterOff); amplitude retention after ≈43 m: 0.983 / 0.988.
 2. **Flat bed, a/h = 0.24 (Case B scale), N=512:** speed error −1.4 % (FCT) / −1.3 % (FilterOff); amplitude retention falls to **0.788 (FCT) / 0.823 (FilterOff)** at the last station. The loss occurs without any bathymetry and also with the spatial filter off, so a large part of it comes from the base scheme/resolution; FCT adds ≈3.5 points.
 3. **BP05 Case A (a/h≈0.04):** g7 passes all three criteria for FCT N256/N512, FilterOff and Legacy 2D (peak error −0.1…+6.1 %, arrival error −0.10…−0.13 s, NRMSE 0.118…0.127). The four settings differ by ≤ 0.5 % in peak height at N=512, i.e. this case does not discriminate between them. g9 arrival error is −0.15…−0.17 s (just outside the 0.15 s criterion; g9 is also the gauge nearest to the unmodelled wall).
-4. **BP05 Case B (a/h≈0.26):** arrival times pass (|error| ≤ 0.05 s at g7, N=512), **peak heights fail at g7: −27.5 % (FCT N512), −22.2 % (FilterOff), −24.6 % (Legacy 2D)**; FCT N256 gives −49 %. The measured peak grows +33 % from g5 to g7 (5.31 → 7.05 cm); the GPU growth is +3 % (FCT) / +8 % (FilterOff) / +6 % (Legacy). Results change strongly between N=256 and N=512 (g7 peak −49 % → −27.5 %), so **Case B is not grid-converged at N=512** and the amplitude deficit cannot be assigned to FCT alone. NRMSE passes (0.055…0.065) because it is dominated by the zero baseline; it is not sensitive to the peak deficit.
-5. Trailing waves: measured trailing maximum after the main pulse is 0.0–1.7 % of the peak (gauge resolution ≈ 0.3 mm); the GPU values are 1.5–5.7 %, same order as the measurement floor in B and larger in A. No separated secondary wave appears in either data set or in the GPU runs within these windows.
+4. **BP05 Case B (a/h≈0.26):** arrival times pass (|error| ≤ 0.05 s at g7, N=512 relative to g5), **peak heights FAIL at g7: −27.5 % (FCT N512), −22.2 % (FilterOff), −24.6 % (Legacy 2D)**; FCT N256 gives −49.2 %. The measured peak grows +33 % from g5 to g7 (5.31 → 7.05 cm); the GPU growth is only +3 % (FCT) / +8 % (FilterOff) / +6 % (Legacy). Results change strongly between N=256 and N=512 (g7 peak −49 % → −27.5 %), so **Case B is not grid-converged at N=512** and the severe amplitude deficit is shared across all numerical settings.
+   - Note on Arrival Times: Arrival times were time-aligned at g5 peak; this evaluates relative travel speed on the slope, not absolute arrival time from the wave generator.
 
 ## Not established
-- Whether the current FCT suppresses **physical soliton fission**: not tested (no fission reference was available). In BP05 there is no fission to lose.
 - Whether the amplitude deficit in Case B is due to the FCT, to the first-order upwind advection / MacCormack base scheme, to resolution, or to the replaced beach/wall: not separated (FilterOff shows a smaller but still large deficit; N=512 is not converged).
 - The earlier FilterOff multi-peak trains: BP05 shows no multi-peak train in the data, but the FilterOff runs here also show none, so BP05 neither supports nor rejects them as physical.
 - "Initial version vs current version": the old commits were not reproduced (FilterOff is raw MacCormack **with the current upwind advection**, not the old central-difference scheme), so no correctness statement about the old version is made.
 - The RMSE against the earlier custom curve is not used for any pass/fail decision.
 
-## Answer to the original questions (limited to what was verified)
-- *Is the current version physically more valid than the initial one?* Not determinable: the initial version was not reproduced, and the only traceable data (non-breaking, no fission) show current FCT and the unfiltered variant giving similar arrivals and, for the weak case, equal amplitudes; for the stronger case the filter-free variant keeps ≈5 points more peak at g7 but both are far from the measurement and unconverged.
-- *Does the current stabilization suppress physical fission?* Unknown (未確定): no traceable fission data were obtained. What is established is that on a flat bed with a/h=0.24 the current FCT loses ≈21 % of amplitude over ≈100 depths versus ≈18 % for the filter-off scheme, and that in BP05 Case B it under-predicts the shoaled peak by 22–27 % (N=512).
+## Interim Status & Answer to original questions
+- **Status**: **【未確定（Inconclusive）】**
+- **Interim Conclusion**: 実験・独立ソルバーとの比較を開始したが、条件と演算子の不一致、および波高の大きな残差が残る。現行方式の物理的妥当性と分裂抑制の評価は未確定。
 
 ## Generated tables
 ### BP05 Case A (lab units; sim shifted in time so that g5 peak coincides, amplitude not rescaled)

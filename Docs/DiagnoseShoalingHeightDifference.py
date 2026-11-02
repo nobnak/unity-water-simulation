@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Vectorized 1D MacCormack simulation to diagnose shoaling height.
+"""
+
+import numpy as np
+import math
+from scipy import linalg
+
+g = 9.81
+
+def run_vectorized_maccormack(N=512, L=50.0, dt=0.004, duration=14.0, filter_mode="none"):
+    dz = L / N
+    z = (np.arange(N) + 0.5) * dz
+    
+    h = np.full(N, 0.60)
+    slope_mask = (z > 10.0) & (z <= 18.0)
+    h[slope_mask] = 0.60 - 0.05 * (z[slope_mask] - 10.0)
+    h[z > 18.0] = 0.20
+
+    # Initial condition
+    a0 = 0.12
+    z0 = 5.0
+    h1 = 0.60
+    c0 = math.sqrt(g * (h1 + a0))
+    kappa = math.sqrt(3.0 * a0 / (4.0 * h1**3))
+    
+    arg = kappa * (z - z0)
+    sech = 1.0 / np.cosh(np.clip(arg, -25.0, 25.0))
+    eta = a0 * sech**2
+    w = c0 * eta / (h + eta)
+    
+    # Tridiagonal bands
+    invDz2 = 1.0 / (dz * dz)
+    A = np.zeros(N)
+    B = np.ones(N)
+    C = np.zeros(N)
+    
+    hC = h[1:-1]
+    hD = h[:-2]
+    hU = h[2:]
+    A[1:-1] = -invDz2 * (0.5 * hC * hD - hC**2 / 6.0)
+    B[1:-1] = 1.0 + invDz2 * (2.0 / 3.0 * hC**2)
+    C[1:-1] = -invDz2 * (0.5 * hC * hU - hC**2 / 6.0)
+
+    ab = np.zeros((3, N))
+    ab[0, 1:] = C[:-1]
+    ab[1, :] = B
+    ab[2, :-1] = A[1:]
+    
+    steps = int(round(duration / dt))
+    parity = 0
+    
+    for step in range(steps):
+        # 1. Predictor
+        dir_val = 1 if parity == 0 else -1
+        
+        # Roll for neighbor
+        if dir_val == 1:
+            eta_nbr = np.append(eta[1:], eta[-1])
+            w_nbr = np.append(w[1:], w[-1])
+            h_nbr = np.append(h[1:], h[-1])
+        else:
+            eta_nbr = np.insert(eta[:-1], 0, eta[0])
+            w_nbr = np.insert(w[:-1], 0, w[0])
+            h_nbr = np.insert(h[:-1], 0, h[0])
+            
+        totalH = h + eta
+        totalH_nbr = h_nbr + eta_nbr
+        
+        dHw_dz = (totalH_nbr * w_nbr - totalH * w) * (dir_val / dz)
+        eta_pred = eta - dt * dHw_dz
+        deta_dz = (eta_nbr - eta) * (dir_val / dz)
+        
+        # Upwind advection
+        w_left = np.insert(w[:-1], 0, w[0])
+        w_right = np.append(w[1:], w[-1])
+        dw_dz = np.where(w >= 0.0, (w - w_left) / dz, (w_right - w) / dz)
+        advect = w * dw_dz
+        
+        f_pred = -g * deta_dz - advect
+        f_pred[0] = 0.0
+        f_pred[-1] = 0.0
+        
+        a_pred = linalg.solve_banded((1, 1), ab, f_pred)
+        w_pred = w + dt * a_pred
+        w_pred[0] = 0.0
+        w_pred[-1] = 0.0
+        
+        # 2. Corrector
+        dir_c = -dir_val
+        if dir_c == 1:
+            eta_pred_nbr = np.append(eta_pred[1:], eta_pred[-1])
+            w_pred_nbr = np.append(w_pred[1:], w_pred[-1])
+            h_nbr_c = np.append(h[1:], h[-1])
+        else:
+            eta_pred_nbr = np.insert(eta_pred[:-1], 0, eta_pred[0])
+            w_pred_nbr = np.insert(w_pred[:-1], 0, w_pred[0])
+            h_nbr_c = np.insert(h[:-1], 0, h[0])
+            
+        totalH_pred = h + eta_pred
+        totalH_pred_nbr = h_nbr_c + eta_pred_nbr
+        
+        dHw_dz_star = (totalH_pred_nbr * w_pred_nbr - totalH_pred * w_pred) * (dir_c / dz)
+        eta_next = 0.5 * (eta + eta_pred - dt * dHw_dz_star)
+        deta_dz_star = (eta_pred_nbr - eta_pred) * (dir_c / dz)
+        
+        w_p_left = np.insert(w_pred[:-1], 0, w_pred[0])
+        w_p_right = np.append(w_pred[1:], w_pred[-1])
+        dw_dz_star = np.where(w_pred >= 0.0, (w_pred - w_p_left) / dz, (w_p_right - w_pred) / dz)
+        advect_star = w_pred * dw_dz_star
+        
+        f_corr = -g * deta_dz_star - advect_star
+        f_corr[0] = 0.0
+        f_corr[-1] = 0.0
+        
+        a_corr = linalg.solve_banded((1, 1), ab, f_corr)
+        w_next = w + dt * 0.5 * (a_pred + a_corr)
+        w_next[0] = 0.0
+        w_next[-1] = 0.0
+        
+        if filter_mode == "fct":
+            kappa4 = min(0.058, 12.0 * dt)
+            d4_eta = np.zeros(N)
+            d4_eta[2:-2] = eta_next[4:] - 4*eta_next[3:-1] + 6*eta_next[2:-2] - 4*eta_next[1:-3] + eta_next[:-4]
+            d4_w = np.zeros(N)
+            d4_w[2:-2] = w_next[4:] - 4*w_next[3:-1] + 6*w_next[2:-2] - 4*w_next[1:-3] + w_next[:-4]
+            eta_next -= kappa4 * d4_eta
+            w_next -= kappa4 * d4_w
+            
+        eta = eta_next
+        w = w_next
+        parity = 1 - parity
+
+    return z, eta, w
+
+def main():
+    print("Running Vectorized 1D MacCormack (FilterOff vs FCT) at dt=0.004s, t=14.0s...")
+    z, eta_raw, w_raw = run_vectorized_maccormack(N=512, dt=0.004, duration=14.0, filter_mode="none")
+    z, eta_fct, w_fct = run_vectorized_maccormack(N=512, dt=0.004, duration=14.0, filter_mode="fct")
+    print(f"1D MacCormack FilterOff N=512 at t=14s: max_eta = {np.max(eta_raw):.4f}m at z = {z[np.argmax(eta_raw)]:.2f}m")
+    print(f"1D MacCormack FCT       N=512 at t=14s: max_eta = {np.max(eta_fct):.4f}m at z = {z[np.argmax(eta_fct)]:.2f}m")
+
+if __name__ == "__main__":
+    main()
