@@ -24,6 +24,7 @@ namespace Nobnak.WaterSimulation {
         [SerializeField] private WaterRenderer waterRenderer;
         [SerializeField] private SeabedRenderer seabedRenderer;
         [SerializeField] private SimpleCameraController cameraController;
+        [SerializeField] private WaterProfileViewer profileViewer;
 
         [Header("UI Display")]
         [SerializeField] private bool showInfoPanel = true;
@@ -52,6 +53,7 @@ namespace Nobnak.WaterSimulation {
         private void OnEnable() {
             comparisonController = FindFirstObjectByType<WaterComparisonController>();
             if (seabedRenderer == null) seabedRenderer = FindFirstObjectByType<SeabedRenderer>();
+            if (profileViewer == null) profileViewer = FindFirstObjectByType<WaterProfileViewer>();
             cachedTitleText = $"<b>{sampleTitle}</b>";
         }
 
@@ -184,15 +186,30 @@ namespace Nobnak.WaterSimulation {
             // Visual mode
             if (waterRenderer != null || comparisonController != null) {
                 GUILayout.Space(4);
-                GUILayout.Label("<b>[描画モード / Visual Mode]</b>");
+                GUILayout.Label("<b>[表示モード / Display Mode]</b>");
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Realistic")) SetVisualMode(WaterRenderer.VisualMode.Realistic);
+                if (GUILayout.Button("Realistic (リアル水面)")) {
+                    SetVisualMode(WaterRenderer.VisualMode.Realistic);
+                    if (profileViewer != null) profileViewer.gameObject.SetActive(false);
+                }
+                if ((simulation != null && simulation.BathymetryTexture != null) || comparisonController != null) {
+                    if (GUILayout.Button("Bathymetry (水深確認)")) {
+                        SetVisualMode(WaterRenderer.VisualMode.Bathymetry);
+                        if (profileViewer != null) profileViewer.gameObject.SetActive(false);
+                    }
+                }
+                if (profileViewer != null || comparisonController != null) {
+                    if (GUILayout.Button("Profile (断面表示)")) {
+                        SetVisualMode(WaterRenderer.VisualMode.Realistic);
+                        if (profileViewer != null) profileViewer.gameObject.SetActive(true);
+                    }
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
                 if (GUILayout.Button("HeightMap")) SetVisualMode(WaterRenderer.VisualMode.HeightMap);
                 if (GUILayout.Button("Normal")) SetVisualMode(WaterRenderer.VisualMode.NormalVisual);
                 if (GUILayout.Button("Wireframe")) SetVisualMode(WaterRenderer.VisualMode.Wireframe);
-                if ((simulation != null && simulation.BathymetryTexture != null) || comparisonController != null) {
-                    if (GUILayout.Button("Bathymetry")) SetVisualMode(WaterRenderer.VisualMode.Bathymetry);
-                }
                 GUILayout.EndHorizontal();
             }
 
@@ -296,11 +313,31 @@ namespace Nobnak.WaterSimulation {
                 GUILayout.Label("<size=9><color=#aaaaaa>※ 方式切り替え時に同一初期条件(t=0)からリセット再生されます</color></size>");
 
                 GUILayout.Space(4);
-                GUILayout.Label("<b>[海底地形 / Bathymetry]</b>");
+                GUILayout.Label("<b>[比較用 地形プリセット / Bathymetry Preset]</b>");
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Flat (平坦)")) boussSim.SetBathymetryType(BoussinesqSimulation.BathymetryType.Flat);
-                if (GUILayout.Button("Shoal (浅瀬・岬)")) boussSim.SetBathymetryType(BoussinesqSimulation.BathymetryType.ShoalAndCape);
-                if (GUILayout.Button("Slope (斜面)")) boussSim.SetBathymetryType(BoussinesqSimulation.BathymetryType.LinearSlope);
+                var curBathy = boussSim.Bathymetry;
+                bool isFlat = (curBathy == BoussinesqSimulation.BathymetryType.Flat);
+                bool isMound = (curBathy == BoussinesqSimulation.BathymetryType.SubmergedMound);
+                bool isShelf = (curBathy == BoussinesqSimulation.BathymetryType.ShallowShelf);
+
+                GUI.color = isFlat ? new Color(0.7f, 1.0f, 0.7f) : Color.white;
+                if (GUILayout.Button(isFlat ? "● A.平坦 (Flat)" : "A.平坦 (Flat)")) {
+                    SwitchBathymetryPreset(boussSim, BoussinesqSimulation.BathymetryType.Flat);
+                }
+                GUI.color = isMound ? new Color(1.0f, 0.85f, 0.6f) : Color.white;
+                if (GUILayout.Button(isMound ? "● B.水中の丘 (Mound)" : "B.水中の丘 (Mound)")) {
+                    SwitchBathymetryPreset(boussSim, BoussinesqSimulation.BathymetryType.SubmergedMound);
+                }
+                GUI.color = isShelf ? new Color(0.8f, 0.8f, 1.0f) : Color.white;
+                if (GUILayout.Button(isShelf ? "● C.浅い棚 (Shelf)" : "C.浅い棚 (Shelf)")) {
+                    SwitchBathymetryPreset(boussSim, BoussinesqSimulation.BathymetryType.ShallowShelf);
+                }
+                GUI.color = Color.white;
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Shoal (浅瀬・岬)")) SwitchBathymetryPreset(boussSim, BoussinesqSimulation.BathymetryType.ShoalAndCape);
+                if (GUILayout.Button("Slope (直線斜面)")) SwitchBathymetryPreset(boussSim, BoussinesqSimulation.BathymetryType.LinearSlope);
                 GUILayout.EndHorizontal();
 
                 if (seabedRenderer != null) {
@@ -334,13 +371,30 @@ namespace Nobnak.WaterSimulation {
                 }
 
                 GUILayout.Space(2);
-                GUILayout.Label("<b>[波源モード / Source Mode]</b>");
+                GUILayout.Label("<b>[比較用 波入力 / Wave Input Preset]</b>");
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Wavemaker")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.ContinuousWavemaker;
-                if (GUILayout.Button("Impulse")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.GaussianPulse;
-                if (GUILayout.Button("Periodic")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.PeriodicPulses;
-                if (GUILayout.Button("Moving")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.MovingSource;
-                if (GUILayout.Button("Mouse")) boussSim.Condition = BoussinesqSimulation.InitialConditionType.InteractiveMouse;
+                bool isPacket = (boussSim.Condition == BoussinesqSimulation.InitialConditionType.SmoothWavePacket);
+                bool isSingleSoliton = (boussSim.Condition == BoussinesqSimulation.InitialConditionType.GaussianPulse &&
+                                        boussSim.ImpulseShape == BoussinesqSimulation.ImpulseShapeType.PlanarSoliton);
+
+                GUI.color = isPacket ? new Color(0.7f, 1.0f, 0.7f) : Color.white;
+                if (GUILayout.Button(isPacket ? "● ①有限波パケット (3波)" : "①有限波パケット (3波)")) {
+                    SwitchWaveInputPreset(boussSim, isPacket: true);
+                }
+                GUI.color = isSingleSoliton ? new Color(1.0f, 0.85f, 0.6f) : Color.white;
+                if (GUILayout.Button(isSingleSoliton ? "● ②単一孤立波パルス" : "②単一孤立波パルス")) {
+                    SwitchWaveInputPreset(boussSim, isPacket: false);
+                }
+                GUI.color = Color.white;
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(2);
+                GUILayout.Label("<b>[通常波源モード / Other Sources]</b>");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("連続造波")) { boussSim.Condition = BoussinesqSimulation.InitialConditionType.ContinuousWavemaker; boussSim.ResetSimulation(); }
+                if (GUILayout.Button("周期パルス")) { boussSim.Condition = BoussinesqSimulation.InitialConditionType.PeriodicPulses; boussSim.ResetSimulation(); }
+                if (GUILayout.Button("移動波源")) { boussSim.Condition = BoussinesqSimulation.InitialConditionType.MovingSource; boussSim.ResetSimulation(); }
+                if (GUILayout.Button("マウス")) { boussSim.Condition = BoussinesqSimulation.InitialConditionType.InteractiveMouse; boussSim.ResetSimulation(); }
                 GUILayout.EndHorizontal();
 
                 if (boussSim.Condition == BoussinesqSimulation.InitialConditionType.ContinuousWavemaker) {
@@ -453,6 +507,32 @@ namespace Nobnak.WaterSimulation {
             if (sim == null || sim.Advection == target) return;
             bool wasRunning = sim.IsRunning;
             sim.Advection = target;
+            sim.ResetSimulation();
+            if (wasRunning) sim.Play();
+            else sim.Pause();
+        }
+
+        private void SwitchBathymetryPreset(BoussinesqSimulation sim, BoussinesqSimulation.BathymetryType target) {
+            if (sim == null) return;
+            bool wasRunning = sim.IsRunning;
+            sim.SetBathymetryType(target);
+            sim.ResetSimulation();
+            if (wasRunning) sim.Play();
+            else sim.Pause();
+        }
+
+        private void SwitchWaveInputPreset(BoussinesqSimulation sim, bool isPacket) {
+            if (sim == null) return;
+            bool wasRunning = sim.IsRunning;
+            if (isPacket) {
+                sim.Condition = BoussinesqSimulation.InitialConditionType.SmoothWavePacket;
+                sim.WavemakerAmplitude = 0.35f;
+                sim.WavemakerFrequency = 0.15f;
+            } else {
+                sim.Condition = BoussinesqSimulation.InitialConditionType.GaussianPulse;
+                sim.ImpulseShape = BoussinesqSimulation.ImpulseShapeType.PlanarSoliton;
+                sim.WavemakerAmplitude = 0.35f;
+            }
             sim.ResetSimulation();
             if (wasRunning) sim.Play();
             else sim.Pause();

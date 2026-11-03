@@ -240,28 +240,57 @@ def generate_svg_timeseries(stations, title, out_filename, y_range=(-0.5, 0.8)):
 
 def main():
     data = load_data()
+    cases_dict = {c["caseId"]: c for c in data.get("cases", [])}
 
     # 1. Generate Animated GIFs
     print("Generating animated comparison GIFs (10 fps, 1.0x physical time)...")
-    create_side_by_side_gif("Case1_StandardWavemaker", "overview", "Scene02_Shoal_Wavemaker_Overview.gif")
-    create_side_by_side_gif("Case1_StandardWavemaker", "closeup", "Scene02_Shoal_Wavemaker_Closeup.gif")
-    create_side_by_side_gif("Case2_SteepPlanarSoliton", "overview", "Scene02_Steep_Soliton_Overview.gif")
-    create_side_by_side_gif("Case2_SteepPlanarSoliton", "closeup", "Scene02_Steep_Soliton_Closeup.gif")
+    # Submerged Mound (Primary visual demonstration)
+    if "CaseB_SubmergedMound_WavePacket" in cases_dict:
+        create_side_by_side_gif("CaseB_SubmergedMound_WavePacket", "overview", "Scene02_Mound_WavePacket_Overview.gif")
+        create_side_by_side_gif("CaseB_SubmergedMound_WavePacket", "closeup", "Scene02_Mound_WavePacket_Closeup.gif")
+
+    # Flat Bed Control
+    if "CaseA_Flat_WavePacket" in cases_dict:
+        create_side_by_side_gif("CaseA_Flat_WavePacket", "overview", "Scene02_Flat_WavePacket_Overview.gif")
+
+    # Shallow Shelf
+    if "CaseC_ShallowShelf_SinglePulse" in cases_dict:
+        create_side_by_side_gif("CaseC_ShallowShelf_SinglePulse", "overview", "Scene02_Shelf_SinglePulse_Overview.gif")
+        create_side_by_side_gif("CaseC_ShallowShelf_SinglePulse", "closeup", "Scene02_Shelf_SinglePulse_Closeup.gif")
+
+    # Shoal and Cape standard / steep
+    if "Case1_StandardWavemaker" in cases_dict:
+        create_side_by_side_gif("Case1_StandardWavemaker", "overview", "Scene02_Shoal_Wavemaker_Overview.gif")
+        create_side_by_side_gif("Case1_StandardWavemaker", "closeup", "Scene02_Shoal_Wavemaker_Closeup.gif")
+    if "Case2_SteepPlanarSoliton" in cases_dict:
+        create_side_by_side_gif("Case2_SteepPlanarSoliton", "overview", "Scene02_Steep_Soliton_Overview.gif")
+        create_side_by_side_gif("Case2_SteepPlanarSoliton", "closeup", "Scene02_Steep_Soliton_Closeup.gif")
 
     # 2. Generate Profile Plots
     print("Generating water surface profile SVG plots...")
-    case1 = data["cases"][0]
-    prof1_t12 = [p for p in case1["profiles"] if abs(p["time"] - 12.0) < 0.2][0]
-    generate_svg_profile(prof1_t12, "Scene 02 Standard Shoal: Center Profile η(z)", "Plot_Scene02_Profiles_Wavemaker.svg", y_range=(-1.0, 0.8))
+    if "CaseB_SubmergedMound_WavePacket" in cases_dict:
+        caseB = cases_dict["CaseB_SubmergedMound_WavePacket"]
+        profB_t8 = [p for p in caseB["profiles"] if abs(p["time"] - 8.0) < 0.2][0]
+        profB_t12 = [p for p in caseB["profiles"] if abs(p["time"] - 12.0) < 0.2][0]
+        generate_svg_profile(profB_t8, "Preset B (Submerged Mound): Centerline Profile η(z)", "Plot_Scene02_Profiles_Mound_t8s.svg", y_range=(-3.8, 1.2))
+        generate_svg_profile(profB_t12, "Preset B (Submerged Mound): Centerline Profile η(z)", "Plot_Scene02_Profiles_Mound_t12s.svg", y_range=(-3.8, 1.2))
 
-    case2 = data["cases"][1]
-    prof2_t12 = [p for p in case2["profiles"] if abs(p["time"] - 12.0) < 0.2][0]
-    generate_svg_profile(prof2_t12, "Steep Solitary Wave Shoaling: Center Profile η(z)", "Plot_Scene02_Profiles_SteepSoliton.svg", y_range=(-1.0, 1.2))
+    if "CaseC_ShallowShelf_SinglePulse" in cases_dict:
+        caseC = cases_dict["CaseC_ShallowShelf_SinglePulse"]
+        profC_t12 = [p for p in caseC["profiles"] if abs(p["time"] - 12.0) < 0.2][0]
+        generate_svg_profile(profC_t12, "Preset C (Shallow Shelf): Centerline Profile η(z)", "Plot_Scene02_Profiles_Shelf_t12s.svg", y_range=(-3.8, 1.2))
+
+    if "CaseA_Flat_WavePacket" in cases_dict:
+        caseA = cases_dict["CaseA_Flat_WavePacket"]
+        profA_t8 = [p for p in caseA["profiles"] if abs(p["time"] - 8.0) < 0.2][0]
+        generate_svg_profile(profA_t8, "Preset A (Flat Bed Control): Centerline Profile η(z)", "Plot_Scene02_Profiles_Flat_t8s.svg", y_range=(-3.8, 1.2))
 
     # 3. Generate Time-series Plots
     print("Generating station time-series SVG plots...")
-    generate_svg_timeseries(case1["stations"], "Scene 02 Standard Shoal: Station Time Series η(t)", "Plot_Scene02_TimeSeries_Wavemaker.svg", y_range=(-0.4, 0.6))
-    generate_svg_timeseries(case2["stations"], "Steep Solitary Wave Shoaling: Station Time Series η(t)", "Plot_Scene02_TimeSeries_SteepSoliton.svg", y_range=(-0.5, 0.9))
+    if "CaseB_SubmergedMound_WavePacket" in cases_dict:
+        generate_svg_timeseries(cases_dict["CaseB_SubmergedMound_WavePacket"]["stations"], "Preset B (Submerged Mound): Station Time Series η(t)", "Plot_Scene02_TimeSeries_Mound.svg", y_range=(-0.5, 0.7))
+    if "CaseC_ShallowShelf_SinglePulse" in cases_dict:
+        generate_svg_timeseries(cases_dict["CaseC_ShallowShelf_SinglePulse"]["stations"], "Preset C (Shallow Shelf): Station Time Series η(t)", "Plot_Scene02_TimeSeries_Shelf.svg", y_range=(-0.5, 0.8))
 
     print("All comparison artifacts successfully generated and copied to artifact directory!")
 

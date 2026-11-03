@@ -122,6 +122,14 @@ namespace Nobnak.WaterSimulation.Editor {
             var mat = CreateWaterMaterial();
             renderer.WaterMaterial = mat;
 
+            var profGO = new GameObject("ProfileViewer");
+            profGO.transform.SetParent(waterGO.transform, false);
+            var prof = profGO.AddComponent<WaterProfileViewer>();
+            prof.Configure(sim, WaterProfileViewer.ProfileAxis.ZAxis, 0.5f);
+            prof.VerticalScale = 4.0f;
+            prof.transform.position = waterGO.transform.position + new Vector3(0f, 2f, 0f);
+            profGO.SetActive(false); // Initially hidden, toggleable via UI Display Mode
+
             var uiGO = new GameObject("SampleUI");
             var ui = uiGO.AddComponent<WaterSampleUI>();
             var soUI = new SerializedObject(ui);
@@ -133,6 +141,7 @@ namespace Nobnak.WaterSimulation.Editor {
             soUI.FindProperty("waterRenderer").objectReferenceValue = renderer;
             soUI.FindProperty("seabedRenderer").objectReferenceValue = seabedRenderer;
             soUI.FindProperty("cameraController").objectReferenceValue = cam.GetComponent<SimpleCameraController>();
+            soUI.FindProperty("profileViewer").objectReferenceValue = prof;
             soUI.ApplyModifiedProperties();
 
             string path = $"{SceneOutputDir}/02_Boussinesq.unity";

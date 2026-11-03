@@ -15,7 +15,9 @@ namespace Nobnak.WaterSimulation {
             Flat = 0,
             ShoalAndCape = 1,
             LinearSlope = 2,
-            CustomTexture = 3
+            CustomTexture = 3,
+            SubmergedMound = 4,
+            ShallowShelf = 5
         }
 
         public enum InitialConditionType {
@@ -24,7 +26,8 @@ namespace Nobnak.WaterSimulation {
             GaussianPulse = 2,
             PeriodicPulses = 3,
             MovingSource = 4,
-            InteractiveMouse = 5
+            InteractiveMouse = 5,
+            SmoothWavePacket = 6
         }
 
         public enum ImpulseShapeType {
@@ -229,7 +232,7 @@ namespace Nobnak.WaterSimulation {
         /// </summary>
         public float EstimatedWavelength {
             get {
-                if (initialCondition == InitialConditionType.ContinuousWavemaker && wavemakerFrequency > 1e-4f) {
+                if ((initialCondition == InitialConditionType.ContinuousWavemaker || initialCondition == InitialConditionType.SmoothWavePacket) && wavemakerFrequency > 1e-4f) {
                     float c0 = math.sqrt(Gravity * math.max(0.2f, deepWaterDepth));
                     return c0 / wavemakerFrequency;
                 }
@@ -366,7 +369,18 @@ namespace Nobnak.WaterSimulation {
             float dx = areaSize.x / resolution.x;
             float dz = areaSize.y / resolution.y;
             int wavemakerY = (int)(resolution.y * wavemakerLocationNorm);
-            float activeAmp = (initialCondition == InitialConditionType.ContinuousWavemaker) ? wavemakerAmplitude : 0f;
+            float packetDuration = 3.0f / math.max(0.01f, wavemakerFrequency);
+            float activeAmp = 0f;
+            if (initialCondition == InitialConditionType.ContinuousWavemaker) {
+                activeAmp = wavemakerAmplitude;
+            } else if (initialCondition == InitialConditionType.SmoothWavePacket) {
+                if (simulationTime < packetDuration) {
+                    float window = math.sin(math.PI * simulationTime / packetDuration);
+                    activeAmp = wavemakerAmplitude * window * window;
+                } else {
+                    activeAmp = 0f;
+                }
+            }
 
             boussinesqShader.SetInt(PropWidth, resolution.x);
             boussinesqShader.SetInt(PropHeight, resolution.y);
@@ -471,7 +485,7 @@ namespace Nobnak.WaterSimulation {
                 isCutoff = false
             };
 
-            if (initialCondition != InitialConditionType.ContinuousWavemaker) {
+            if (initialCondition != InitialConditionType.ContinuousWavemaker && initialCondition != InitialConditionType.SmoothWavePacket) {
                 diag.status = DispersionStatus.Unevaluated;
                 if (initialCondition == InitialConditionType.GaussianPulse || initialCondition == InitialConditionType.PeriodicPulses) {
                     float minDim = math.min(areaSize.x, areaSize.y);
@@ -799,7 +813,7 @@ namespace Nobnak.WaterSimulation {
                 }
             }
 
-            if (initialCondition == InitialConditionType.ContinuousWavemaker) {
+            if (initialCondition == InitialConditionType.ContinuousWavemaker || initialCondition == InitialConditionType.SmoothWavePacket) {
                 wavemakerPhase += 2.0f * math.PI * wavemakerFrequency * subDt;
             } else {
                 ApplySourceExcitation(next, subDt);
@@ -957,6 +971,25 @@ namespace Nobnak.WaterSimulation {
                         depth = math.lerp(baseSlope, shoalDepth, shoalFactor * 0.75f);
                         depth = math.lerp(depth, shallowWaterDepth * 0.5f, capeFactor * 0.85f);
                         depth = math.max(0.5f, depth);
+                    } else if (bathymetryMode == BathymetryType.SubmergedMound) {
+                        // Smooth submerged symmetric Gaussian mound centered at (0.5, 0.45)
+                        // Deep water depth deepWaterDepth (e.g. 3.5m), minimum mound crest depth shallowWaterDepth (e.g. 1.0m)
+                        float moundHeight = math.max(0f, deepWaterDepth - shallowWaterDepth);
+                        float2 center = new float2(0.5f, 0.45f);
+                        float2 diff = new float2((nx - center.x) * areaSize.x, (ny - center.y) * areaSize.y);
+                        float r2 = diff.x * diff.x + diff.y * diff.y;
+                        float moundSigma = 15.0f; // 15m radius spread
+                        float moundZ = moundHeight * math.exp(-r2 / (2.0f * moundSigma * moundSigma));
+                        depth = math.max(0.2f, deepWaterDepth - moundZ);
+                    } else if (bathymetryMode == BathymetryType.ShallowShelf) {
+                        // Smooth shelf: deep plateau (z < 30m), smooth slope transition (30m <= z <= 55m), shallow plateau (z > 55m)
+                        float zWorld = ny * areaSize.y;
+                        float slopeStart = 30.0f;
+                        float slopeEnd = 55.0f;
+                        float tShelf = math.saturate((zWorld - slopeStart) / (slopeEnd - slopeStart));
+                        // Smooth cubic Hermite step
+                        float s = tShelf * tShelf * (3.0f - 2.0f * tShelf);
+                        depth = math.lerp(deepWaterDepth, shallowWaterDepth, s);
                     } else if (bathymetryMode == BathymetryType.CustomTexture && customBathymetryTexture != null) {
                         float t = customBathymetryTexture.GetPixelBilinear(nx, ny).r;
                         depth = math.max(0.5f, math.lerp(shallowWaterDepth, deepWaterDepth, t));

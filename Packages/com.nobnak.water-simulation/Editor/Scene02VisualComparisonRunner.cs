@@ -56,6 +56,9 @@ namespace Nobnak.WaterSimulation.Editor {
             public float pulseInterval;
             public string initialCondition;
             public string impulseShape;
+            public string bathymetry;
+            public float deepDepth;
+            public float shallowDepth;
             public double baselineWallClockTimeMs;
             public double minmodWallClockTimeMs;
             public List<StationTimeSeriesData> stations = new List<StationTimeSeriesData>();
@@ -133,11 +136,65 @@ namespace Nobnak.WaterSimulation.Editor {
                 note = "Visual and quantitative profile comparison on Scene 02 Shoal & Cape under identical conditions."
             };
 
-            // Test Case 1: Scene 02 Standard Default (Continuous Wavemaker on Shoal and Cape)
+            // Case A: Flat Bed Control (Baseline vs Minmod, 3-cycle Wave Packet)
+            report.cases.Add(RunSingleComparisonCase(
+                caseId: "CaseA_Flat_WavePacket",
+                caseName: "Preset A: Flat Bed Control (3-Cycle Packet)",
+                description: "Flat horizontal bed (h=3.5m constant). Control experiment verifying straight planar wave propagation without refraction or depth shoaling.",
+                bathy: BoussinesqSimulation.BathymetryType.Flat,
+                deepDepth: 3.5f,
+                shallowDepth: 3.5f,
+                cond: BoussinesqSimulation.InitialConditionType.SmoothWavePacket,
+                shape: BoussinesqSimulation.ImpulseShapeType.PlanarSoliton,
+                amp: 0.35f,
+                freq: 0.15f,
+                pulseInterval: 4.5f,
+                duration: 16.0f,
+                dtStep: 0.0333333f
+            ));
+
+            // Case B: Submerged Mound (Baseline vs Minmod, 3-cycle Wave Packet) [Primary Focus]
+            report.cases.Add(RunSingleComparisonCase(
+                caseId: "CaseB_SubmergedMound_WavePacket",
+                caseName: "Preset B: Submerged Mound (3-Cycle Packet)",
+                description: "Submerged smooth symmetric Gaussian mound (crest h=1.0m, deep h=3.5m, sigma=15m). Demonstrates wave crest refraction, central retardation, and downstream caustic wave convergence.",
+                bathy: BoussinesqSimulation.BathymetryType.SubmergedMound,
+                deepDepth: 3.5f,
+                shallowDepth: 1.0f,
+                cond: BoussinesqSimulation.InitialConditionType.SmoothWavePacket,
+                shape: BoussinesqSimulation.ImpulseShapeType.PlanarSoliton,
+                amp: 0.35f,
+                freq: 0.15f,
+                pulseInterval: 4.5f,
+                duration: 16.0f,
+                dtStep: 0.0333333f
+            ));
+
+            // Case C: Shallow Shelf (Baseline vs Minmod, Single Broad Pulse) [Exploratory Focus]
+            report.cases.Add(RunSingleComparisonCase(
+                caseId: "CaseC_ShallowShelf_SinglePulse",
+                caseName: "Preset C: Shallow Shelf (Single Solitary Pulse)",
+                description: "Shallow shelf bathymetry (deep h=3.5m, slope z=30..55m, shelf h=1.0m). Demonstrates solitary wave steepening, wavelength compression, and trailing dispersive tail evolution.",
+                bathy: BoussinesqSimulation.BathymetryType.ShallowShelf,
+                deepDepth: 3.5f,
+                shallowDepth: 1.0f,
+                cond: BoussinesqSimulation.InitialConditionType.GaussianPulse,
+                shape: BoussinesqSimulation.ImpulseShapeType.PlanarSoliton,
+                amp: 0.40f,
+                freq: 0.15f,
+                pulseInterval: 6.0f,
+                duration: 16.0f,
+                dtStep: 0.0333333f
+            ));
+
+            // Case 1 Legacy/Standard: Scene 02 Shoal & Cape (Continuous Wavemaker)
             report.cases.Add(RunSingleComparisonCase(
                 caseId: "Case1_StandardWavemaker",
                 caseName: "Scene 02 Standard Shoal (Continuous Wavemaker)",
                 description: "Standard Scene 02 configuration: Continuous wavemaker (f=0.15Hz, amp=0.35m) entering Shoal and Cape bathymetry.",
+                bathy: BoussinesqSimulation.BathymetryType.ShoalAndCape,
+                deepDepth: 3.5f,
+                shallowDepth: 0.8f,
                 cond: BoussinesqSimulation.InitialConditionType.ContinuousWavemaker,
                 shape: BoussinesqSimulation.ImpulseShapeType.PlanarSoliton,
                 amp: 0.35f,
@@ -147,11 +204,14 @@ namespace Nobnak.WaterSimulation.Editor {
                 dtStep: 0.0333333f
             ));
 
-            // Test Case 2: Steep Planar Solitary Wave (High-amplitude shoaling steepness & wave-train condition)
+            // Case 2 Legacy/Standard: Steep Planar Solitary Wave Shoaling
             report.cases.Add(RunSingleComparisonCase(
                 caseId: "Case2_SteepPlanarSoliton",
                 caseName: "Steep Planar Solitary Wave Shoaling",
                 description: "Steep solitary wave shoaling (amp=0.60m, interval=6.0s) examining wave crest peaking, trailing oscillation, and high-frequency roughness.",
+                bathy: BoussinesqSimulation.BathymetryType.ShoalAndCape,
+                deepDepth: 3.5f,
+                shallowDepth: 0.8f,
                 cond: BoussinesqSimulation.InitialConditionType.PeriodicPulses,
                 shape: BoussinesqSimulation.ImpulseShapeType.PlanarSoliton,
                 amp: 0.60f,
@@ -169,6 +229,7 @@ namespace Nobnak.WaterSimulation.Editor {
 
         private static TestCaseVisualData RunSingleComparisonCase(
             string caseId, string caseName, string description,
+            BoussinesqSimulation.BathymetryType bathy, float deepDepth, float shallowDepth,
             BoussinesqSimulation.InitialConditionType cond,
             BoussinesqSimulation.ImpulseShapeType shape,
             float amp, float freq, float pulseInterval, float duration, float dtStep) {
@@ -183,7 +244,10 @@ namespace Nobnak.WaterSimulation.Editor {
                 wavemakerFrequency = freq,
                 pulseInterval = pulseInterval,
                 initialCondition = cond.ToString(),
-                impulseShape = shape.ToString()
+                impulseShape = shape.ToString(),
+                bathymetry = bathy.ToString(),
+                deepDepth = deepDepth,
+                shallowDepth = shallowDepth
             };
 
             // Setup station definitions: z = 15m (deep offshore), 45m (slope toe), 70m (shallow shoal)
@@ -206,6 +270,7 @@ namespace Nobnak.WaterSimulation.Editor {
             UnityEngine.Debug.Log($"[Scene02VisualComparison] Running {caseId} - Baseline (1st-Order Upwind)...");
             caseData.baselineWallClockTimeMs = RunSimulationTrajectory(
                 caseId, BoussinesqSimulation.AdvectionType.FirstOrderUpwind, "Baseline",
+                bathy, deepDepth, shallowDepth,
                 cond, shape, amp, freq, pulseInterval, duration, dtStep,
                 caseData.stations, caseData.profiles, isMinmod: false,
                 caseData.frameFilesBaselineOverview, caseData.frameFilesBaselineCloseup
@@ -215,6 +280,7 @@ namespace Nobnak.WaterSimulation.Editor {
             UnityEngine.Debug.Log($"[Scene02VisualComparison] Running {caseId} - Candidate (Minmod TVD)...");
             caseData.minmodWallClockTimeMs = RunSimulationTrajectory(
                 caseId, BoussinesqSimulation.AdvectionType.MinmodTVD, "Minmod",
+                bathy, deepDepth, shallowDepth,
                 cond, shape, amp, freq, pulseInterval, duration, dtStep,
                 caseData.stations, caseData.profiles, isMinmod: true,
                 caseData.frameFilesMinmodOverview, caseData.frameFilesMinmodCloseup
@@ -225,6 +291,7 @@ namespace Nobnak.WaterSimulation.Editor {
 
         private static double RunSimulationTrajectory(
             string caseId, BoussinesqSimulation.AdvectionType advType, string advTag,
+            BoussinesqSimulation.BathymetryType bathy, float deepDepth, float shallowDepth,
             BoussinesqSimulation.InitialConditionType cond,
             BoussinesqSimulation.ImpulseShapeType shape,
             float amp, float freq, float pulseInterval, float duration, float dtStep,
@@ -249,9 +316,9 @@ namespace Nobnak.WaterSimulation.Editor {
             boussSim.WavemakerFrequency = freq;
             boussSim.PulseInterval = pulseInterval;
             boussSim.DispersionAlpha = 1.0f;
-            boussSim.Bathymetry = BoussinesqSimulation.BathymetryType.ShoalAndCape;
-            boussSim.DeepWaterDepth = 3.5f;
-            boussSim.ShallowWaterDepth = 0.8f;
+            boussSim.Bathymetry = bathy;
+            boussSim.DeepWaterDepth = deepDepth;
+            boussSim.ShallowWaterDepth = shallowDepth;
             boussSim.SideWallSponge = false;
             boussSim.ResetSimulation();
 
