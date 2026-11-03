@@ -294,21 +294,21 @@ namespace Nobnak.WaterSimulation {
                 bool isBaseline = (currentAdv == BoussinesqSimulation.AdvectionType.FirstOrderUpwind);
                 bool isMinmod = (currentAdv == BoussinesqSimulation.AdvectionType.MinmodTVD);
 
-                GUI.color = isBaseline ? new Color(0.7f, 1.0f, 0.7f) : Color.white;
-                if (GUILayout.Button(isBaseline ? "● Baseline (1次風上)" : "Baseline (1次風上)")) {
-                    if (!isBaseline) SwitchBoussinesqAdvection(boussSim, BoussinesqSimulation.AdvectionType.FirstOrderUpwind);
+                GUI.color = isMinmod ? new Color(0.7f, 1.0f, 0.7f) : Color.white;
+                if (GUILayout.Button(isMinmod ? "● Minmod (2次TVD・標準)" : "Minmod (2次TVD・標準)")) {
+                    if (!isMinmod) SwitchBoussinesqAdvection(boussSim, BoussinesqSimulation.AdvectionType.MinmodTVD);
                 }
 
-                GUI.color = isMinmod ? new Color(1.0f, 0.85f, 0.6f) : Color.white;
-                if (GUILayout.Button(isMinmod ? "● Minmod (比較用)" : "Minmod (比較用)")) {
-                    if (!isMinmod) SwitchBoussinesqAdvection(boussSim, BoussinesqSimulation.AdvectionType.MinmodTVD);
+                GUI.color = isBaseline ? new Color(1.0f, 0.85f, 0.6f) : Color.white;
+                if (GUILayout.Button(isBaseline ? "● Baseline (1次風上・比較用)" : "Baseline (1次風上・比較用)")) {
+                    if (!isBaseline) SwitchBoussinesqAdvection(boussSim, BoussinesqSimulation.AdvectionType.FirstOrderUpwind);
                 }
                 GUI.color = Color.white;
                 GUILayout.EndHorizontal();
 
-                string advStatus = isBaseline
-                    ? "<color=#80d0ff>選択中: <b>Baseline (1次風上)</b> [通常設定・安定性優先]</color>"
-                    : "<color=#ffd080>選択中: <b>Minmod (2次TVD)</b> [検証用候補・波高改善/高周波振動トレードオフ]</color>";
+                string advStatus = isMinmod
+                    ? "<color=#80d0ff>選択中: <b>Minmod (2次TVD)</b> [通常設定・波高保持優先]</color>"
+                    : "<color=#ffd080>選択中: <b>Baseline (1次風上)</b> [比較用・数値拡散強/平滑性優先]</color>";
                 GUILayout.Label($"<size=10>{advStatus}</size>");
                 GUILayout.Label("<size=9><color=#aaaaaa>※ 方式切り替え時に同一初期条件(t=0)からリセット再生されます</color></size>");
 

@@ -72,7 +72,7 @@ namespace Nobnak.WaterSimulation.Editor {
         [Serializable]
         public class InteractiveVerificationResult {
             public bool allPassed;
-            public bool baselineInitialVerified;
+            public bool defaultInitialVerified;
             public bool switchResetsSimulationTime;
             public bool switchMaintainsRunningState;
             public bool switchUpdatesAdvectionMode;
@@ -473,30 +473,30 @@ namespace Nobnak.WaterSimulation.Editor {
                 return res;
             }
 
-            // 1. Initial configuration check: Advection must be FirstOrderUpwind (Baseline)
-            res.baselineInitialVerified = (sim.Advection == BoussinesqSimulation.AdvectionType.FirstOrderUpwind);
+            // 1. Initial configuration check: Advection must be MinmodTVD (New Default)
+            res.defaultInitialVerified = (sim.Advection == BoussinesqSimulation.AdvectionType.MinmodTVD);
 
             // Run 5 steps
             sim.Play();
             for (int i = 0; i < 5; i++) sim.Step(0.0333f);
 
-            // 2. Switch to MinmodTVD via reflection on WaterSampleUI.SwitchBoussinesqAdvection
+            // 2. Switch to FirstOrderUpwind via reflection on WaterSampleUI.SwitchBoussinesqAdvection
             var switchMethod = typeof(WaterSampleUI).GetMethod("SwitchBoussinesqAdvection",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             if (switchMethod != null) {
-                switchMethod.Invoke(ui, new object[] { sim, BoussinesqSimulation.AdvectionType.MinmodTVD });
+                switchMethod.Invoke(ui, new object[] { sim, BoussinesqSimulation.AdvectionType.FirstOrderUpwind });
             } else {
-                sim.Advection = BoussinesqSimulation.AdvectionType.MinmodTVD;
+                sim.Advection = BoussinesqSimulation.AdvectionType.FirstOrderUpwind;
                 sim.ResetSimulation();
             }
 
             res.switchResetsSimulationTime = (sim.SimulationTime == 0.0f);
             res.switchMaintainsRunningState = sim.IsRunning;
-            res.switchUpdatesAdvectionMode = (sim.Advection == BoussinesqSimulation.AdvectionType.MinmodTVD);
+            res.switchUpdatesAdvectionMode = (sim.Advection == BoussinesqSimulation.AdvectionType.FirstOrderUpwind);
 
-            // Step forward with Minmod
+            // Step forward with FirstOrderUpwind
             for (int i = 0; i < 10; i++) sim.Step(0.0333f);
-            float timeAfterMinmodSteps = sim.SimulationTime;
+            float timeAfterSteps = sim.SimulationTime;
 
             // 3. Pause
             sim.Pause();
@@ -508,9 +508,9 @@ namespace Nobnak.WaterSimulation.Editor {
             sim.Step(0.0333f);
             res.playResumesSimulationTime = (sim.SimulationTime > timeAtPause);
 
-            // 5. Normal Reset (must retain selected MinmodTVD mode)
+            // 5. Normal Reset (must retain selected FirstOrderUpwind mode)
             sim.ResetSimulation();
-            res.normalResetRetainsSelectedMode = (sim.SimulationTime == 0.0f && sim.Advection == BoussinesqSimulation.AdvectionType.MinmodTVD);
+            res.normalResetRetainsSelectedMode = (sim.SimulationTime == 0.0f && sim.Advection == BoussinesqSimulation.AdvectionType.FirstOrderUpwind);
 
             // 6. Check finite values in WaterDataTexture
             var req = AsyncGPUReadback.Request(sim.WaterDataTexture);
@@ -528,16 +528,16 @@ namespace Nobnak.WaterSimulation.Editor {
             }
             res.noNaNOrInfDetected = finite;
 
-            // Restore Baseline default and reset scene state
-            sim.Advection = BoussinesqSimulation.AdvectionType.FirstOrderUpwind;
+            // Restore MinmodTVD default and reset scene state
+            sim.Advection = BoussinesqSimulation.AdvectionType.MinmodTVD;
             sim.ResetSimulation();
 
-            res.allPassed = res.baselineInitialVerified && res.switchResetsSimulationTime &&
+            res.allPassed = res.defaultInitialVerified && res.switchResetsSimulationTime &&
                             res.switchMaintainsRunningState && res.switchUpdatesAdvectionMode &&
                             res.pauseStopsSimulationTime && res.playResumesSimulationTime &&
                             res.normalResetRetainsSelectedMode && res.noNaNOrInfDetected;
 
-            res.details = $"BaselineInitial={res.baselineInitialVerified}, SwitchResetsTime={res.switchResetsSimulationTime}, " +
+            res.details = $"DefaultInitial={res.defaultInitialVerified}, SwitchResetsTime={res.switchResetsSimulationTime}, " +
                           $"SwitchMaintainsRun={res.switchMaintainsRunningState}, ModeUpdated={res.switchUpdatesAdvectionMode}, " +
                           $"Pause={res.pauseStopsSimulationTime}, Play={res.playResumesSimulationTime}, " +
                           $"NormalResetRetainsMode={res.normalResetRetainsSelectedMode}, FiniteOutputs={res.noNaNOrInfDetected}";

@@ -45,7 +45,7 @@ cbuffer SimParams {
     int _StepParity;         // Alternating 0 / 1 for Symmetric MacCormack (F-B / B-F)
     int _SideWallSponge;     // 1 = Sponge on all 4 borders, 0 = Lateral reflective slip walls (flume)
     float _DisableSlopeDissipation; // 0.0 = enabled (default), 1.0 = disabled (benchmark/isolation)
-    int _AdvectionMode;             // 0 = FirstOrderUpwind (baseline), 1 = MinmodTVD (candidate)
+    int _AdvectionMode;             // 0 = FirstOrderUpwind (legacy baseline / comparison), 1 = MinmodTVD (default)
     float2 _PadSimParams;
 };
 

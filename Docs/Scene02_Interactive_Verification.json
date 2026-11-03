@@ -1,6 +1,6 @@
 ﻿{
     "allPassed": true,
-    "baselineInitialVerified": true,
+    "defaultInitialVerified": true,
     "switchResetsSimulationTime": true,
     "switchMaintainsRunningState": true,
     "switchUpdatesAdvectionMode": true,
@@ -8,5 +8,5 @@
     "playResumesSimulationTime": true,
     "normalResetRetainsSelectedMode": true,
     "noNaNOrInfDetected": true,
-    "details": "BaselineInitial=True, SwitchResetsTime=True, SwitchMaintainsRun=True, ModeUpdated=True, Pause=True, Play=True, NormalResetRetainsMode=True, FiniteOutputs=True"
+    "details": "DefaultInitial=True, SwitchResetsTime=True, SwitchMaintainsRun=True, ModeUpdated=True, Pause=True, Play=True, NormalResetRetainsMode=True, FiniteOutputs=True"
 }

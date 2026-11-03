@@ -108,6 +108,7 @@ namespace Nobnak.WaterSimulation.Editor {
             so.FindProperty("boussinesqShader").objectReferenceValue = compute;
             so.FindProperty("areaSize").vector2Value = new Vector2(100f, 100f);
             so.FindProperty("resolution").vector2IntValue = new Vector2Int(512, 512);
+            so.FindProperty("advectionMode").enumValueIndex = (int)BoussinesqSimulation.AdvectionType.MinmodTVD;
             so.FindProperty("dispersionAlpha").floatValue = 1.0f;
             so.FindProperty("bathymetryMode").enumValueIndex = (int)BoussinesqSimulation.BathymetryType.ShoalAndCape;
             so.FindProperty("deepWaterDepth").floatValue = 3.5f;
@@ -135,7 +136,7 @@ namespace Nobnak.WaterSimulation.Editor {
             var soUI = new SerializedObject(ui);
             soUI.FindProperty("sampleTitle").stringValue = "02 Boussinesq Model - Shoal and Cape";
             soUI.FindProperty("whatToObserve").stringValue = "沖合から進入した波列・孤立波が、斜めの浅瀬（エメラルド透過色）で水深 h に応じた波速減速（c ~ sqrt(gh)）により屈折（Refraction）し波長が短縮する現象（Shoaling）、および岬の先端に波エネルギーが集中して波高が増大する現象。";
-            soUI.FindProperty("whatCanBeControlled").stringValue = "対流方式（Baseline 1次風上 / Minmod 2次TVD・比較用）、海底地形（平坦/浅瀬と岬/斜面）、波源モード（連続造波/単発インパルス/周期パルス/移動波源/マウスクリック）、波形（平面孤立波/円形波）、分散係数 alpha、振幅・周波数・インターバル、Bathymetry水深マップ表示。";
+            soUI.FindProperty("whatCanBeControlled").stringValue = "対流方式（Minmod 2次TVD・標準 / Baseline 1次風上・比較用）、海底地形（平坦/浅瀬と岬/斜面）、波源モード（連続造波/単発インパルス/周期パルス/移動波源/マウスクリック）、波形（平面孤立波/円形波）、分散係数 alpha、振幅・周波数・インターバル、Bathymetry水深マップ表示。";
             soUI.FindProperty("scopeAndLimitations").stringValue = "深さ平均モデルのため、砕波による波頭の巻き込み（Plunging breaker）や飛沫・気泡の3D流体計算は含まれません。強い非線形浅水変形（BP05 Case B等）において波高を過小評価する既知の精度限界があり、定量的な分裂波高の再現は保証されません。";
             soUI.FindProperty("simulation").objectReferenceValue = sim;
             soUI.FindProperty("waterRenderer").objectReferenceValue = renderer;

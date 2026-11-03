@@ -59,7 +59,7 @@ namespace Nobnak.WaterSimulation {
         [SerializeField] private FilterType filterMode = FilterType.DirectionalSplit;
 
         [Tooltip("Convective velocity advection mode in momentum equations.")]
-        [SerializeField] private AdvectionType advectionMode = AdvectionType.FirstOrderUpwind;
+        [SerializeField] private AdvectionType advectionMode = AdvectionType.MinmodTVD;
 
         [Tooltip("Bed friction / bottom drag coefficient.")]
         [Range(0f, 0.1f)]
