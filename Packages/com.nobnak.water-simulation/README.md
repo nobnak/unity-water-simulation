@@ -9,6 +9,15 @@ A comprehensive Unity Universal Render Pipeline (URP) UPM package providing 3 in
 
 Designed to let developers, technical artists, and researchers compare visual fidelity, runtime performance, and interactive capabilities to choose the right method for their project.
 
+## Video Demos
+
+Demonstration videos for each sample scene (click thumbnail to watch on YouTube):
+
+| Scene 01: 2D Wave Equation | Scene 02: Boussinesq Shallow Water | Scene 03: Spectral / FFT Ocean |
+| :---: | :---: | :---: |
+| [![Wave Equation Demo](https://img.youtube.com/vi/s7Eb2UlgJVc/maxresdefault.jpg)](https://youtu.be/s7Eb2UlgJVc) | [![Boussinesq Demo](https://img.youtube.com/vi/1DWCYRkK0RM/maxresdefault.jpg)](https://youtu.be/1DWCYRkK0RM) | [![FFT Ocean Demo](https://img.youtube.com/vi/j2twZkyc68E/maxresdefault.jpg)](https://youtu.be/j2twZkyc68E) |
+| [Wave Equation (YouTube)](https://youtu.be/s7Eb2UlgJVc)<br>Diffraction, interference & ripples | [Boussinesq (YouTube)](https://youtu.be/1DWCYRkK0RM)<br>Refraction, shoaling & caustic focusing | [FFT Ocean (YouTube)](https://youtu.be/j2twZkyc68E)<br>Swell, wind-sea & choppy crests |
+
 > [!TIP]
 > - **Complete Algorithm, Numerical Methods, and Performance Estimation Specification**: [Docs/WaterSimulation_Algorithm_And_Performance_Spec.md](../../Docs/WaterSimulation_Algorithm_And_Performance_Spec.md)
 > - **Comprehensive Technical Investigation & Discussion Archive**: [Docs/WaterSimulation_Technical_Archive.md](../../Docs/WaterSimulation_Technical_Archive.md)

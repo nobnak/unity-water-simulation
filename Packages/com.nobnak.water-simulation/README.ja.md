@@ -6,6 +6,15 @@
 
 利用者が各方式の表現特性、操作性、計算負荷の違いを確認し、制作要件（波紋、沿岸波、大洋うねり）に最適な方式を選択・導入できるように設計されています。
 
+## デモ動画 / Video Demos
+
+各シーンの動作デモ映像です（画像クリックでYouTube再生）。
+
+| シーン01: 2D線形波動方程式 | シーン02: Boussinesq系浅水波 | シーン03: スペクトル／FFT海面 |
+| :---: | :---: | :---: |
+| [![波動方程式 デモ](https://img.youtube.com/vi/s7Eb2UlgJVc/maxresdefault.jpg)](https://youtu.be/s7Eb2UlgJVc) | [![浅水波 デモ](https://img.youtube.com/vi/1DWCYRkK0RM/maxresdefault.jpg)](https://youtu.be/1DWCYRkK0RM) | [![FFT海面 デモ](https://img.youtube.com/vi/j2twZkyc68E/maxresdefault.jpg)](https://youtu.be/j2twZkyc68E) |
+| [波動方程式 (YouTube)](https://youtu.be/s7Eb2UlgJVc)<br>スリット回折・干渉・波紋 | [浅水波 (YouTube)](https://youtu.be/1DWCYRkK0RM)<br>地形による屈折・波長短縮・集中 | [FFT海面 (YouTube)](https://youtu.be/j2twZkyc68E)<br>うねり・風波・チョッピー波頭 |
+
 > [!TIP]
 > - **アルゴリズム・数値計算法・性能見積もりの完全仕様書**: [Docs/WaterSimulation_Algorithm_And_Performance_Spec.ja.md](../../Docs/WaterSimulation_Algorithm_And_Performance_Spec.ja.md)
 > - **技術検討・議論アーカイブ総合資料**: [Docs/WaterSimulation_Technical_Archive.ja.md](../../Docs/WaterSimulation_Technical_Archive.ja.md)

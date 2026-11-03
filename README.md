@@ -6,6 +6,15 @@ A Unity UPM package and comparison framework providing 3 independent water surfa
 
 The UPM package is located at [`Packages/com.nobnak.water-simulation`](Packages/com.nobnak.water-simulation).
 
+## Video Demos
+
+Demonstration videos for each sample scene (click thumbnail to watch on YouTube):
+
+| Scene 01: 2D Wave Equation | Scene 02: Boussinesq Shallow Water | Scene 03: Spectral / FFT Ocean |
+| :---: | :---: | :---: |
+| [![Wave Equation Demo](https://img.youtube.com/vi/s7Eb2UlgJVc/maxresdefault.jpg)](https://youtu.be/s7Eb2UlgJVc) | [![Boussinesq Demo](https://img.youtube.com/vi/1DWCYRkK0RM/maxresdefault.jpg)](https://youtu.be/1DWCYRkK0RM) | [![FFT Ocean Demo](https://img.youtube.com/vi/j2twZkyc68E/maxresdefault.jpg)](https://youtu.be/j2twZkyc68E) |
+| [Wave Equation (YouTube)](https://youtu.be/s7Eb2UlgJVc)<br>Diffraction, interference & ripples | [Boussinesq (YouTube)](https://youtu.be/1DWCYRkK0RM)<br>Refraction, shoaling & caustic focusing | [FFT Ocean (YouTube)](https://youtu.be/j2twZkyc68E)<br>Swell, wind-sea & choppy crests |
+
 ## Key Features
 1. **2D Linear Wave Equation (`WaveEquationSimulation`)**:
    - Lightweight, high-responsiveness ripple simulation using a 9-point isotropic Laplacian stencil and `fp32` (`RGFloat`) symplectic Euler (kick-drift) time-stepping with centered half-step Cayley damping.

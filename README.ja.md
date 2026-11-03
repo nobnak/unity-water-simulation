@@ -6,6 +6,15 @@
 
 UPMパッケージ本体は [`Packages/com.nobnak.water-simulation`](Packages/com.nobnak.water-simulation) に配置されています。
 
+## デモ動画 / Video Demos
+
+各シーンの動作デモ映像です（画像クリックでYouTube再生）。
+
+| シーン01: 2D線形波動方程式 | シーン02: Boussinesq系浅水波 | シーン03: スペクトル／FFT海面 |
+| :---: | :---: | :---: |
+| [![波動方程式 デモ](https://img.youtube.com/vi/s7Eb2UlgJVc/maxresdefault.jpg)](https://youtu.be/s7Eb2UlgJVc) | [![浅水波 デモ](https://img.youtube.com/vi/1DWCYRkK0RM/maxresdefault.jpg)](https://youtu.be/1DWCYRkK0RM) | [![FFT海面 デモ](https://img.youtube.com/vi/j2twZkyc68E/maxresdefault.jpg)](https://youtu.be/j2twZkyc68E) |
+| [波動方程式 (YouTube)](https://youtu.be/s7Eb2UlgJVc)<br>スリット回折・干渉・波紋 | [浅水波 (YouTube)](https://youtu.be/1DWCYRkK0RM)<br>地形による屈折・波長短縮・集中 | [FFT海面 (YouTube)](https://youtu.be/j2twZkyc68E)<br>うねり・風波・チョッピー波頭 |
+
 ## 特徴
 1. **2D線形波動方程式 (`WaveEquationSimulation`)**:
    - 9点等方ラプラシアン＋`fp32` (`RGFloat`) シンプレクティック Euler (kick-drift) 時間積分（半ステップ中央化 Cayley 減衰）による軽量・高応答な波紋シミュレーション。
