@@ -12,8 +12,8 @@ Demonstration videos for each sample scene (click thumbnail to watch on YouTube)
 
 | Scene 01: 2D Wave Equation | Scene 02: Boussinesq Shallow Water | Scene 03: Spectral / FFT Ocean |
 | :---: | :---: | :---: |
-| [![Wave Equation Demo](https://img.youtube.com/vi/s7Eb2UlgJVc/maxresdefault.jpg)](https://youtu.be/s7Eb2UlgJVc) | [![Boussinesq Demo](https://img.youtube.com/vi/1DWCYRkK0RM/maxresdefault.jpg)](https://youtu.be/1DWCYRkK0RM) | [![FFT Ocean Demo](https://img.youtube.com/vi/j2twZkyc68E/maxresdefault.jpg)](https://youtu.be/j2twZkyc68E) |
-| [Wave Equation (YouTube)](https://youtu.be/s7Eb2UlgJVc)<br>Diffraction, interference & ripples | [Boussinesq (YouTube)](https://youtu.be/1DWCYRkK0RM)<br>Refraction, shoaling & caustic focusing | [FFT Ocean (YouTube)](https://youtu.be/j2twZkyc68E)<br>Swell, wind-sea & choppy crests |
+| [![Wave Equation Demo](https://img.youtube.com/vi/s7Eb2UlgJVc/maxresdefault.jpg)](https://youtu.be/s7Eb2UlgJVc) | [![Boussinesq Demo](https://img.youtube.com/vi/QmVq1ucf09M/maxresdefault.jpg)](https://youtu.be/QmVq1ucf09M) | [![FFT Ocean Demo](https://img.youtube.com/vi/j2twZkyc68E/maxresdefault.jpg)](https://youtu.be/j2twZkyc68E) |
+| [Wave Equation (YouTube)](https://youtu.be/s7Eb2UlgJVc)<br>Diffraction, interference & ripples | [Boussinesq (YouTube)](https://youtu.be/QmVq1ucf09M)<br>Refraction, shoaling & caustic focusing | [FFT Ocean (YouTube)](https://youtu.be/j2twZkyc68E)<br>Swell, wind-sea & choppy crests |
 
 ## Key Features
 1. **2D Linear Wave Equation (`WaveEquationSimulation`)**:
