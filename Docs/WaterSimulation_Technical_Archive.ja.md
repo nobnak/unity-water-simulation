@@ -31,6 +31,17 @@
 | [`acbff9c`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/27 22:41 | `feat` | Turn 14 | `02_Boussinesq` の波源・平面孤立波/円形パルス励起モード拡張および海底地形（Bathymetry）の2方式同時可視化 |
 | [`50073b4`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute) | 10/27 23:19 | `feat` | Turn 15 | Boussinesq の `fp32` 化・対称 MacCormack 精度改善および FFT 海洋の厳密ラグランジュ法線・波峰 SSS による Choppiness 強調 |
 | [`e2809a9`](WaterSimulation_Algorithm_And_Performance_Spec.ja.md) | 10/27 23:51 | `docs` | Turn 16 | アルゴリズム＆性能見積もり完全仕様書の追加および未接続UIコントロール（風向・うねり方向・断面高さ倍率・一括同期）の統合 |
+| [`d1d05a7`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/28 18:30 | `fix` | 安定化フェーズ | 欠損補正RHS蓄積バグ修正、空間フィルター後固体壁不透過条件の再射影、仕様書の数式整合 |
+| [`9427acc`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/29 11:20 | `fix` | 安定化フェーズ | 厳密質量保存型FCT面流束リミッターの実装、Scene 02診断バインド修正 |
+| [`d5446df`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/29 17:40 | `fix` | 安定化フェーズ | FCT流束符号の厳密整合、波追跡精度の改善、CPU/GPU性能測定 |
+| [`aaf533b`](../Packages/com.nobnak.water-simulation/Editor/BoussinesqDispersionBenchmark.cs) | 10/30 14:15 | `fix` | ベンチマーク | 半離散分散関係式の整合、格子解像度制約の強化、推奨解像度テストスイート統合 |
+| [`ad49364`](../Packages/com.nobnak.water-simulation/Editor/BoussinesqSolitonFissionBenchmark.cs) | 10/31 16:50 | `feat` | ベンチマーク | Madsen & Mei (1969) 文献比較およびソリトン分裂の空間格子収束性評価 |
+| [`a7d3c93`](../Packages/com.nobnak.water-simulation/Editor/BoussinesqSolitonFissionBenchmark.cs) | 11/01 22:30 | `fix` | ベンチマーク | 平坦床での基準評価修正、多指標検証スイートの完了 |
+| [`4bfb881`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs) | 11/02 16:40 | `feat` | 精度検証 | 実行時の対流方式切り替え（Baseline / Minmod）、既知の精度限界の明示 |
+| [`a27b8fe`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs) | 11/03 14:35 | `feat` | デモ拡張 | 地形変形比較デモの実装：水中の丘（Submerged Mound）、浅い棚（Shallow Shelf）、平滑波束（Smooth Wave Packet）、プロファイルビューア統合 |
+| [`3175aec`](../README.md) | 11/03 16:10 | `docs` | ドキュメント | シーン01〜03の動作確認YouTubeデモ動画リンク・サムネイルの追加 |
+| [`f12e217`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs) | 11/03 18:20 | `feat` | 方式改定 | Minmod TVD を標準デフォルト対流方式に昇格、Baseline（1次風上）を比較用として維持 |
+| [`ac71484`](../README.md) | 11/03 19:40 | `docs` | ドキュメント | Scene 02 デモ動画リンクの最新版差し替え (`QmVq1ucf09M`) |
 
 > [!IMPORTANT]
 > **アルゴリズム・数値計算法・性能見積もりの完全仕様書**:
@@ -79,9 +90,12 @@ classDiagram
         +BathymetryType Bathymetry
         +InitialConditionType Condition
         +ImpulseShapeType ImpulseShape
+        +AdvectionType Advection
+        +FilterType Filter
         +float DispersionAlpha
         +Texture2D CustomBathymetryTexture
         +TriggerImpulse(Vector2 centerNorm, float amp, float radiusNorm)
+        +SetBathymetryType(BathymetryType type)
     }
     class FFTOceanSimulation {
         +SeaStatePreset SeaState

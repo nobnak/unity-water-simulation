@@ -321,9 +321,29 @@ $$
 
    各行および各列で独立に $\sum D_4 \equiv 0$ が成立するため、2パス合成後もマシンイプシロン精度（実測 $\le 1.95 \times 10^{-14}$）で厳密にゼロとなり、境界セルを含む全水量が完全に保存される。また、Xパス後に側壁固体境界（$x=0, W-1$）で $u=0$、Zパス後に沖合・岸側境界（$y=0, H-1$）で $w=0$ を再射影し、境界不透過性を厳密に保持する。
 
-4. **移流項の風上差分化（MacCormack パリティ振動の根絶）**:
+4. **対流（移流）項の離散化：Minmod TVD（標準デフォルト）と1次風上（Baseline）**:
    予測子 `CSPredict` および修正子 `CSCorrect` における非保存形対流項 $(\mathbf{u} \cdot \nabla)\mathbf{u} = (u \partial_x u + w \partial_z u, u \partial_x w + w \partial_z w)$ の離散化において、MacCormack法のパリティ方向 `invDx = dir / dx` ($dir \in \{-1, +1\}$) をそのまま用いると、$+Z$ 方向に進む波（$w > 0$）に対して前進差分（$dir = +1$）が「風下差分（Downwind）」となり、負の数値粘性 $-\frac{1}{2} w \Delta z \partial_{z}^2 w$（人工的増幅）を生じさせる。一方、後退差分（$dir = -1$）は「風上差分（Upwind）」として正の数値粘性（減衰）を与える。毎サブステップで `_StepParity` が反転することにより、波頭頂点付近で人工的増幅と減衰が交互に繰り返され、ピーク高が高速に上下動する原因となっていた。
-   対流項の空間微分のみを流速ベクトルの符号に基づく風上差分（$u > 0$ なら後退差分、$u < 0$ なら前進差分）に切り離すことで、数値散逸を常に正に固定し、サブステップごとのピーク跳躍（Max Substep Jump）を $0.01668\,\mathrm{m}$ から **$0.00345\,\mathrm{m}$**（約 $79.3\%$ 削減、$\le 3.5\,\mathrm{mm}$）へと抑制した。
+   本モデルでは、以下の2方式を実装・切り替え可能とし、**Minmod TVD を標準デフォルト**（`_AdvectionMode = 1`）、**1次風上を比較・検証用 Baseline**（`_AdvectionMode = 0`）として提供する：
+
+   - **Baseline（1次風上差分）**:
+     流速ベクトルの符号に基づく純粋な風上差分（$u \ge 0$ なら後退差分、$u < 0$ なら前進差分）：
+     $$
+     \left.\frac{\partial \phi}{\partial x}\right|_i = \begin{cases} \frac{\phi_i - \phi_{i-1}}{\Delta x} & (u \ge 0) \\ \frac{\phi_{i+1} - \phi_i}{\Delta x} & (u < 0) \end{cases}
+     $$
+     数値粘性を常に正に固定することで、MacCormack パリティ跳躍（Max Substep Jump）を $0.01668\,\mathrm{m}$ から **$0.00345\,\mathrm{m}$**（約 $79.3\%$ 削減、$\le 3.5\,\mathrm{mm}$）へ抑制し単調性を保証するが、波頭頂点において1次の数値拡散による減衰を伴う。
+   - **Minmod TVD（2次制限付き高次対流再構築・標準デフォルト）**:
+     急峻な波形や浅瀬への進入時における過度な波高減衰を大幅に抑えつつ、格子振動（非物理的アンダーシュート・オーバーシュート）を遮断するため、Minmod スロープリミッターによるセル界面の勾配制限付き2次再構築を適用する：
+     $$
+     \mathrm{minmod}(a, b) = \begin{cases} \mathrm{sgn}(a)\min(|a|, |b|) & (ab > 0) \\ 0 & (ab \le 0) \end{cases}
+     $$
+     隣接セル間差分 $\Delta \phi_{i+1/2} = \phi_{i+1} - \phi_i$ に対し、流速 $u \ge 0$ では上流勾配 $s_L = \mathrm{minmod}(\Delta \phi_{i-1/2}, \Delta \phi_{i-3/2})$ および中央勾配 $s_C = \mathrm{minmod}(\Delta \phi_{i+1/2}, \Delta \phi_{i-1/2})$ を用いて有限体積流束の勾配を評価：
+     $$
+     \left.\frac{\partial \phi}{\partial x}\right|_i = \frac{\Delta \phi_{i-1/2} + \frac{1}{2}(s_C - s_L)}{\Delta x} \quad (u \ge 0)
+     $$
+     $$
+     \left.\frac{\partial \phi}{\partial x}\right|_i = \frac{\Delta \phi_{i+1/2} - \frac{1}{2}(s_R - s_C)}{\Delta x} \quad (u < 0)
+     $$
+     BP05 Case B（急峻ソリトンの浅水伝播）検証において、Baseline の波高伝播誤差 **$-27.5\%$** に対し、Minmod TVD は **$-20.2\%$**（FCTなしでは $-12.6\%$）へと波高保持精度を大幅に改善する。Scene 02 の HUD UI から実行時に両方式をワンクリックで切り替え・状態リセットして同条件比較が可能である。
 
 5. **厳密質量保存型 FCT（Flux-Corrected Transport / 面流束リミッター）**:
    セル単位のクランプ（$[ \min(S_{i-1}, S_i, S_{i+1}), \max(S_{i-1}, S_i, S_{i+1}) ]$）は物理空間での局所極値を遮断できる反面、セルごとに独立に打ち切るため有限体積の流束保存関係を破壊し、正の孤立波に対して $+9.6\% \sim +33.6\%$ の非物理的水量増大を招く欠点があった。これを根本解決するため、Zalesak (1979) 型の厳密質量保存 FCT（面流束制限器）を採用する：
@@ -368,7 +388,7 @@ $$
    - **完全保存性**: 全更新量は面流束差分 $\Delta S_i = -(F_{i+1/2} - F_{i-1/2})$ の形でのみ与えられるため、領域全体の総和は $\sum_{i=0}^{W-1} \Delta S_i = -(F_{W-1/2} - F_{-1/2}) \equiv 0$ となり、いかなる急峻波や砕波域においてもマシンイプシロン精度（実測 $\Delta M \le 1.01 \times 10^{-17}$、相対誤差 $\sim 10^{-16}$）で水量が厳密に保存される。
    - **境界速度分離**: 水面変位 $\eta$ と流速 $(u, w)$ の境界処理を分離し、Xパス後に側壁固体壁（$x=0, W-1$）で法線流速 $u=0$、Zパス後に沖合・岸側境界（$y=0, H-1$）で法線流速 $w=0$ を再射影し、不透過壁条件を完全に満たす。
 
-#### (5) 内部質量ソース造波 (`GetWavemakerSources`) と GPU ソリトン注入 (`CSAddImpulse`)
+#### (6) 内部質量ソース造波 (`GetWavemakerSources`)・平滑波束・GPUソリトン注入 (`CSAddImpulse`)
 - **Wei & Kirby (1999) 型内部質量ソース造波 (`GetWavemakerSources`)**:
   沖合ライン $y_{0} = \lfloor v_{\mathrm{wm}} N_{z} \rfloor$ の前後 $|j - y_{0}| \le 18$ セルにおいて、ガウス内部質量ソース $G(j) = \frac{1}{\sqrt{2\pi}\sigma\Delta z}\exp\!\left(-\frac{(j - y_{0})^{2}}{2\sigma^{2}}\right)$（$\sigma = 4.0$ セル）により波を生成する。流速 $w$ への直接点源注入（$S_w$）を行わず質量注入のみとすることで、Helmholtz作用素による運動量不均衡ショックと局所発散スパイクを根絶する：
 
@@ -378,6 +398,15 @@ $$
 
   係数 2 は $+Z$ 進行波と後方 $-Z$ 波（背後スポンジ層で完全吸収）への質量等配分を補償する。
   また側壁境界条件 `SideWallSponge` を無効化（デフォルト）した水路モードでは $T_{\mathrm{lat}} = 1.0$ かつ左右壁面でノイマン条件（$\partial_x a_z = 0$）が成立し、水路幅全域にわたり完全な1D平面波面が維持される。
+
+- **平滑波束励起 (`SmoothWavePacket`)**:
+  造波の急激なオン・オフによる不要な短波長寄生成分（Gibbs過渡振動）を根絶し、地形通過後の変形・屈折を明瞭に追跡するため、有限3周期の $C^1$ 級 Hann 包絡を乗じた波束を生成する：
+
+$$
+T_{\mathrm{packet}} = \frac{3.0}{f_{\mathrm{wm}}}, \quad A(t) = \begin{cases} A_{\mathrm{wm}} \sin^{2}\!\left(\frac{\pi t}{T_{\mathrm{packet}}}\right) & (t < T_{\mathrm{packet}}) \\ 0 & (t \ge T_{\mathrm{packet}}) \end{cases}
+$$
+
+  $t \ge T_{\mathrm{packet}}$ では造波振幅が厳密にゼロとなり、生成された波束が水中の丘や浅い棚を通過して屈折・分裂・変形する様子を、後続波の混入なしに観察できる。
 
 - **平面孤立波（Planar Soliton）および円形ガウスパルス注入 (`CSAddImpulse`)**:
   - **平面孤立波 (`_ImpulseShape == 0`)**:
@@ -390,17 +419,36 @@ $$
   - **円形パルス (`_ImpulseShape == 1`)**:
     $\Delta \eta = A \exp(-3 (\|\mathbf{u} - \mathbf{u_{0}}\| / R_{\mathrm{uv}})^{2})$ を既存の $\eta$ に非破壊加算する。
 
-#### (5) プロシージャル海底地形 (`UpdateBathymetryTexture`)
+#### (7) プロシージャル海底地形 (`UpdateBathymetryTexture`)
 正規化座標 $(u, v) \in [0, 1]^{2}$、深水深 $h_{\mathrm{deep}}$、浅水深 $h_{\mathrm{shallow}}$ に対し：
-- **`Flat`**: $h(u, v) = h_{\mathrm{deep}}$
+- **`Flat`（平坦床）**: $h(u, v) = h_{\mathrm{deep}}$（地形変化のない比較基準）
+- **`SubmergedMound`（水中の丘・変形比較の主対象）**:
+  領域中央 $(u_0, v_0) = (0.5, 0.45)$ に滑らかな完全水没ガウス海山を配置し、手前と後方を同一の深水深に戻す：
+  $$
+  r = \sqrt{((u - u_0) L_x)^2 + ((v - v_0) L_z)^2}, \quad \Delta h = (h_{\mathrm{deep}} - h_{\mathrm{shallow}}) \exp\!\left(-\frac{r^2}{2\sigma_{\mathrm{mound}}^2}\right) \quad (\sigma_{\mathrm{mound}} = 15.0\,\mathrm{m})
+  $$
+  $$
+  h(u, v) = \max(0.2\,\mathrm{m},\ h_{\mathrm{deep}} - \Delta h)
+  $$
+  浅所での波速低下（$c \sim \sqrt{gh}$）による波頭屈折（波の中央が遅れ両脇が進む）、および丘後方での波エネルギー集中・干渉を明瞭に可視化する。
+- **`ShallowShelf`（浅い棚・分裂・後続波観察）**:
+  深水プラトー（$z < 30\,\mathrm{m}$）、滑らかな3次エルミート斜面遷移（$30\,\mathrm{m} \le z \le 55\,\mathrm{m}$）、および十分な長さの浅水プラトー（$z > 55\,\mathrm{m}$）で構成：
+  $$
+  t = \mathrm{saturate}\!\left(\frac{v L_z - 30}{55 - 30}\right), \quad s(t) = 3t^2 - 2t^3
+  $$
+  $$
+  h(u, v) = \mathrm{lerp}(h_{\mathrm{deep}},\ h_{\mathrm{shallow}},\ s(t))
+  $$
+  浅瀬進入に伴う波長短縮（Shoaling）や、単一孤立波からの後続分散波列・ソリトン分裂の観察に用いる。
 - **`LinearSlope`**: $h(u, v) = \max(0.5,\ \mathrm{lerp}(h_{\mathrm{deep}}, h_{\mathrm{shallow}}, v))$
 - **`ShoalAndCape`**:
   - 基本傾斜: $h_{\mathrm{base}}(v) = \mathrm{lerp}(h_{\mathrm{deep}},\ h_{\mathrm{shallow}} + 2.0,\ \mathrm{smoothstep}(0.2, 0.9, v))$
   - 斜め浅瀬尾根（Shoal）: $d_{\mathrm{shoal}} = (u - 0.5)\cos(0.6) + (v - 0.45)\sin(0.6),\ f_{\mathrm{shoal}} = \exp(-d_{\mathrm{shoal}}^{2} / 0.025)$
   - 岬・円形海山（Cape）: $d_{\mathrm{cape}} = \|(u, v) - (0.72, 0.62)\|,\ f_{\mathrm{cape}} = \exp(-d_{\mathrm{cape}}^{2} / 0.015)$
   - 合成水深: $h(u, v) = \max\!\left(0.5,\ \mathrm{lerp}\!\left(\mathrm{lerp}(h_{\mathrm{base}}, h_{\mathrm{shallow}}, 0.75 f_{\mathrm{shoal}}),\ 0.5 h_{\mathrm{shallow}},\ 0.85 f_{\mathrm{cape}}\right)\right)$
+- **`CustomTexture`**: ユーザー指定のハイトマップテクスチャからバイリニアサンプリングして水深を生成。
 
-#### (6) 法線と勾配フォームの算出 (`CSComputeNormal`)
+#### (8) 法線と勾配フォームの算出 (`CSComputeNormal`)
 中心差分で勾配を算出し、急傾斜部（$\|\nabla \eta\| > 0.15$）から砕波・白波強度を算出する：
 
 $$
@@ -716,11 +764,15 @@ $$
 | **01_WaveEquation** | `Obstacles`: `None`, `Single`, `Double`, `Pillars` | `WaveEquationSimulation.SetObstaclePattern` |
 | **01_WaveEquation** | `Source Mode`: `Impulse`, `Oscillator`, `Moving`, `Mouse` | `WaveEquationSimulation.SourceMode` |
 | **01_WaveEquation** | `★ Trigger Impulse`, `Interval`, `WaveSpeed`, `Damping` | `TriggerImpulse()`, `PulseInterval`, `WaveSpeed`, `Damping` |
-| **02_Boussinesq** | `Bathymetry`: `Flat`, `Shoal`, `Slope` | `BoussinesqSimulation.SetBathymetryType` |
-| **02_Boussinesq** | `Source Mode`: `Wavemaker`, `Impulse`, `Periodic`, `Moving`, `Mouse` | `BoussinesqSimulation.Condition` |
+| **02_Boussinesq** | `Bathymetry Presets`: `A.平坦 (Flat)`, `B.水中の丘 (Mound)`, `C.浅い棚 (Shelf)` | `SetBathymetryType`（Flat / SubmergedMound / ShallowShelf）＋状態リセット |
+| **02_Boussinesq** | `Bathymetry`: `Flat`, `Mound`, `Shelf`, `Shoal`, `Slope`, `Custom` | `BoussinesqSimulation.SetBathymetryType` (`BathymetryType`) |
+| **02_Boussinesq** | `Advection`: `Minmod (2次TVD・標準)`, `Baseline (1次風上・比較用)` | `BoussinesqSimulation.Advection` (`AdvectionType`) ＋ 状態リセット比較 |
+| **02_Boussinesq** | `Display Mode`: `Realistic`, `Bathymetry`, `Profile` | `WaterRenderer.SetVisualMode` / `WaterProfileViewer` トグル |
+| **02_Boussinesq** | `Source Mode`: `Wavemaker`, `Packet (平滑波束)`, `Impulse`, `Periodic`, `Moving`, `Mouse` | `BoussinesqSimulation.Condition` (`InitialConditionType`) |
 | **02_Boussinesq** | `Shape`: `Planar (平面孤立波)`, `Circular (円形波)` | `BoussinesqSimulation.ImpulseShape` (`CSAddImpulse`) |
 | **02_Boussinesq** | `Freq`, `Interval`, `★ Trigger Impulse`, `Dispersion`, `Wave Amp` | `WavemakerFrequency`, `PulseInterval`, `TriggerImpulse()`, `DispersionAlpha`, `WavemakerAmplitude` |
 | **02_Boussinesq** | `Sweeps (ADI PCR)` | `BoussinesqSimulation.DispersionSweeps` (1 sweep direct solve) |
+| **02_Boussinesq** | `Profile Viewer`: 水位断面・海底地形断面・定点時系列 | `WaterProfileViewer` (`AsyncGPUReadback` & 静水深CPUキャッシュ) |
 | **03_FFTWater** | `Sea State`: `Calm`, `Swell`, `Stormy` | `FFTOceanSimulation.ApplySeaStatePreset` |
 | **03_FFTWater** | `Wind`, `Wind Dir`, `Choppy`, `Swell`, `Swell Dir`, `Foam` | `WindSpeed`, `WindDirectionDegrees`, `Choppiness`, `SwellStrength`, `SwellDirectionDegrees`, `EnableFoam` |
 | **04_Comparison** | `Profile Scale (断面高さ強調)` / `ProfileH` | `WaterComparisonController.ProfileVerticalScale` $\to$ `WaterProfileViewer.VerticalScale` |

@@ -320,9 +320,29 @@ $$
 
    For any surface elevation field, $\sum D_{4, x} S \equiv 0$ and $\sum D_{4, z} S \equiv 0$ hold independently across every row and column to machine precision (measured $\le 1.95 \times 10^{-14}$), guaranteeing exact conservation of total water volume. Lateral solid walls re-enforce $u = 0$ after Pass X, and offshore/beach borders re-enforce $w = 0$ after Pass Z.
 
-4. **Upwind Differencing for Convective Advection (Elimination of Parity Oscillations)**:
+4. **Convective Advection Discretization: Minmod TVD (Default) and 1st-Order Upwind (Baseline)**:
    In `CSPredict` and `CSCorrect`, non-conservative convective velocity advection $(\mathbf{u} \cdot \nabla)\mathbf{u} = (u \partial_x u + w \partial_z u, u \partial_x w + w \partial_z w)$ previously used the alternating MacCormack parity direction `invDx = dir / dx` ($dir \in \{-1, +1\}$). For forward-moving waves ($w > 0$), forward differencing ($dir = +1$) acts as downwind differencing, introducing negative numerical viscosity $-\frac{1}{2} w \Delta z \partial_{z}^2 w$ (artificial amplification). Backward differencing ($dir = -1$) acts as upwind differencing (positive numerical damping). Alternating `_StepParity` every substep flipped between artificial amplification and damping, causing the crest peak height to jump up and down rapidly.
-   Decoupling the convective velocity derivatives to follow velocity-sign upwind differencing ($dir = -\mathrm{sgn}(u)$) ensures strictly positive numerical dissipation, reducing maximum substep peak jumps from $0.01668\,\mathrm{m}$ to **$0.00345\,\mathrm{m}$** ($79.3\%$ reduction, $\le 3.5\,\mathrm{mm}$).
+   The current implementation provides both schemes at runtime, with **Minmod TVD set as the standard default** (`_AdvectionMode = 1`) and **1st-order upwind retained as the comparative Baseline** (`_AdvectionMode = 0`):
+
+   - **Baseline (1st-Order Upwind Differencing)**:
+     Evaluates spatial derivatives using purely directional upwind differences based on the velocity signs ($u \ge 0 \implies \text{backward differencing}$, $u < 0 \implies \text{forward differencing}$):
+     $$
+     \left.\frac{\partial \phi}{\partial x}\right|_i = \begin{cases} \frac{\phi_i - \phi_{i-1}}{\Delta x} & (u \ge 0) \\ \frac{\phi_{i+1} - \phi_i}{\Delta x} & (u < 0) \end{cases}
+     $$
+     Fixing numerical viscosity to be strictly positive eliminates MacCormack parity jumps (reducing Max Substep Jump from $0.01668\,\mathrm{m}$ to **$0.00345\,\mathrm{m}$**, $\le 3.5\,\mathrm{mm}$) and guarantees strict monotonicity, but causes 1st-order numerical diffusion and peak crest attenuation.
+   - **Minmod TVD (2nd-Order Slope-Limited TVD Reconstruction, Standard Default)**:
+     To suppress excessive crest attenuation across shoals while avoiding spurious grid oscillations (unphysical over/undershoots), a 2nd-order TVD reconstruction with the Minmod slope limiter is applied to cell faces:
+     $$
+     \mathrm{minmod}(a, b) = \begin{cases} \mathrm{sgn}(a)\min(|a|, |b|) & (ab > 0) \\ 0 & (ab \le 0) \end{cases}
+     $$
+     For inter-cell differences $\Delta \phi_{i+1/2} = \phi_{i+1} - \phi_i$, the convective derivatives for $u \ge 0$ are reconstructed using upstream slope $s_L = \mathrm{minmod}(\Delta \phi_{i-1/2}, \Delta \phi_{i-3/2})$ and central slope $s_C = \mathrm{minmod}(\Delta \phi_{i+1/2}, \Delta \phi_{i-1/2})$:
+     $$
+     \left.\frac{\partial \phi}{\partial x}\right|_i = \frac{\Delta \phi_{i-1/2} + \frac{1}{2}(s_C - s_L)}{\Delta x} \quad (u \ge 0)
+     $$
+     $$
+     \left.\frac{\partial \phi}{\partial x}\right|_i = \frac{\Delta \phi_{i+1/2} - \frac{1}{2}(s_R - s_C)}{\Delta x} \quad (u < 0)
+     $$
+     In benchmark BP05 Case B (solitary wave shoaling), Minmod TVD reduces crest height propagation error from **$-27.5\%$** (Baseline) to **$-20.2\%$** (with FCT) and **$-12.6\%$** (without FCT). Both schemes are switchable in real time in Scene 02 with simulation reset for direct side-by-side comparison.
 
 5. **Strictly Mass-Conservative Flux-Corrected Transport (FCT Face-Flux Limiter)**:
    While cell-wise clamping ($[ \min(S_{i-1}, S_i, S_{i+1}), \max(S_{i-1}, S_i, S_{i+1}) ]$) truncates spurious local extrema in physical space, clamping cells independently destroys the finite-volume conservation relation, leading to $+9.6\% \sim +33.6\%$ artificial mass gain for positive solitary waves. To resolve this, a strictly conservative Zalesak (1979) FCT face-flux limiter is implemented directly on inter-cell faces:
@@ -332,7 +352,7 @@ $$
    - **Strict Global Mass Conservation**: Because updates occur purely through face fluxes $\Delta S_i = -(F_{i+1/2} - F_{i-1/2})$, the domain sum satisfies $\sum_{i=0}^{W-1} \Delta S_i = -(F_{W-1/2} - F_{-1/2}) \equiv 0$, preserving water mass to machine precision ($\Delta M \le 4.13 \times 10^{-8}$, relative mass error $\sim 10^{-16}$).
    - **Velocity Boundary Decoupling**: Separates $\eta$ mass conservation from velocity boundary projections ($u=0$ on solid lateral walls after Pass X, $w=0$ on offshore/beach borders after Pass Z).
 
-#### (5) Internal Mass Source Wavemaker (`GetWavemakerSources`) and GPU Soliton Injection (`CSAddImpulse`)
+#### (6) Internal Mass Source Wavemaker (`GetWavemakerSources`), Smooth Wave Packet, and GPU Soliton Injection (`CSAddImpulse`)
 - **Wei & Kirby (1999) Internal Mass Source Wavemaker (`GetWavemakerSources`)**:
   Within $|j - y_{0}| \le 18$ cells of the offshore line $y_{0} = \lfloor v_{\mathrm{wm}} N_{z} \rfloor$, waves are generated via an internal Gaussian mass source $G(j) = \frac{1}{\sqrt{2\pi}\sigma\Delta z}\exp\!\left(-\frac{(j - y_{0})^{2}}{2\sigma^{2}}\right)$ ($\sigma = 4.0$ cells). Pure mass injection ($S_w = 0$) eliminates momentum imbalance shocks and localized divergence spikes:
 
@@ -342,6 +362,15 @@ $$
 
   The factor of 2 accounts for equal partition between the forward $+Z$ wave and backward $-Z$ wave (absorbed by the offshore sponge).
   Furthermore, when `SideWallSponge` is disabled (flume mode default), $T_{\mathrm{lat}} = 1.0$ and lateral boundaries enforce Neumann conditions ($\partial_x a_z = 0$), preserving a perfectly flat 1D planar crest across the full width.
+
+- **Smooth Wave Packet Excitation (`SmoothWavePacket`)**:
+  To eliminate parasitic high-frequency Gibbs transients caused by abrupt wavemaker start/stop and observe wave deformation after passing bathymetry without continuous wave clutter, a smooth 3-cycle packet with a $C^1$ Hann envelope is generated:
+
+$$
+T_{\mathrm{packet}} = \frac{3.0}{f_{\mathrm{wm}}}, \quad A(t) = \begin{cases} A_{\mathrm{wm}} \sin^{2}\!\left(\frac{\pi t}{T_{\mathrm{packet}}}\right) & (t < T_{\mathrm{packet}}) \\ 0 & (t \ge T_{\mathrm{packet}}) \end{cases}
+$$
+
+  For $t \ge T_{\mathrm{packet}}$, source amplitude is strictly zero, enabling clear tracking of wavefront curvature, refraction, and post-mound focusing.
 
 - **Planar Soliton and Circular Gaussian Pulse Injection (`CSAddImpulse`)**:
   - **Planar Soliton (`_ImpulseShape == 0`)**:
@@ -354,17 +383,36 @@ $$
   - **Circular Pulse (`_ImpulseShape == 1`)**:
     $\Delta \eta = A \exp(-3 (\|\mathbf{u} - \mathbf{u_{0}}\| / R_{\mathrm{uv}})^{2})$ is added non-destructively to $\eta$.
 
-#### (5) Procedural Bathymetry (`UpdateBathymetryTexture`)
+#### (7) Procedural Bathymetry (`UpdateBathymetryTexture`)
 For normalized coordinates $(u, v) \in [0, 1]^{2}$, deep depth $h_{\mathrm{deep}}$, and shallow depth $h_{\mathrm{shallow}}$:
-- **`Flat`**: $h(u, v) = h_{\mathrm{deep}}$
+- **`Flat`**: $h(u, v) = h_{\mathrm{deep}}$ (uniform flat bed control reference)
+- **`SubmergedMound` (Submerged Hill for Wave Refraction & Focusing)**:
+  A smooth symmetric submerged Gaussian mound is placed at domain center $(u_0, v_0) = (0.5, 0.45)$, returning to deep water depth before and behind the mound:
+  $$
+  r = \sqrt{((u - u_0) L_x)^2 + ((v - v_0) L_z)^2}, \quad \Delta h = (h_{\mathrm{deep}} - h_{\mathrm{shallow}}) \exp\!\left(-\frac{r^2}{2\sigma_{\mathrm{mound}}^2}\right) \quad (\sigma_{\mathrm{mound}} = 15.0\,\mathrm{m})
+  $$
+  $$
+  h(u, v) = \max(0.2\,\mathrm{m},\ h_{\mathrm{deep}} - \Delta h)
+  $$
+  Demonstrates wavefront curvature (slowing in shallower depth) and wave energy focusing/interference behind the mound.
+- **`ShallowShelf` (Shallow Shelf for Soliton Dispersive Fission / Shoaling)**:
+  Consists of a deep plateau ($z < 30\,\mathrm{m}$), a smooth cubic Hermite transition slope ($30\,\mathrm{m} \le z \le 55\,\mathrm{m}$), and an extended shallow plateau ($z > 55\,\mathrm{m}$):
+  $$
+  t = \mathrm{saturate}\!\left(\frac{v L_z - 30}{55 - 30}\right), \quad s(t) = 3t^2 - 2t^3
+  $$
+  $$
+  h(u, v) = \mathrm{lerp}(h_{\mathrm{deep}},\ h_{\mathrm{shallow}},\ s(t))
+  $$
+  Used to observe wavelength shortening (shoaling) and secondary solitary wave train formation.
 - **`LinearSlope`**: $h(u, v) = \max(0.5,\ \mathrm{lerp}(h_{\mathrm{deep}}, h_{\mathrm{shallow}}, v))$
 - **`ShoalAndCape`**:
   - Baseline slope: $h_{\mathrm{base}}(v) = \mathrm{lerp}(h_{\mathrm{deep}},\ h_{\mathrm{shallow}} + 2.0,\ \mathrm{smoothstep}(0.2, 0.9, v))$
   - Diagonal shoal ridge: $d_{\mathrm{shoal}} = (u - 0.5)\cos(0.6) + (v - 0.45)\sin(0.6),\ f_{\mathrm{shoal}} = \exp(-d_{\mathrm{shoal}}^{2} / 0.025)$
   - Circular cape / headland: $d_{\mathrm{cape}} = \|(u, v) - (0.72, 0.62)\|,\ f_{\mathrm{cape}} = \exp(-d_{\mathrm{cape}}^{2} / 0.015)$
   - Combined depth: $h(u, v) = \max\!\left(0.5,\ \mathrm{lerp}\!\left(\mathrm{lerp}(h_{\mathrm{base}}, h_{\mathrm{shallow}}, 0.75 f_{\mathrm{shoal}}),\ 0.5 h_{\mathrm{shallow}},\ 0.85 f_{\mathrm{cape}}\right)\right)$
+- **`CustomTexture`**: Bilinear sampling from user-supplied heightmap texture.
 
-#### (6) Surface Normal and Steepness Foam (`CSComputeNormal`)
+#### (8) Surface Normal and Steepness Foam (`CSComputeNormal`)
 Evaluates central-difference surface gradients and generates whitecap foam where surface slope exceeds $0.15$:
 
 $$
@@ -680,11 +728,15 @@ All interactive HUD controls across the 5 sample scenes ([`WaterSampleUI.cs`](..
 | **01_WaveEquation** | `Obstacles`: `None`, `Single`, `Double`, `Pillars` | `WaveEquationSimulation.SetObstaclePattern` |
 | **01_WaveEquation** | `Source Mode`: `Impulse`, `Oscillator`, `Moving`, `Mouse` | `WaveEquationSimulation.SourceMode` |
 | **01_WaveEquation** | `★ Trigger Impulse`, `Interval`, `WaveSpeed`, `Damping` | `TriggerImpulse()`, `PulseInterval`, `WaveSpeed`, `Damping` |
-| **02_Boussinesq** | `Bathymetry`: `Flat`, `Shoal`, `Slope` | `BoussinesqSimulation.SetBathymetryType` |
-| **02_Boussinesq** | `Source Mode`: `Wavemaker`, `Impulse`, `Periodic`, `Moving`, `Mouse` | `BoussinesqSimulation.Condition` |
+| **02_Boussinesq** | `Bathymetry Presets`: `A.平坦 (Flat)`, `B.水中の丘 (Mound)`, `C.浅い棚 (Shelf)` | `SetBathymetryType` (Flat / SubmergedMound / ShallowShelf) + simulation reset |
+| **02_Boussinesq** | `Bathymetry`: `Flat`, `Mound`, `Shelf`, `Shoal`, `Slope`, `Custom` | `BoussinesqSimulation.SetBathymetryType` (`BathymetryType`) |
+| **02_Boussinesq** | `Advection`: `Minmod (2nd-Order TVD, Default)`, `Baseline (1st-Order Upwind)` | `BoussinesqSimulation.Advection` (`AdvectionType`) + simulation reset comparison |
+| **02_Boussinesq** | `Display Mode`: `Realistic`, `Bathymetry`, `Profile` | `WaterRenderer.SetVisualMode` / `WaterProfileViewer` toggle |
+| **02_Boussinesq** | `Source Mode`: `Wavemaker`, `Packet (Smooth Packet)`, `Impulse`, `Periodic`, `Moving`, `Mouse` | `BoussinesqSimulation.Condition` (`InitialConditionType`) |
 | **02_Boussinesq** | `Shape`: `Planar (平面孤立波)`, `Circular (円形波)` | `BoussinesqSimulation.ImpulseShape` (`CSAddImpulse`) |
 | **02_Boussinesq** | `Freq`, `Interval`, `★ Trigger Impulse`, `Dispersion`, `Wave Amp` | `WavemakerFrequency`, `PulseInterval`, `TriggerImpulse()`, `DispersionAlpha`, `WavemakerAmplitude` |
 | **02_Boussinesq** | `Sweeps (ADI PCR)` | `BoussinesqSimulation.DispersionSweeps` (1 sweep direct solve) |
+| **02_Boussinesq** | `Profile Viewer`: Water Surface, Bed Profile, Station Time Series | `WaterProfileViewer` (`AsyncGPUReadback` & CPU-cached bathymetry) |
 | **03_FFTWater** | `Sea State`: `Calm`, `Swell`, `Stormy` | `FFTOceanSimulation.ApplySeaStatePreset` |
 | **03_FFTWater** | `Wind`, `Wind Dir`, `Choppy`, `Swell`, `Swell Dir`, `Foam` | `WindSpeed`, `WindDirectionDegrees`, `Choppiness`, `SwellStrength`, `SwellDirectionDegrees`, `EnableFoam` |
 | **04_Comparison** | `Profile Scale (断面高さ強調)` / `ProfileH` | `WaterComparisonController.ProfileVerticalScale` $\to$ `WaterProfileViewer.VerticalScale` |

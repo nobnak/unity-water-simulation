@@ -31,6 +31,17 @@ This reference document systematically consolidates the Git commit history, code
 | [`acbff9c`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/27 22:41 | `feat` | Turn 14 | Add `02_Boussinesq` planar soliton / circular pulse excitation modes and dual bathymetry visualizations |
 | [`50073b4`](../Packages/com.nobnak.water-simulation/Runtime/FFTWater/FFTOcean.compute) | 10/27 23:19 | `feat` | Turn 15 | Upgrade Boussinesq to `fp32` Symmetric MacCormack + 6-step Jacobi and accentuate FFT choppiness via exact Lagrangian normals & crest SSS |
 | [`e2809a9`](WaterSimulation_Algorithm_And_Performance_Spec.ja.md) | 10/27 23:51 | `docs` | Turn 16 | Add complete Algorithm & Performance Specification and connect remaining UI controls (`Wind Dir`, `Swell Dir`, `Profile Scale`, multi-sim sync) |
+| [`d1d05a7`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/28 18:30 | `fix` | Stabilization | Fix defect correction RHS accumulation, re-project impermeable wall velocities post-filter, align math in specs |
+| [`9427acc`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/29 11:20 | `fix` | Stabilization | Implement strictly mass-conservative FCT face-flux limiter and fix Scene 02 diagnostic bindings |
+| [`d5446df`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/Boussinesq.compute) | 10/29 17:40 | `fix` | Stabilization | Fix FCT flux signs, wave tracking precision, and isolate CPU vs GPU profile timings |
+| [`aaf533b`](../Packages/com.nobnak.water-simulation/Editor/BoussinesqDispersionBenchmark.cs) | 10/30 14:15 | `fix` | Benchmark | Align semi-discrete dispersion formulation, enforce spatial resolution bounds, integrate test suites |
+| [`ad49364`](../Packages/com.nobnak.water-simulation/Editor/BoussinesqSolitonFissionBenchmark.cs) | 10/31 16:50 | `feat` | Benchmark | Validate against Madsen & Mei (1969) laboratory data and evaluate spatial grid convergence for soliton fission |
+| [`a7d3c93`](../Packages/com.nobnak.water-simulation/Editor/BoussinesqSolitonFissionBenchmark.cs) | 11/01 22:30 | `fix` | Benchmark | Resolve flat-bed baseline evaluation and complete multi-metric validation suite |
+| [`4bfb881`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs) | 11/02 16:40 | `feat` | Accuracy | Enable runtime advection comparison (Baseline vs Minmod) and finalize known accuracy limits |
+| [`a27b8fe`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs) | 11/03 14:35 | `feat` | Demo Extension | Implement bathymetry wave deformation comparative presets (Submerged Mound, Shallow Shelf, Smooth Wave Packet, profile viewer) |
+| [`3175aec`](../README.md) | 11/03 16:10 | `docs` | Docs | Add YouTube demo video links and thumbnails for scenes 01–03 to README |
+| [`f12e217`](../Packages/com.nobnak.water-simulation/Runtime/Boussinesq/BoussinesqSimulation.cs) | 11/03 18:20 | `feat` | Scheme Promotion | Promote Minmod TVD as default advection scheme with Baseline retained for comparison |
+| [`ac71484`](../README.md) | 11/03 19:40 | `docs` | Docs | Update Scene 02 demo video link to `QmVq1ucf09M` |
 
 > [!IMPORTANT]
 > **Complete Algorithm, Numerical Methods, and Performance Estimation Specification**:
@@ -79,9 +90,12 @@ classDiagram
         +BathymetryType Bathymetry
         +InitialConditionType Condition
         +ImpulseShapeType ImpulseShape
+        +AdvectionType Advection
+        +FilterType Filter
         +float DispersionAlpha
         +Texture2D CustomBathymetryTexture
         +TriggerImpulse(Vector2 centerNorm, float amp, float radiusNorm)
+        +SetBathymetryType(BathymetryType type)
     }
     class FFTOceanSimulation {
         +SeaStatePreset SeaState

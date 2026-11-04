@@ -23,9 +23,9 @@ UPMパッケージ本体は [`Packages/com.nobnak.water-simulation`](Packages/co
 2. **Boussinesq系浅水波モデル (`BoussinesqSimulation`)**:
    - 無回転・緩勾配海底を前提とする成分分離 Helmholtz 型 Peregrine (1967) 弱非線形・弱分散浅水波モデル（$\left(I - \alpha \frac{h^{2}}{3}\nabla^{2}\right)\mathbf{a} = \mathbf{f}$、$1/3$ 分散係数準拠。表面重力波前提に基づき速度成分間交差微分 $\partial_{xz}a_z$ や分散作用素内の水深勾配は省略）。
    - 方向分離 Peaceman-Rachford ADI 分解と `groupshared` メモリ内の三重対角並列巡回簡約（PCR）により無条件安定な分散逆行列求解を行い、欠損補正（`CSDefectCorrection`, `dispersionSweeps`）によって方向分離に伴う4階交差項 $\beta_x \beta_z \partial_x^2 \partial_z^2 \mathbf{a}$ を補正（スイープ毎に誤差約49倍低減、$45^\circ$ 斜め位相速度誤差を Sweep 1 の $-1.03\%$ から Sweep 2 で $-0.021\%$、Sweep 3 で $-0.0004\%$ へ低減）。
-   - 予測子・修正子の対称結合（MacCormack-Heun更新）、CFL条件に基づく自動サブステップ分割（$\Delta t \le 0.55 \frac{\Delta x}{\sqrt{2(c + u)}}$）、物理時間あたり減衰不変な4階保存バイハーモニック空間フィルター、および不透過固体側壁での厳密な法線流速拘束（$u \equiv 0$、流束 $Hu \equiv 0$）。
-   - 水深変化に応じた波速変化（$c \sim \sqrt{gh}$）、斜め浅瀬での屈折（Refraction）、波長短縮（Shoaling）、岬への波エネルギー集中。
-   - 沖合進行波造波に加え、平面孤立波（Planar Soliton）・円形ガウスパルスの単発・周期・移動・マウス注入に対応。
+   - 予測子・修正子の対称結合（MacCormack-Heun更新）、Minmod TVD 対流スキーム（標準デフォルト・急峻部波高保持）および1次風上差分（Baseline・比較用）、CFL条件に基づく自動サブステップ分割（$\Delta t \le 0.55 \frac{\Delta x}{\sqrt{2(c + u)}}$）、物理時間あたり減衰不変な4階保存バイハーモニック空間フィルター、および不透過固体側壁での厳密な法線流速拘束（$u \equiv 0$、流束 $Hu \equiv 0$）。
+   - 水深変化に応じた波速変化（$c \sim \sqrt{gh}$）、水中の丘（Submerged Mound）での波頭屈折・集束、浅い棚（Shallow Shelf）での波長短縮と後続波形成、斜め浅瀬での屈折（Refraction）、岬への波エネルギー集中。
+   - 沖合進行波造波・3周期平滑波束（Smooth Wave Packet）に加え、平面孤立波（Planar Soliton）・円形ガウスパルスの単発・周期・移動・マウス注入に対応。Scene 02 内に断面プロファイルビューア（`WaterProfileViewer`）を統合。
 3. **スペクトル／FFT海面 (`FFTOceanSimulation`)**:
    - Tessendorf統計海洋波スペクトル＋長波長うねりの重畳。
    - 周期負波数マッピングによる厳密なエルミート共役対称性（虚数残差比 $3.45 \times 10^{-16}$）と離散波数刻み $\Delta k = \frac{2\pi}{L}$ に基づく振幅統一（格子解像度非依存の波高）。
